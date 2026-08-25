@@ -10,7 +10,7 @@ const Home = () => {
       height: '100vh',
       textAlign: 'center' 
     }}>
-      <h1 style={{ fontSize: '3rem', marginBottom: '1rem' }}>Faham-Estate Real Estate CRM</h1>
+      <h1 style={{ fontSize: '3rem', marginBottom: '1rem' }}>Nest CRM</h1>
       <p style={{ color: 'var(--text-secondary)', fontSize: '1.2rem' }}>
         Experience the Royal standard in Real Estate Management.
       </p>

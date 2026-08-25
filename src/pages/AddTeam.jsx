@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link, useParams } from 'react-router-dom';
-import { db } from '../lib/firebase';
-import { collection, onSnapshot, query, addDoc, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import DashboardLayout from '../layouts/DashboardLayout';
 import Button from '../components/ui/Button';
 import { 
@@ -42,46 +41,37 @@ const AddTeamPage = () => {
   });
 
   useEffect(() => {
-    // Fetch users and projects in parallel
-    const unsubscribeUsers = onSnapshot(query(collection(db, 'users')), (snapshot) => {
-      setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-
-    const unsubscribeProjects = onSnapshot(query(collection(db, 'projects')), (snapshot) => {
-      setProjects(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    const fetchData = async () => {
+      const { data: usersData } = await supabase.from('users').select('*');
+      setUsers(usersData || []);
+      const { data: projectsData } = await supabase.from('projects').select('*');
+      setProjects(projectsData || []);
       setIsLoading(false);
-    });
-
-    return () => {
-      unsubscribeUsers();
-      unsubscribeProjects();
     };
+    fetchData();
   }, []);
 
   useEffect(() => {
     if (!id) return;
     const fetchTeam = async () => {
       try {
-        const docRef = doc(db, 'teams', id);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setFormData({
-            teamName: data.teamName || data.name || '',
-            teamLead: data.teamLead || '',
-            teamLeads: data.teamLeads || (data.teamLead ? [data.teamLead] : []),
-            members: data.members || [],
-            assignedProjects: data.assignedProjects || [],
-            targets: {
-              leads: data.targets?.leads || '',
-              followups: data.targets?.followups || '',
-              meetings: data.targets?.meetings || ''
-            },
-            description: data.description || ''
-          });
-        }
+        const { data, error } = await supabase.from('teams').select('*').eq('id', id).single();
+        if (error || !data) return;
+        setFormData({
+          teamName: data.team_name || data.teamName || data.name || '',
+          teamLead: data.team_lead || data.teamLead || '',
+          teamLeads: data.team_leads || data.teamLeads || (data.team_lead ? [data.team_lead] : []),
+          members: data.members || [],
+          assignedProjects: data.assigned_projects || data.assignedProjects || [],
+          targets: {
+            leads: data.targets?.leads || '',
+            followups: data.targets?.followups || '',
+            meetings: data.targets?.meetings || ''
+          },
+          description: data.description || ''
+        });
       } catch (err) {
-        console.error("Error fetching team details:", err);
+        console.error('Error fetching team details:', err);
       }
     };
     fetchTeam();
@@ -109,21 +99,21 @@ const AddTeamPage = () => {
     e.preventDefault();
     try {
       if (id) {
-        await updateDoc(doc(db, 'teams', id), {
+        await supabase.from('teams').update({
           ...formData,
-          updatedAt: serverTimestamp()
-        });
+          updated_at: new Date().toISOString()
+        }).eq('id', id);
       } else {
-        await addDoc(collection(db, 'teams'), {
+        await supabase.from('teams').insert({
           ...formData,
           status: 'Active',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         });
       }
       navigate('/users/teams');
     } catch (error) {
-      console.error("Error saving team:", error);
+      console.error('Error saving team:', error);
     }
   };
 

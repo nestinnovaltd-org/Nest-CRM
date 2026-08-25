@@ -6,15 +6,7 @@ import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import Skeleton from '../components/ui/Skeleton';
 import Pagination from '../components/ui/Pagination';
-import { db } from '../lib/firebase';
-import { 
-  collection, 
-  onSnapshot, 
-  query, 
-  orderBy, 
-  doc, 
-  updateDoc 
-} from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { 
   UserPlus, 
   Search, 
@@ -58,32 +50,26 @@ const UsersPage = () => {
   const [users, setUsers] = useState([]);
 
   useEffect(() => {
-    const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const usersList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        // Map fullName to name for backward compatibility if needed
-        name: doc.data().fullName || doc.data().name || 'Unnamed User'
-      }));
-      setUsers(usersList);
+    const fetchData = async () => {
+      const { data: usersList, error } = await supabase
+        .from('users').select('*').order('created_at', { ascending: false });
+      if (error) { console.error('Error fetching users:', error); setIsError(true); }
+      else {
+        setUsers((usersList || []).map(u => ({ ...u, name: u.full_name || u.name || 'Unnamed User' })));
+      }
       setIsLoading(false);
-    }, (error) => {
-      console.error("Error fetching users:", error);
-      setIsError(true);
-      setIsLoading(false);
-    });
 
-    // Fetch Roles
-    const unsubRoles = onSnapshot(collection(db, 'roles'), (snapshot) => {
-      setRoles(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-
-    return () => {
-      unsubscribe();
-      unsubRoles();
+      const { data: rolesData } = await supabase.from('roles').select('*');
+      setRoles(rolesData || []);
     };
+
+    fetchData();
+
+    const usersChannel = supabase.channel('users-page-users')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, fetchData)
+      .subscribe();
+
+    return () => supabase.removeChannel(usersChannel);
   }, []);
 
   const openEdit = (user) => {
@@ -106,45 +92,42 @@ const UsersPage = () => {
 
   const handleStatusToggle = async (user) => {
     try {
-      const userRef = doc(db, 'users', user.id);
-      await updateDoc(userRef, {
+      await supabase.from('users').update({
         status: user.status === 'Active' ? 'Inactive' : 'Active'
-      });
+      }).eq('id', user.id);
     } catch (error) {
-      console.error("Error updating status:", error);
+      console.error('Error updating status:', error);
     }
   };
 
   const saveTarget = async () => {
     try {
-      const userRef = doc(db, 'users', selectedUser.id);
-      await updateDoc(userRef, {
-        target: { 
-          leads: parseInt(targetData.leads), 
-          followups: parseInt(targetData.followups), 
-          progress: selectedUser.target?.progress || 0 
+      await supabase.from('users').update({
+        target: {
+          leads: parseInt(targetData.leads),
+          followups: parseInt(targetData.followups),
+          progress: selectedUser.target?.progress || 0
         }
-      });
+      }).eq('id', selectedUser.id);
       setShowTargetModal(false);
     } catch (error) {
-      console.error("Error saving targets:", error);
+      console.error('Error saving targets:', error);
     }
   };
 
   const handleSaveUser = async () => {
     if (!selectedUser) return;
     try {
-      const userRef = doc(db, 'users', selectedUser.id);
-      await updateDoc(userRef, {
-        fullName: editName,
+      await supabase.from('users').update({
+        full_name: editName,
         name: editName,
         role: editRole,
-        reportsTo: editReportsTo
-      });
+        reports_to: editReportsTo
+      }).eq('id', selectedUser.id);
       setShowEditDrawer(false);
     } catch (error) {
-      console.error("Error saving user details:", error);
-      alert("Failed to save user details.");
+      console.error('Error saving user details:', error);
+      alert('Failed to save user details.');
     }
   };
 

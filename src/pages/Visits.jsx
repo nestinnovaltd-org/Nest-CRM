@@ -1,17 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
-import { 
-  collection, 
-  onSnapshot, 
-  query, 
-  where, 
-  doc, 
-  updateDoc, 
-  arrayUnion, 
-  serverTimestamp, 
-  getDocs,
-  addDoc
-} from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../layouts/DashboardLayout';
 import LeadTabs from '../components/LeadTabs';
@@ -85,11 +73,11 @@ const Visits = () => {
   const [selectedAllowanceVisit, setSelectedAllowanceVisit] = useState(null);
   const [allowanceAmount, setAllowanceAmount] = useState('');
   const [orgBranding, setOrgBranding] = useState({
-    orgName: 'FAHAM ESTATE LTD.',
+    orgName: 'NEST CRM',
     orgLogo: '',
     orgAddress: 'Corporate Office: Jabbar Tower, Gulshan-1, Dhaka-1212, Bangladesh',
     orgPhone: '+880 2-988XXXX',
-    orgEmail: 'info@fahamestate.com'
+    orgEmail: 'info@nestcrm.com'
   });
 
   const showToast = (message, type = 'success') => {
@@ -131,88 +119,64 @@ const Visits = () => {
   useEffect(() => {
     const fetchProjects = async () => {
       try {
-        const snap = await getDocs(collection(db, 'projects'));
-        const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setProjectsList(list);
+        const { data } = await supabase.from('projects').select('*');
+        setProjectsList(data || []);
       } catch (err) {
-        console.error("Error fetching projects for location matching:", err);
+        console.error('Error fetching projects for location matching:', err);
       }
     };
     fetchProjects();
   }, []);
 
-  useEffect(() => {
-    const unsubAllowances = onSnapshot(collection(db, 'visit_allowances'), (snap) => {
-      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setAllowances(list);
-    });
 
-    const unsubBranding = onSnapshot(doc(db, 'hr_settings', 'config'), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
+  useEffect(() => {
+    const fetchOrgData = async () => {
+      const { data: allowancesData } = await supabase.from('visit_allowances').select('*');
+      setAllowances(allowancesData || []);
+
+      const { data: brandingData } = await supabase.from('hr_settings').select('*').eq('id', 'config').maybeSingle();
+      if (brandingData) {
         setOrgBranding({
-          orgName: data.orgName || 'FAHAM ESTATE LTD.',
-          orgLogo: data.orgLogo || '',
-          orgAddress: data.orgAddress || 'Corporate Office: Jabbar Tower, Gulshan-1, Dhaka-1212, Bangladesh',
-          orgPhone: data.orgPhone || '+880 2-988XXXX',
-          orgEmail: data.orgEmail || 'info@fahamestate.com'
+          orgName: brandingData.org_name || brandingData.orgName || 'Nest CRM',
+          orgLogo: brandingData.org_logo || brandingData.orgLogo || '',
+          orgAddress: brandingData.org_address || brandingData.orgAddress || '',
+          orgPhone: brandingData.org_phone || brandingData.orgPhone || '',
+          orgEmail: brandingData.org_email || brandingData.orgEmail || ''
         });
       }
-    });
-
-    return () => {
-      unsubAllowances();
-      unsubBranding();
     };
+    fetchOrgData();
+    const ch = supabase.channel('visits-allowances')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'visit_allowances' }, fetchOrgData)
+      .subscribe();
+    return () => supabase.removeChannel(ch);
   }, []);
+
+
 
   useEffect(() => {
     if (!user) return;
+    const isAdmin = user.role === 'Admin' || user.role === 'MD' || user.role === 'System Admin';
 
-    // 1. Fetch all users to determine hierarchy
-    const unsubUsers = onSnapshot(collection(db, 'users'), (userSnapshot) => {
-      const allUsers = userSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      const isAdmin = user.role === 'Admin' || user.role === 'MD' || user.role === 'System Admin';
-      
-      let q;
+    const fetchLeads = async () => {
+      const { data: allUsers } = await supabase.from('users').select('*');
       let allowedUids = [];
+      if (!isAdmin) allowedUids = getSubordinateUids(allUsers || [], user.uid);
 
-      if (isAdmin) {
-        q = query(collection(db, 'leads'));
-      } else {
-        allowedUids = getSubordinateUids(allUsers, user.uid);
-        if (allowedUids.length <= 30) {
-          q = query(
-            collection(db, 'leads'),
-            where('assignedTo', 'in', allowedUids)
-          );
-        } else {
-          q = query(collection(db, 'leads'));
-        }
-      }
+      let query = supabase.from('leads').select('*').not('visit_date', 'is', null);
+      if (!isAdmin && allowedUids.length > 0) query = query.in('assigned_to', allowedUids);
 
-      const unsubscribeLeads = onSnapshot(q, (snapshot) => {
-        let allLeads = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+      const { data, error } = await query;
+      if (error) { console.error('Error fetching visits:', error); }
+      setRawLeads(data || []);
+      setIsLoading(false);
+    };
 
-        // In-memory filter if needed
-        if (!isAdmin && allowedUids.length > 30) {
-          allLeads = allLeads.filter(l => allowedUids.includes(l.assignedTo));
-        }
-
-        setRawLeads(allLeads);
-        setIsLoading(false);
-      }, (error) => {
-        console.error("Error fetching visits:", error);
-        setIsLoading(false);
-      });
-
-      return () => unsubscribeLeads();
-    });
-
-    return () => unsubUsers();
+    fetchLeads();
+    const ch = supabase.channel('visits-leads')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, fetchLeads)
+      .subscribe();
+    return () => supabase.removeChannel(ch);
   }, [user]);
 
   useEffect(() => {
@@ -306,21 +270,22 @@ const Visits = () => {
         date: new Date().toISOString(),
         action: `Site Visit Status Updated to ${modalStatus}`,
         note: modalNote,
-        performedBy: user.fullName || user.name || 'Sales Staff'
+        performedBy: user.full_name || user.fullName || user.name || 'Sales Staff'
       };
 
-      await updateDoc(leadRef, {
-        visitStatus: modalStatus,
-        visitNote: modalNote,
-        history: arrayUnion(historyEntry),
-        updatedAt: serverTimestamp()
-      });
+      const existingHistory = selectedVisit.history || [];
+      await supabase.from('leads').update({
+        visit_status: modalStatus,
+        visit_note: modalNote,
+        history: [...existingHistory, historyEntry],
+        updated_at: new Date().toISOString()
+      }).eq('id', selectedVisit.id);
 
-      showToast(`Visit marked as ${modalStatus} successfully!`, "success");
+      showToast(`Visit marked as ${modalStatus} successfully!`, 'success');
       setShowModal(false);
     } catch (err) {
       console.error(err);
-      showToast(err.message || "Failed to update visit status", "error");
+      showToast(err.message || 'Failed to update visit status', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -331,27 +296,26 @@ const Visits = () => {
     if (!selectedAllowanceVisit || !allowanceAmount) return;
     setIsSaving(true);
     try {
-      const dbRef = collection(db, 'visit_allowances');
-      await addDoc(dbRef, {
-        leadId: selectedAllowanceVisit.id || '',
-        leadName: selectedAllowanceVisit.name || 'Client',
+      await supabase.from('visit_allowances').insert({
+        lead_id: selectedAllowanceVisit.id || '',
+        lead_name: selectedAllowanceVisit.name || 'Client',
         company: selectedAllowanceVisit.company || 'General Project',
-        visitDate: selectedAllowanceVisit.visitDate || '',
-        visitTime: selectedAllowanceVisit.visitTime || '10:00 AM',
+        visit_date: selectedAllowanceVisit.visitDate || '',
+        visit_time: selectedAllowanceVisit.visitTime || '10:00 AM',
         location: selectedAllowanceVisit.location || 'Not Specified',
         amount: parseFloat(allowanceAmount) || 0,
         status: 'Pending Approval',
-        requestedBy: user?.uid || '',
-        requestedByName: user?.fullName || user?.name || 'Sales Representative',
-        createdAt: serverTimestamp()
+        requested_by: user?.uid || '',
+        requested_by_name: user?.full_name || user?.fullName || user?.name || 'Sales Representative',
+        created_at: new Date().toISOString()
       });
-      showToast("Visit Allowance request submitted to Accounts!", "success");
+      showToast('Visit Allowance request submitted to Accounts!', 'success');
       setShowAllowanceModal(false);
       setAllowanceAmount('');
       setSelectedAllowanceVisit(null);
     } catch (err) {
-      console.error("Error in handleRequestAllowance:", err);
-      showToast(`Failed to request allowance: ${err.message}`, "error");
+      console.error('Error in handleRequestAllowance:', err);
+      showToast(`Failed to request allowance: ${err.message}`, 'error');
     } finally {
       setIsSaving(false);
     }

@@ -3,19 +3,8 @@ import DashboardLayout from '../layouts/DashboardLayout';
 import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import Skeleton from '../components/ui/Skeleton';
-import { db } from '../lib/firebase';
-import { 
-  collection, 
-  onSnapshot, 
-  doc, 
-  setDoc, 
-  updateDoc, 
-  deleteDoc,
-  query,
-  orderBy,
-  getDocs,
-  serverTimestamp
-} from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
+import { toast } from 'react-hot-toast';
 import { 
   Shield, 
   Plus, 
@@ -56,42 +45,42 @@ const RolesPage = () => {
 
   // Load Roles
   useEffect(() => {
-    const q = query(collection(db, 'roles'), orderBy('level', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const rolesList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+    const fetchRoles = async () => {
+      const { data, error } = await supabase.from('roles').select('*').order('level', { ascending: false });
+      if (error) { console.error('Error fetching roles:', error); return; }
+      const rolesList = data || [];
       setRoles(rolesList);
-      
-      // Select first role by default if none selected
       if (!selectedRole && rolesList.length > 0) {
         setSelectedRole(rolesList[0]);
       } else if (selectedRole) {
-        // Update selected role data if it changed in DB
         const updated = rolesList.find(r => r.id === selectedRole.id);
         if (updated) setSelectedRole(updated);
       }
-      
       setIsLoading(false);
-    });
-
-    return () => unsubscribe();
+    };
+    fetchRoles();
+    const ch = supabase.channel('roles-channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'roles' }, fetchRoles)
+      .subscribe();
+    return () => supabase.removeChannel(ch);
   }, [selectedRole?.id]);
 
   // Load Users for counting & configuration
   useEffect(() => {
-    const q = query(collection(db, 'users'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const usersList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const fetchUsers = async () => {
+      const { data } = await supabase.from('users').select('*');
+      const usersList = data || [];
       setUsers(usersList);
-      
       if (selectedUser) {
         const updated = usersList.find(u => u.id === selectedUser.id);
         if (updated) setSelectedUser(updated);
       }
-    });
-    return () => unsubscribe();
+    };
+    fetchUsers();
+    const ch = supabase.channel('roles-users')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, fetchUsers)
+      .subscribe();
+    return () => supabase.removeChannel(ch);
   }, [selectedUser?.id]);
 
   const handlePermissionChange = (moduleName, subModule, action, value) => {
@@ -185,25 +174,23 @@ const RolesPage = () => {
     setIsSaving(true);
     try {
       if (configMode === 'roles') {
-        const roleRef = doc(db, 'roles', selectedRole.id);
-        await updateDoc(roleRef, {
+        await supabase.from('roles').update({
           permissions: selectedRole.permissions,
-          updatedAt: serverTimestamp()
-        });
+          updated_at: new Date().toISOString()
+        }).eq('id', selectedRole.id);
         setHasChanges(false);
-        toast.success("Role permissions saved successfully!");
+        toast.success('Role permissions saved successfully!');
       } else {
-        const userRef = doc(db, 'users', selectedUser.id);
-        await updateDoc(userRef, {
+        await supabase.from('users').update({
           permissions: selectedUser.permissions,
-          updatedAt: serverTimestamp()
-        });
+          updated_at: new Date().toISOString()
+        }).eq('id', selectedUser.id);
         setHasChanges(false);
-        toast.success("User permissions overrides saved successfully!");
+        toast.success('User permissions overrides saved successfully!');
       }
     } catch (error) {
-      console.error("Error saving permissions:", error);
-      toast.error("Failed to save permissions.");
+      console.error('Error saving permissions:', error);
+      toast.error('Failed to save permissions.');
     } finally {
       setIsSaving(false);
     }
@@ -211,24 +198,20 @@ const RolesPage = () => {
 
   const handleResetToRoleDefault = async () => {
     if (!selectedUser) return;
-    if (!window.confirm(`Are you sure you want to reset permissions for ${selectedUser.fullName || selectedUser.name} to the role default?`)) return;
-    
+    if (!window.confirm(`Are you sure you want to reset permissions for ${selectedUser.full_name || selectedUser.fullName || selectedUser.name} to the role default?`)) return;
+
     setIsSaving(true);
     try {
-      const userRef = doc(db, 'users', selectedUser.id);
-      await updateDoc(userRef, {
+      await supabase.from('users').update({
         permissions: {},
-        updatedAt: serverTimestamp()
-      });
-      setSelectedUser({
-        ...selectedUser,
-        permissions: {}
-      });
+        updated_at: new Date().toISOString()
+      }).eq('id', selectedUser.id);
+      setSelectedUser({ ...selectedUser, permissions: {} });
       setHasChanges(false);
-      toast.success("Permissions reset to role default successfully!");
+      toast.success('Permissions reset to role default successfully!');
     } catch (error) {
-      console.error("Error resetting permissions:", error);
-      toast.error("Failed to reset permissions.");
+      console.error('Error resetting permissions:', error);
+      toast.error('Failed to reset permissions.');
     } finally {
       setIsSaving(false);
     }
@@ -243,28 +226,26 @@ const RolesPage = () => {
 
     try {
       const roleId = name.toLowerCase().replace(/\s+/g, '_');
-      const roleRef = doc(db, 'roles', roleId);
-      
-      await setDoc(roleRef, {
+      await supabase.from('roles').upsert({
+        id: roleId,
         name,
         description,
         level,
         users: 0,
-        permissions: {}, // Start empty
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        permissions: {},
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       });
-      
       setShowCreateModal(false);
     } catch (error) {
-      console.error("Error creating role:", error);
+      console.error('Error creating role:', error);
     }
   };
 
   const handleDeleteRole = async (roleId) => {
-    if (window.confirm("Are you sure you want to delete this role?")) {
+    if (window.confirm('Are you sure you want to delete this role?')) {
       try {
-        await deleteDoc(doc(db, 'roles', roleId));
+        await supabase.from('roles').delete().eq('id', roleId);
         if (selectedRole?.id === roleId) {
           setSelectedRole(null);
         }

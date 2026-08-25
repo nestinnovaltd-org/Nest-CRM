@@ -194,6 +194,7 @@ const Sidebar = ({ isOpen, onClose }) => {
       moduleName: 'Settings',
       subItems: [
         { label: 'Profile Settings', path: '/settings/profile' },
+        { label: 'My Organization', path: '/settings/organization' },
       ]
     },
   ];
@@ -219,8 +220,8 @@ const Sidebar = ({ isOpen, onClose }) => {
       <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
           <div className="logo">
-            <img src={logo} alt="Faham Estate Logo" className="sb-logo-img" />
-            <span className="brand-text-sidebar">REAL ESTATE CRM</span>
+            <img src={logo} alt="Nest CRM Logo" className="sb-logo-img" />
+            <span className="brand-text-sidebar">NEST CRM</span>
           </div>
           <button className="close-btn" onClick={onClose}>
             <X size={24} />

@@ -41,7 +41,7 @@ const UserProfile = () => {
     phone: '+880 1711-223344',
     role: 'CEO & Founder',
     location: 'Dhaka, Bangladesh',
-    bio: 'Leading the future of real estate technology with Faham-Estate.',
+    bio: 'Leading the future of real estate technology with Nest CRM.',
     avatar: 'https://i.pravatar.cc/150?u=ahmed'
   };
 

@@ -1,11 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
-import { 
-  collection, 
-  onSnapshot, 
-  query,
-  where 
-} from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../layouts/DashboardLayout';
 import Card from '../components/ui/Card';
@@ -166,27 +160,41 @@ const Overview = () => {
 
   useEffect(() => {
     if (!currentUser) return;
-    const unsubProjects = onSnapshot(collection(db, 'projects'), (snapshot) => {
-      const projectsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setProjects(projectsList.slice(0, 3));
-    });
-    return () => unsubProjects();
+    const fetchProjects = async () => {
+      const { data } = await supabase.from('projects').select('*').limit(3);
+      setProjects(data || []);
+    };
+    fetchProjects();
+    const ch = supabase.channel('overview-projects')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, fetchProjects)
+      .subscribe();
+    return () => supabase.removeChannel(ch);
   }, [currentUser]);
 
   useEffect(() => {
     if (!currentUser) return;
-    const unsubTeams = onSnapshot(collection(db, 'teams'), (snapshot) => {
-      setTeams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-    return () => unsubTeams();
+    const fetchTeams = async () => {
+      const { data } = await supabase.from('teams').select('*');
+      setTeams(data || []);
+    };
+    fetchTeams();
+    const ch = supabase.channel('overview-teams')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teams' }, fetchTeams)
+      .subscribe();
+    return () => supabase.removeChannel(ch);
   }, [currentUser]);
 
   useEffect(() => {
     if (!currentUser) return;
-    const unsubUsers = onSnapshot(collection(db, 'users'), (userSnapshot) => {
-      setAllUsers(userSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-    return () => unsubUsers();
+    const fetchUsers = async () => {
+      const { data } = await supabase.from('users').select('*');
+      setAllUsers(data || []);
+    };
+    fetchUsers();
+    const ch = supabase.channel('overview-users')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, fetchUsers)
+      .subscribe();
+    return () => supabase.removeChannel(ch);
   }, [currentUser]);
 
   useEffect(() => {
@@ -220,177 +228,98 @@ const Overview = () => {
       ...teamMemberUids
     ]));
 
-    let q = query(collection(db, 'leads'));
+    let leadsQuery = supabase.from('leads').select('*');
 
-    const unsubscribeLeads = onSnapshot(q, (snapshot) => {
-      let allLeads = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const fetchLeads = async () => {
+      const { data: allLeadsData, error } = await leadsQuery;
+      if (error) { console.error('Error fetching overview stats:', error); setIsLoading(false); return; }
+      let allLeads = allLeadsData || [];
 
       let filteredLeads = allLeads;
       if (!isAdmin && !isManager) {
-        filteredLeads = allLeads.filter(l => l.assignedTo === currentUser.uid);
+        filteredLeads = allLeads.filter(l => l.assigned_to === currentUser.uid || l.assignedTo === currentUser.uid);
       } else {
-        filteredLeads = allLeads.filter(l => subordinates.includes(l.assignedTo));
+        filteredLeads = allLeads.filter(l => subordinates.includes(l.assigned_to || l.assignedTo));
       }
 
       if (activeTab === 'My Performance') {
-        filteredLeads = filteredLeads.filter(l => l.assignedTo === currentUser.uid);
+        filteredLeads = filteredLeads.filter(l => (l.assigned_to || l.assignedTo) === currentUser.uid);
       } else if (activeTab === 'Team Performance') {
-        filteredLeads = filteredLeads.filter(l => l.assignedTo !== currentUser.uid);
+        filteredLeads = filteredLeads.filter(l => (l.assigned_to || l.assignedTo) !== currentUser.uid);
       }
 
-      let total = 0;
-      let active = 0;
-      let closed = 0;
-      let rev = 0;
-      let pend = 0;
-      let visits = 0;
+      let total = 0, active = 0, closed = 0, rev = 0, pend = 0, visits = 0;
       let funnel = { fresh: 0, followup: 0, visit: 0, negotiation: 0, closed: 0 };
-
       const now = new Date();
       const todayStr = now.toISOString().split('T')[0];
       let todayTasks = [];
 
       filteredLeads.forEach(data => {
         total++;
-        
         if (data.status === 'Deal Confirmed') {
-          closed++;
-          funnel.closed++;
-          const valueStr = data.value?.toString().replace(/[^\d.]/g, '') || "0";
+          closed++; funnel.closed++;
+          const valueStr = data.value?.toString().replace(/[^\d.]/g, '') || '0';
           rev += parseFloat(valueStr);
         } else if (data.status === 'Under Negotiation') {
-          active++;
-          funnel.negotiation++;
+          active++; funnel.negotiation++;
         } else if (data.status === 'Follow Up') {
-          pend++;
-          funnel.followup++;
+          pend++; funnel.followup++;
         } else if (data.status === 'Fresh Lead') {
           funnel.fresh++;
         }
-
-        if (data.visitDate) {
-          visits++;
-          funnel.visit++;
-          if (data.visitDate === todayStr) {
-            todayTasks.push({
-              id: data.id,
-              name: data.fullName || data.name,
-              time: data.visitTime || 'TBD',
-              type: 'visit',
-              location: data.visitLocation || 'Site',
-              phone: data.phone,
-              completed: data.visitStatus === 'Completed'
-            });
-          }
+        if (data.visitDate || data.visit_date) { visits++; funnel.visit++; }
+        const followUpDate = data.followUpDate || data.follow_up_date;
+        const visitDate = data.visitDate || data.visit_date;
+        if (visitDate === todayStr) {
+          todayTasks.push({ id: data.id, name: data.fullName || data.full_name || data.name, time: data.visitTime || 'TBD', type: 'visit', location: data.visitLocation || 'Site', phone: data.phone, completed: data.visitStatus === 'Completed' });
         }
-
-        if (data.followUpDate === todayStr) {
-          todayTasks.push({
-            id: data.id,
-            name: data.fullName || data.name,
-            time: data.followUpTime || 'TBD',
-            type: 'followup',
-            phone: data.phone,
-            completed: data.followUpStatus === 'Completed'
-          });
+        if (followUpDate === todayStr) {
+          todayTasks.push({ id: data.id, name: data.fullName || data.full_name || data.name, time: data.followUpTime || 'TBD', type: 'followup', phone: data.phone, completed: data.followUpStatus === 'Completed' });
         }
       });
 
       const recentActivities = filteredLeads
-        .filter(l => l.updatedAt)
-        .sort((a, b) => b.updatedAt?.seconds - a.updatedAt?.seconds)
+        .filter(l => l.updated_at || l.updatedAt)
+        .sort((a, b) => new Date(b.updated_at || b.updatedAt) - new Date(a.updated_at || a.updatedAt))
         .slice(0, 5)
-        .map(l => ({
-          id: l.id,
-          userName: l.updatedBy || 'System',
-          action: 'Updated lead',
-          target: l.fullName || l.name,
-          time: l.updatedAt ? new Date(l.updatedAt.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Recently'
-        }));
+        .map(l => ({ id: l.id, userName: l.updatedBy || 'System', action: 'Updated lead', target: l.fullName || l.full_name || l.name, time: new Date(l.updated_at || l.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }));
 
-      setStats({
-        totalLeads: total,
-        activeDeals: active,
-        closedDeals: closed,
-        revenue: rev,
-        pending: pend,
-        visits: visits
-      });
+      setStats({ totalLeads: total, activeDeals: active, closedDeals: closed, revenue: rev, pending: pend, visits });
 
       const teamPerf = subordinates.map(uid => {
         const userDoc = allUsers.find(u => u.id === uid || u.uid === uid);
         if (!userDoc) return null;
-
-        const userLeads = allLeads.filter(l => l.assignedTo === uid);
+        const userLeads = allLeads.filter(l => (l.assigned_to || l.assignedTo) === uid);
         const userDeals = userLeads.filter(l => l.status === 'Deal Confirmed');
-        const userRevenue = userDeals.reduce((sum, l) => {
-          const val = parseFloat(l.value?.toString().replace(/[^\d.]/g, '') || "0");
-          return sum + val;
-        }, 0);
-
-        const resolvedName = (
-          userDoc.fullName || 
-          userDoc.displayName || 
-          userDoc.name || 
-          userDoc.username || 
-          (userDoc.firstName ? `${userDoc.firstName} ${userDoc.lastName || ''}` : null) ||
-          userDoc.email || 
-          'Unknown'
-        ).toString().trim();
-
-        return {
-          id: uid,
-          name: resolvedName,
-          leads: userLeads.length,
-          deals: userDeals.length,
-          revenue: userRevenue
-        };
-      })
-      .filter(Boolean)
-      .sort((a, b) => b.revenue - a.revenue);
+        const userRevenue = userDeals.reduce((sum, l) => sum + parseFloat(l.value?.toString().replace(/[^\d.]/g, '') || '0'), 0);
+        const resolvedName = (userDoc.full_name || userDoc.fullName || userDoc.name || userDoc.email || 'Unknown').trim();
+        return { id: uid, name: resolvedName, leads: userLeads.length, deals: userDeals.length, revenue: userRevenue };
+      }).filter(Boolean).sort((a, b) => b.revenue - a.revenue);
 
       setTeamData(teamPerf);
       setFunnelData(funnel);
       setTasks(todayTasks);
       setActivities(recentActivities);
-
-      setChartData([
-        { name: 'Mon', revenue: rev * 0.1 },
-        { name: 'Tue', revenue: rev * 0.15 },
-        { name: 'Wed', revenue: rev * 0.25 },
-        { name: 'Thu', revenue: rev * 0.2 },
-        { name: 'Fri', revenue: rev * 0.3 },
-        { name: 'Sat', revenue: rev * 0.1 },
-        { name: 'Sun', revenue: rev * 0.05 },
-      ]);
-
-      const hot = filteredLeads
-        .filter(l => l.priority === 'High Priority' || l.priority === 'Urgent' || l.status === 'Under Negotiation')
-        .slice(0, 4);
+      setChartData([{ name: 'Mon', revenue: rev * 0.1 }, { name: 'Tue', revenue: rev * 0.15 }, { name: 'Wed', revenue: rev * 0.25 }, { name: 'Thu', revenue: rev * 0.2 }, { name: 'Fri', revenue: rev * 0.3 }, { name: 'Sat', revenue: rev * 0.1 }, { name: 'Sun', revenue: rev * 0.05 }]);
+      const hot = filteredLeads.filter(l => l.priority === 'High Priority' || l.priority === 'Urgent' || l.status === 'Under Negotiation').slice(0, 4);
       setHotLeads(hot);
-
       const events = {};
       filteredLeads.forEach(l => {
-        if (l.followUpDate) {
-          const dateStr = l.followUpDate;
-          if (!events[dateStr]) events[dateStr] = [];
-          events[dateStr].push({ type: 'followup', name: l.fullName || l.name });
-        }
-        if (l.visitDate) {
-          const dateStr = l.visitDate;
-          if (!events[dateStr]) events[dateStr] = [];
-          events[dateStr].push({ type: 'visit', name: l.fullName || l.name });
-        }
+        const fd = l.followUpDate || l.follow_up_date; const vd = l.visitDate || l.visit_date;
+        if (fd) { if (!events[fd]) events[fd] = []; events[fd].push({ type: 'followup', name: l.fullName || l.full_name || l.name }); }
+        if (vd) { if (!events[vd]) events[vd] = []; events[vd].push({ type: 'visit', name: l.fullName || l.full_name || l.name }); }
       });
       setCalendarEvents(events);
-
       setIsLoading(false);
-    }, (error) => {
-      console.error("Error fetching overview stats:", error);
-      setIsLoading(false);
-    });
+    };
 
-    return () => unsubscribeLeads();
+    fetchLeads();
+
+    const ch = supabase.channel('overview-leads')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, fetchLeads)
+      .subscribe();
+
+    return () => supabase.removeChannel(ch);
   }, [currentUser, allUsers, teams, activeTab]);
 
   const renderCalendarWidget = () => {

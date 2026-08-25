@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { db } from '../lib/firebase';
-import { collection, onSnapshot, query, addDoc, serverTimestamp, orderBy, where, getDocs } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import DashboardLayout from '../layouts/DashboardLayout';
 import LeadTabs from '../components/LeadTabs';
 import Button from '../components/ui/Button';
@@ -63,20 +62,17 @@ const checkPhoneDuplicateInTeam = async (phoneNumber, user, allUsers, teams) => 
     cleanedSearchPhone
   ];
 
-  const leadsRef = collection(db, 'leads');
-  const q = query(leadsRef, where('phone', 'in', formats));
-  const querySnapshot = await getDocs(q);
+  const { data: matchedLeads } = await supabase.from('leads').select('*').in('phone', formats);
 
-  if (!querySnapshot.empty) {
-    for (const docSnap of querySnapshot.docs) {
-      const leadData = docSnap.data();
-      const assignee = leadData.assignedTo;
-      const owner = leadData.ownerId;
+  if (matchedLeads && matchedLeads.length > 0) {
+    for (const leadData of matchedLeads) {
+      const assignee = leadData.assigned_to || leadData.assignedTo;
+      const owner = leadData.owner_id || leadData.ownerId;
       if (teamMemberUids.includes(assignee) || teamMemberUids.includes(owner)) {
         return {
           duplicate: true,
-          leadName: leadData.name,
-          assignedToName: leadData.assignedToName || 'someone in your team'
+          leadName: leadData.name || leadData.full_name,
+          assignedToName: leadData.assigned_to_name || leadData.assignedToName || 'someone in your team'
         };
       }
     }
@@ -139,36 +135,24 @@ const AddLeadPage = () => {
   useEffect(() => {
     if (!user) return;
 
-    // 1. Fetch current user's team context
-    const qTeams = query(collection(db, 'teams'));
-    const unsubscribeTeams = onSnapshot(qTeams, (snapshot) => {
-      const teamsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const fetchData = async () => {
+      const { data: teamsData } = await supabase.from('teams').select('*');
+      const teamsList = teamsData || [];
       setTeams(teamsList);
-      const userName = user.fullName || user.name;
-      
-      const foundTeam = teamsList.find(team => 
-        (team.members && team.members.includes(userName)) || 
-        team.teamLead === userName
+      const userName = user.full_name || user.fullName || user.name;
+
+      const foundTeam = teamsList.find(team =>
+        (team.members && team.members.includes(userName)) ||
+        team.team_lead === userName || team.teamLead === userName
       );
       setUserTeam(foundTeam);
-    });
 
-    // 2. Fetch all users and filter based on team/role
-    const qUsers = query(collection(db, 'users'), orderBy('fullName', 'asc'));
-    const unsubscribeUsers = onSnapshot(qUsers, (snapshot) => {
-      const allUsers = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
-      setUsers(allUsers);
+      const { data: usersData } = await supabase.from('users').select('*').order('full_name', { ascending: true });
+      setUsers(usersData || []);
       setIsLoading(false);
-    });
-
-    return () => {
-      unsubscribeTeams();
-      unsubscribeUsers();
     };
+
+    fetchData();
   }, [user]);
 
   // Handle Filtering Logic
@@ -318,54 +302,55 @@ const AddLeadPage = () => {
         });
       }
 
-      const leadData = {
+      const leadPayload = {
         name: formData.name,
         company: formData.company,
         designation: formData.designation,
         phone: fullPhone,
-        phoneWhatsapp: formData.phoneWhatsapp || false,
-        secondPhone: formData.secondPhone ? `${formData.countryCode} ${formData.secondPhone}` : '',
-        secondPhoneWhatsapp: formData.secondPhoneWhatsapp || false,
+        phone_whatsapp: formData.phoneWhatsapp || false,
+        second_phone: formData.secondPhone ? `${formData.countryCode} ${formData.secondPhone}` : '',
+        second_phone_whatsapp: formData.secondPhoneWhatsapp || false,
         email: formData.email,
         location: formData.location,
         area: formData.area,
         address: formData.address || '',
-        assignedTo: formData.assignedTo,
-        assignedToName: formData.assignedToName,
-        ownerId: user.uid,
-        ownerName: user.fullName || user.name || 'Admin',
+        assigned_to: formData.assignedTo,
+        assigned_to_name: formData.assignedToName,
+        owner_id: user.uid,
+        owner_name: user.full_name || user.fullName || user.name || 'Admin',
         priority: formData.priority,
         source: formData.source,
         status: formData.nextCallDate ? 'Follow Up' : 'Fresh Lead',
         description: formData.description,
-        nextFollowUp: formData.nextCallDate || '',
-        nextFollowUpDate: formData.nextCallDate || null,
+        next_follow_up: formData.nextCallDate || '',
+        next_follow_up_date: formData.nextCallDate || null,
         image: formData.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.name)}&background=random`,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
         history: history
       };
 
-      const docRef = await addDoc(collection(db, 'leads'), leadData);
+      const { data: newLead, error: leadError } = await supabase.from('leads').insert(leadPayload).select().single();
+      if (leadError) throw leadError;
 
       // Create notification for assigned user
       if (formData.assignedTo) {
-        await addDoc(collection(db, 'notifications'), {
-          userId: formData.assignedTo,
+        await supabase.from('notifications').insert({
+          user_id: formData.assignedTo,
           title: 'New Lead Assigned',
-          description: `${formData.name} has been assigned to you by ${user?.fullName || user?.name || 'Admin'}.`,
+          description: `${formData.name} has been assigned to you by ${user?.full_name || user?.fullName || user?.name || 'Admin'}.`,
           type: 'lead',
-          isRead: false,
-          createdAt: serverTimestamp(),
-          link: `/leads/details/${docRef.id}`
+          is_read: false,
+          created_at: new Date().toISOString(),
+          link: `/leads/details/${newLead.id}`
         });
       }
 
-      showToast("Lead created successfully!", "success");
+      showToast('Lead created successfully!', 'success');
       setTimeout(() => navigate('/leads/mine'), 1500);
     } catch (error) {
-      console.error("Error creating lead:", error);
-      showToast("Failed to create lead. Please try again.", "error");
+      console.error('Error creating lead:', error);
+      showToast('Failed to create lead. Please try again.', 'error');
     } finally {
       setIsSubmitting(false);
     }

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
-import { doc, onSnapshot, collection, query, where, orderBy, addDoc, updateDoc, arrayUnion, serverTimestamp, getDocs } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../layouts/DashboardLayout';
@@ -117,19 +116,19 @@ const LeadUpdateModal = ({ isOpen, onClose, lead, newStatus, onConfirm }) => {
   const [teamsList, setTeamsList] = useState([]);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const usersList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setTeamUsers(usersList);
-    });
-    return () => unsub();
+    const fetchUsers = async () => {
+      const { data } = await supabase.from('users').select('*');
+      setTeamUsers(data || []);
+    };
+    fetchUsers();
   }, []);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'teams'), (snapshot) => {
-      const teamsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setTeamsList(teamsData);
-    });
-    return () => unsub();
+    const fetchTeams = async () => {
+      const { data } = await supabase.from('teams').select('*');
+      setTeamsList(data || []);
+    };
+    fetchTeams();
   }, []);
 
   useEffect(() => {
@@ -138,10 +137,8 @@ const LeadUpdateModal = ({ isOpen, onClose, lead, newStatus, onConfirm }) => {
 
   useEffect(() => {
     const fetchProjects = async () => {
-      const q = query(collection(db, 'projects'), orderBy('projectName', 'asc'));
-      const querySnapshot = await getDocs(q);
-      const projectsList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setAllProjects(projectsList);
+      const { data } = await supabase.from('projects').select('*').order('project_name', { ascending: true });
+      setAllProjects(data || []);
     };
     if (isOpen) fetchProjects();
   }, [isOpen]);
@@ -421,15 +418,14 @@ const LeadDetails = () => {
           ctx.drawImage(img, 0, 0, width, height);
 
           const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8);
-          
+
           try {
-            const leadRef = doc(db, 'leads', id);
-            await updateDoc(leadRef, {
+            await supabase.from('leads').update({
               image: compressedBase64,
-              updatedAt: serverTimestamp()
-            });
+              updated_at: new Date().toISOString()
+            }).eq('id', id);
           } catch (err) {
-            console.error("Error updating profile image: ", err);
+            console.error('Error updating profile image: ', err);
           }
         };
         img.src = event.target.result;
@@ -443,42 +439,39 @@ const LeadDetails = () => {
     if (!assigneeId) return;
     try {
       const assignedUser = usersList.find(u => u.uid === assigneeId || u.id === assigneeId);
-      const assignedToName = assignedUser ? (assignedUser.fullName || assignedUser.name) : 'Unassigned';
+      const assignedToName = assignedUser ? (assignedUser.full_name || assignedUser.fullName || assignedUser.name) : 'Unassigned';
 
-      const updatePayload = {
-        assignedTo: assigneeId,
-        assignedToName: assignedToName,
-        lastAssignedAt: serverTimestamp()
-      };
-
-      // Add to interaction history
       const historyRecord = {
         date: new Date().toISOString(),
-        note: `Lead reassigned to ${assignedToName} by ${currentUser?.fullName || currentUser?.name || 'Admin'}.${assignInstruction ? ` Instruction: ${assignInstruction}` : ''}`,
+        note: `Lead reassigned to ${assignedToName} by ${currentUser?.full_name || currentUser?.fullName || currentUser?.name || 'Admin'}.${assignInstruction ? ` Instruction: ${assignInstruction}` : ''}`,
         type: 'Assignment',
-        createdBy: currentUser?.fullName || currentUser?.name || 'Admin'
+        createdBy: currentUser?.full_name || currentUser?.fullName || currentUser?.name || 'Admin'
       };
 
-      updatePayload.history = arrayUnion(historyRecord);
-      updatePayload.assignedByName = currentUser?.fullName || currentUser?.name || 'Admin';
+      const newHistory = [...(lead.history || []), historyRecord];
 
-      await updateDoc(doc(db, 'leads', id), updatePayload);
+      await supabase.from('leads').update({
+        assigned_to: assigneeId,
+        assigned_to_name: assignedToName,
+        last_assigned_at: new Date().toISOString(),
+        history: newHistory,
+        assigned_by_name: currentUser?.full_name || currentUser?.fullName || currentUser?.name || 'Admin'
+      }).eq('id', id);
 
-      // Create notification for the assignee
-      await addDoc(collection(db, 'notifications'), {
-        userId: assigneeId,
+      await supabase.from('notifications').insert({
+        user_id: assigneeId,
         title: 'New Lead Assigned',
-        message: `${currentUser?.fullName || currentUser?.name || 'Admin'} assigned you a lead: ${lead.name}.${assignInstruction ? ` \nInstruction: ${assignInstruction}` : ''}`,
+        message: `${currentUser?.full_name || currentUser?.fullName || currentUser?.name || 'Admin'} assigned you a lead: ${lead.name}.${assignInstruction ? ` \nInstruction: ${assignInstruction}` : ''}`,
         type: 'assignment',
-        leadId: id,
-        read: false,
-        createdAt: serverTimestamp()
+        lead_id: id,
+        is_read: false,
+        created_at: new Date().toISOString()
       });
 
       setShowAssignModal(false);
       setAssignInstruction('');
     } catch (error) {
-      console.error("Error changing sales person:", error);
+      console.error('Error changing sales person:', error);
     }
   };
   const [editForm, setEditForm] = useState({
@@ -529,13 +522,13 @@ const LeadDetails = () => {
         formattedSecondPhone = '+880 ' + formattedSecondPhone.replace(/\D/g, '');
       }
 
-      await updateDoc(doc(db, 'leads', id), {
+      await supabase.from('leads').update({
         name: editForm.name,
         email: editForm.email,
         phone: formattedPhone,
-        phoneWhatsapp: editForm.phoneWhatsapp,
-        secondPhone: formattedSecondPhone,
-        secondPhoneWhatsapp: editForm.secondPhoneWhatsapp,
+        phone_whatsapp: editForm.phoneWhatsapp,
+        second_phone: formattedSecondPhone,
+        second_phone_whatsapp: editForm.secondPhoneWhatsapp,
         location: editForm.location,
         area: editForm.area,
         address: editForm.address,
@@ -543,11 +536,11 @@ const LeadDetails = () => {
         designation: editForm.designation,
         image: editForm.image || '',
         interests: editForm.interests || [],
-        updatedAt: serverTimestamp()
-      });
+        updated_at: new Date().toISOString()
+      }).eq('id', id);
       setIsEditModalOpen(false);
     } catch (error) {
-      console.error("Error updating lead details:", error);
+      console.error('Error updating lead details:', error);
     }
   };
   const [usersList, setUsersList] = useState([]);
@@ -556,82 +549,61 @@ const LeadDetails = () => {
 
   useEffect(() => {
     if (!currentUser) return;
-    const unsubTeams = onSnapshot(collection(db, 'teams'), (snapshot) => {
-      setTeams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-    return () => unsubTeams();
+    const fetchTeams = async () => {
+      const { data } = await supabase.from('teams').select('*');
+      setTeams(data || []);
+    };
+    fetchTeams();
   }, [currentUser]);
 
   useEffect(() => {
     if (!id || !currentUser) return;
 
-    let unsubLead = () => {};
-    
-    // 1. Fetch all users to check hierarchy
-    const unsubUsers = onSnapshot(collection(db, 'users'), (userSnapshot) => {
-      const allUsers = userSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setUsersList(allUsers);
+    const fetchLeadAndUsers = async () => {
+      const { data: allUsers } = await supabase.from('users').select('*');
+      setUsersList(allUsers || []);
       const isAdmin = ['Admin', 'MD', 'System Admin'].includes(currentUser?.role);
 
-      // Clean up previous lead subscription if any
-      unsubLead();
-
-      // 2. Fetch the lead
-      const docRef = doc(db, 'leads', id);
-      unsubLead = onSnapshot(docRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const leadData = { id: docSnap.id, ...docSnap.data() };
-          
-          if (isAdmin) {
+      const { data: leadData } = await supabase.from('leads').select('*').eq('id', id).maybeSingle();
+      if (leadData) {
+        if (isAdmin) {
+          setLead(leadData);
+          setIsAuthorized(true);
+        } else {
+          const allowedUids = getAllowedTransferUids(currentUser, allUsers || [], teams);
+          if (allowedUids.includes(leadData.assigned_to || leadData.assignedTo)) {
             setLead(leadData);
             setIsAuthorized(true);
           } else {
-            const currentUid = currentUser?.uid || currentUser?.id;
-            const allowedUids = getAllowedTransferUids(currentUser, allUsers, teams);
-            if (allowedUids.includes(leadData.assignedTo)) {
-              setLead(leadData);
-              setIsAuthorized(true);
-            } else {
-              setIsAuthorized(false);
-            }
+            setIsAuthorized(false);
           }
-        } else {
-          setLead(null);
         }
-        setIsLoading(false);
-      }, (error) => {
-        console.error("Error fetching lead:", error);
-        setIsLoading(false);
-      });
-    }, (error) => {
-      console.error("Error fetching users:", error);
+      } else {
+        setLead(null);
+      }
       setIsLoading(false);
-    });
-
-    return () => {
-      unsubUsers();
-      unsubLead();
     };
+
+    fetchLeadAndUsers();
+    const ch = supabase.channel(`lead-detail-${id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads', filter: `id=eq.${id}` }, fetchLeadAndUsers)
+      .subscribe();
+    return () => supabase.removeChannel(ch);
   }, [id, currentUser, teams]);
 
   // Fetch Deals
   useEffect(() => {
     if (!id) return;
-    const qDeals = query(
-      collection(db, 'deals'),
-      where('leadId', '==', id)
-    );
-
-    const unsubDeals = onSnapshot(qDeals, (snapshot) => {
-      const dealsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setDeals(dealsList);
+    const fetchDeals = async () => {
+      const { data } = await supabase.from('deals').select('*').or(`lead_id.eq.${id},leadId.eq.${id}`);
+      setDeals(data || []);
       setLoadingDeals(false);
-    }, (error) => {
-      console.error("Error fetching deals:", error);
-      setLoadingDeals(false);
-    });
-
-    return () => unsubDeals();
+    };
+    fetchDeals();
+    const ch = supabase.channel(`lead-deals-${id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'deals' }, fetchDeals)
+      .subscribe();
+    return () => supabase.removeChannel(ch);
   }, [id]);
 
   const [rawProjectsList, setRawProjectsList] = useState([]);
@@ -639,11 +611,10 @@ const LeadDetails = () => {
   useEffect(() => {
     const fetchProjects = async () => {
       try {
-        const q = query(collection(db, 'projects'), orderBy('projectName', 'asc'));
-        const querySnapshot = await getDocs(q);
-        setRawProjectsList(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        const { data } = await supabase.from('projects').select('*').order('project_name', { ascending: true });
+        setRawProjectsList(data || []);
       } catch (err) {
-        console.error("Error fetching projects in LeadDetails:", err);
+        console.error('Error fetching projects in LeadDetails:', err);
       }
     };
     fetchProjects();
@@ -653,21 +624,18 @@ const LeadDetails = () => {
     const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'MD' || currentUser?.role === 'System Admin';
     if (isAdmin) return rawProjectsList;
 
-    const userName = currentUser?.fullName || currentUser?.name || '';
-    const userTeams = teams.filter(team => 
-      (team.members && team.members.includes(userName)) || 
-      (team.teamLeads && team.teamLeads.includes(userName)) || 
-      team.teamLead === userName
+    const userName = currentUser?.full_name || currentUser?.fullName || currentUser?.name || '';
+    const userTeams = teams.filter(team =>
+      (team.members && team.members.includes(userName)) ||
+      (team.team_leads && team.team_leads.includes(userName)) ||
+      (team.teamLeads && team.teamLeads.includes(userName)) ||
+      team.team_lead === userName || team.teamLead === userName
     );
 
     if (userTeams.length > 0) {
       const assignedProjects = [];
-      userTeams.forEach(t => {
-        if (t.assignedProjects) {
-          assignedProjects.push(...t.assignedProjects);
-        }
-      });
-      return rawProjectsList.filter(p => assignedProjects.includes(p.projectName));
+      userTeams.forEach(t => { if (t.assigned_projects || t.assignedProjects) assignedProjects.push(...(t.assigned_projects || t.assignedProjects)); });
+      return rawProjectsList.filter(p => assignedProjects.includes(p.project_name || p.projectName));
     }
 
     return rawProjectsList;
@@ -676,26 +644,20 @@ const LeadDetails = () => {
   // Fetch Payments
   useEffect(() => {
     if (!id) return;
-    const qPayments = query(
-      collection(db, 'payments'),
-      where('leadId', '==', id)
-    );
-
-    const unsubPayments = onSnapshot(qPayments, (snapshot) => {
-      const paymentsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setPayments(paymentsList);
+    const fetchPayments = async () => {
+      const { data } = await supabase.from('payments').select('*').or(`lead_id.eq.${id},leadId.eq.${id}`);
+      setPayments(data || []);
       setLoadingPayments(false);
-    }, (error) => {
-      console.error("Error fetching payments:", error);
-      setLoadingPayments(false);
-    });
-
-    return () => unsubPayments();
+    };
+    fetchPayments();
+    const ch = supabase.channel(`lead-payments-${id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, fetchPayments)
+      .subscribe();
+    return () => supabase.removeChannel(ch);
   }, [id]);
 
   const handleFollowUpConfirm = async (data) => {
     try {
-      const leadRef = doc(db, 'leads', id);
       const now = new Date();
       const historyEntry = {
         date: now.toISOString().split('T')[0],
@@ -703,51 +665,52 @@ const LeadDetails = () => {
         type: data.isAppointment ? 'Appointment' : 'Follow-up',
         note: data.note,
         status: lead?.status || 'Fresh Lead',
-        createdBy: currentUser?.fullName || currentUser?.name || 'User',
+        createdBy: currentUser?.full_name || currentUser?.fullName || currentUser?.name || 'User',
         interests: data.interests || []
       };
 
+      const newHistory = [...(lead.history || []), historyEntry];
+
       const updatePayload = {
         status: lead.status === 'Fresh Lead' ? 'Follow Up' : lead.status,
-        nextFollowUpDate: data.nextFollowUp || lead.nextFollowUpDate || '',
-        nextFollowUpTime: data.appointmentTime || lead.nextFollowUpTime || '09:00 AM',
+        next_follow_up_date: data.nextFollowUp || lead.next_follow_up_date || lead.nextFollowUpDate || '',
+        next_follow_up_time: data.appointmentTime || lead.next_follow_up_time || lead.nextFollowUpTime || '09:00 AM',
         priority: data.priority,
-        history: arrayUnion(historyEntry),
-        updatedAt: serverTimestamp(),
+        history: newHistory,
+        updated_at: new Date().toISOString(),
         interests: data.interests || []
       };
 
       if (data.isAppointment) {
-        updatePayload.visitDate = data.appointmentDate;
-        updatePayload.visitTime = data.appointmentTime;
-        updatePayload.visitLocation = data.appointmentLocation;
-        updatePayload.visitNote = data.note;
-        updatePayload.visitStatus = 'Confirmed';
+        updatePayload.visit_date = data.appointmentDate;
+        updatePayload.visit_time = data.appointmentTime;
+        updatePayload.visit_location = data.appointmentLocation;
+        updatePayload.visit_note = data.note;
+        updatePayload.visit_status = 'Confirmed';
       }
 
-      if (data.assignedTo && data.assignedTo !== lead.assignedTo) {
-        updatePayload.assignedTo = data.assignedTo;
+      if (data.assignedTo && data.assignedTo !== (lead.assigned_to || lead.assignedTo)) {
+        updatePayload.assigned_to = data.assignedTo;
         const assigneeUser = teamUsers.find(u => (u.uid || u.id) === data.assignedTo);
         if (assigneeUser) {
-          updatePayload.assignedToName = assigneeUser.fullName || assigneeUser.name;
+          updatePayload.assigned_to_name = assigneeUser.full_name || assigneeUser.fullName || assigneeUser.name;
         }
 
-        // Send notification to the newly assigned person
-        await addDoc(collection(db, 'notifications'), {
-          userId: data.assignedTo,
+        await supabase.from('notifications').insert({
+          user_id: data.assignedTo,
           title: 'Lead Action Assigned',
-          description: `You have been assigned to handle a ${data.isAppointment ? 'Visit' : 'Follow-up'} for ${lead.name} by ${currentUser?.fullName || currentUser?.name}.`,
+          description: `You have been assigned to handle a ${data.isAppointment ? 'Visit' : 'Follow-up'} for ${lead.name} by ${currentUser?.full_name || currentUser?.fullName || currentUser?.name}.`,
           type: 'lead',
-          isRead: false,
-          createdAt: serverTimestamp(),
+          is_read: false,
+          created_at: new Date().toISOString(),
           link: `/leads/details/${id}`
         });
       }
 
-      await updateDoc(leadRef, updatePayload);
+      await supabase.from('leads').update(updatePayload).eq('id', id);
       setShowFollowUpModal(false);
     } catch (error) {
-      console.error("Error updating follow-up:", error);
+      console.error('Error updating follow-up:', error);
     }
   };
 
@@ -828,72 +791,59 @@ const LeadDetails = () => {
     e.preventDefault();
     try {
       const selectedProject = projectsList.find(p => p.id === dealData.projectId);
-      const projectName = selectedProject ? selectedProject.projectName : 'General Project';
+      const projectName = selectedProject ? (selectedProject.project_name || selectedProject.projectName || 'General Project') : 'General Project';
       const calculatedInstallments = generateInstallments();
 
-      // 1. Add Deal Document
-      await addDoc(collection(db, 'deals'), {
-        leadId: id,
-        leadName: lead?.name || 'Unknown Lead',
-        projectId: dealData.projectId,
-        projectName: projectName,
-        unitNo: dealData.unitNo,
-        floorSize: parseFloat(dealData.floorSize || 0),
-        pricePerSqft: parseFloat(dealData.pricePerSqft || 0),
+      await supabase.from('deals').insert({
+        lead_id: id,
+        lead_name: lead?.name || 'Unknown Lead',
+        project_id: dealData.projectId,
+        project_name: projectName,
+        unit_no: dealData.unitNo,
+        floor_size: parseFloat(dealData.floorSize || 0),
+        price_per_sqft: parseFloat(dealData.pricePerSqft || 0),
         value: parseFloat(dealData.value || 0),
-        downPaymentPercent: parseFloat(dealData.downPaymentPercent || 0),
-        downPaymentAmount: parseFloat(dealData.downPaymentAmount || 0),
-        downPaymentDate: dealData.downPaymentDate,
-        incentiveThresholdPercent: parseFloat(dealData.incentiveThresholdPercent || 0),
-        hasTeamIncentive: dealData.hasTeamIncentive,
-        teamShares: dealData.hasTeamIncentive ? teamShares : [],
-        numberOfInstallments: parseInt(dealData.numberOfInstallments || 0),
-        installmentStartDate: dealData.installmentStartDate,
+        down_payment_percent: parseFloat(dealData.downPaymentPercent || 0),
+        down_payment_amount: parseFloat(dealData.downPaymentAmount || 0),
+        down_payment_date: dealData.downPaymentDate,
+        incentive_threshold_percent: parseFloat(dealData.incentiveThresholdPercent || 0),
+        has_team_incentive: dealData.hasTeamIncentive,
+        team_shares: dealData.hasTeamIncentive ? teamShares : [],
+        number_of_installments: parseInt(dealData.numberOfInstallments || 0),
+        installment_start_date: dealData.installmentStartDate,
         installments: calculatedInstallments,
         status: dealData.status,
-        createdAt: serverTimestamp(),
-        createdBy: currentUser?.uid || currentUser?.id,
-        createdByName: currentUser?.fullName || currentUser?.name
+        created_at: new Date().toISOString(),
+        created_by: currentUser?.uid || currentUser?.id,
+        created_by_name: currentUser?.full_name || currentUser?.fullName || currentUser?.name
       });
 
-      // 2. Decrement Project Apartment Quantity
       if (dealData.projectId) {
-        const projectRef = doc(db, 'projects', dealData.projectId);
-        const currentQty = parseInt(selectedProject?.totalApartments || 0);
+        const currentQty = parseInt(selectedProject?.total_apartments || selectedProject?.totalApartments || 0);
         if (currentQty > 0) {
-          await updateDoc(projectRef, {
-            totalApartments: currentQty - 1,
-            updatedAt: serverTimestamp()
-          });
+          await supabase.from('projects').update({
+            total_apartments: currentQty - 1,
+            updated_at: new Date().toISOString()
+          }).eq('id', dealData.projectId);
         }
       }
 
-      // 3. Update Lead Status to 'Sold'
-      const leadRef = doc(db, 'leads', id);
-      await updateDoc(leadRef, {
+      await supabase.from('leads').update({
         status: 'Sold',
-        updatedAt: serverTimestamp()
-      });
+        updated_at: new Date().toISOString()
+      }).eq('id', id);
 
       setShowDealModal(false);
       setTeamShares([]);
       setDealData({
-        projectId: '',
-        unitNo: '',
-        floorSize: '',
-        pricePerSqft: '',
-        value: '',
-        downPaymentPercent: '20',
-        downPaymentAmount: '',
+        projectId: '', unitNo: '', floorSize: '', pricePerSqft: '', value: '',
+        downPaymentPercent: '20', downPaymentAmount: '',
         downPaymentDate: new Date().toISOString().split('T')[0],
-        incentiveThresholdPercent: '30',
-        hasTeamIncentive: false,
-        status: 'Confirmed',
-        numberOfInstallments: '',
-        installmentStartDate: new Date().toISOString().split('T')[0]
+        incentiveThresholdPercent: '30', hasTeamIncentive: false, status: 'Confirmed',
+        numberOfInstallments: '', installmentStartDate: new Date().toISOString().split('T')[0]
       });
     } catch (error) {
-      console.error("Error creating deal:", error);
+      console.error('Error creating deal:', error);
     }
   };
 
@@ -901,15 +851,15 @@ const LeadDetails = () => {
   const handlePaymentSubmit = async (e) => {
     e.preventDefault();
     try {
-      await addDoc(collection(db, 'payments'), {
+      await supabase.from('payments').insert({
         ...paymentData,
-        leadId: id,
-        createdAt: serverTimestamp()
+        lead_id: id,
+        created_at: new Date().toISOString()
       });
       setShowPaymentModal(false);
       setPaymentData({ amount: '', type: 'Cash', status: 'Completed', date: new Date().toISOString().split('T')[0] });
     } catch (error) {
-      console.error("Error recording payment:", error);
+      console.error('Error recording payment:', error);
     }
   };
 

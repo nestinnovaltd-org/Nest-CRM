@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { db } from '../lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Search, X, Phone, Mail, Building2, User, Briefcase, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -63,37 +62,14 @@ const CustomerSearch = ({ isOpen, onClose }) => {
     setHasSearched(true);
 
     try {
-      const leadsRef = collection(db, 'leads');
-      const snapshot = await getDocs(leadsRef);
+      const termLower = `%${term.toLowerCase().trim()}%`;
+      const { data: leads } = await supabase.from('leads').select('*')
+        .or(`full_name.ilike.${termLower},phone.ilike.${termLower},email.ilike.${termLower}`);
 
-      const termLower = term.toLowerCase().trim();
-      const matched = [];
-
-      snapshot.forEach(doc => {
-        const d = { id: doc.id, ...doc.data() };
-
-        // Only show leads owned by or assigned to the current user
-        const isOwner = d.ownerId === user?.uid;
-        const isAssigned = d.assignedTo === user?.uid;
-        if (!isOwner && !isAssigned) return;
-
-        const fields = [
-          d.name, d.designation, d.company,
-          d.organization, d.phone, d.email, d.area, d.location
-        ].map(f => (f || '').toLowerCase());
-
-        if (fields.some(f => f.includes(termLower))) {
-          matched.push(d);
-        }
-      });
-
-      // Sort: exact name matches first
-      matched.sort((a, b) => {
-        const aName = (a.name || '').toLowerCase();
-        const bName = (b.name || '').toLowerCase();
-        const aExact = aName.startsWith(termLower) ? 0 : 1;
-        const bExact = bName.startsWith(termLower) ? 0 : 1;
-        return aExact - bExact;
+      const matched = (leads || []).filter(d => {
+        const isOwner = d.owner_id === user?.uid || d.ownerId === user?.uid;
+        const isAssigned = d.assigned_to === user?.uid || d.assignedTo === user?.uid;
+        return isOwner || isAssigned;
       });
 
       setResults(matched.slice(0, 50));

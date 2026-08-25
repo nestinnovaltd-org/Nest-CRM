@@ -15,15 +15,7 @@ import {
   Save
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { db } from '../lib/firebase';
-import { 
-  collection, 
-  addDoc, 
-  serverTimestamp, 
-  doc, 
-  getDoc, 
-  updateDoc 
-} from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { toast } from 'react-hot-toast';
 import { sendEmail } from '../lib/emailService';
 import './Alerts.css';
@@ -58,15 +50,14 @@ const AlertsPage = () => {
     const fetchSettings = async () => {
       if (!user) return;
       try {
-        const userRef = doc(db, 'users', user.uid);
-        const userSnap = await getDoc(userRef);
-        if (userSnap.exists() && userSnap.data().notificationSettings) {
-          const settings = userSnap.data().notificationSettings;
+        const { data: userDoc } = await supabase.from('users').select('notification_settings').eq('id', user.uid).maybeSingle();
+        if (userDoc?.notification_settings) {
+          const settings = userDoc.notification_settings;
           if (settings.followUpAlerts) setFollowUpAlerts(settings.followUpAlerts);
           if (settings.mailAlerts) setMailAlerts(settings.mailAlerts);
         }
       } catch (error) {
-        console.error("Error fetching settings:", error);
+        console.error('Error fetching settings:', error);
       } finally {
         setIsLoading(false);
       }
@@ -80,18 +71,17 @@ const AlertsPage = () => {
     if (!user || isSaving) return;
     try {
       setIsSaving(true);
-      const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, {
-        notificationSettings: {
+      await supabase.from('users').update({
+        notification_settings: {
           followUpAlerts,
           mailAlerts,
-          updatedAt: serverTimestamp()
+          updatedAt: new Date().toISOString()
         }
-      });
+      }).eq('id', user.uid);
       setHasChanges(false);
       toast.success('Configurations saved successfully!');
     } catch (error) {
-      console.error("Error saving configurations:", error);
+      console.error('Error saving configurations:', error);
       toast.error('Failed to save configurations.');
     } finally {
       setIsSaving(false);
@@ -102,18 +92,18 @@ const AlertsPage = () => {
     if (!user || isSendingTest) return;
     try {
       setIsSendingTest(true);
-      await addDoc(collection(db, 'notifications'), {
-        userId: user.uid,
+      await supabase.from('notifications').insert({
+        user_id: user.uid,
         title: 'Test Notification',
         description: 'This is a test notification to verify the functional system.',
         type: 'info',
-        isRead: false,
-        createdAt: serverTimestamp(),
+        is_read: false,
+        created_at: new Date().toISOString(),
         link: '/notifications/alerts'
       });
       toast.success('Test notification sent! Check your header bell icon.');
     } catch (error) {
-      console.error("Error sending test notification:", error);
+      console.error('Error sending test notification:', error);
       toast.error('Failed to send test notification.');
     } finally {
       setIsSendingTest(false);

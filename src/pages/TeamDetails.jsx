@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { db } from '../lib/firebase';
-import { doc, onSnapshot, collection, query, where } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import DashboardLayout from '../layouts/DashboardLayout';
 import { useAuth } from '../context/AuthContext';
 import Button from '../components/ui/Button';
@@ -35,40 +34,39 @@ const TeamDetailsPage = () => {
   useEffect(() => {
     if (!id) return;
 
-    const unsubscribeTeam = onSnapshot(doc(db, 'teams', id), (docSnapshot) => {
-      if (docSnapshot.exists()) {
-        const teamData = { id: docSnapshot.id, ...docSnapshot.data() };
-        setTeam(teamData);
+    const fetchTeam = async () => {
+      const { data: teamData } = await supabase.from('teams').select('*').eq('id', id).single();
+      if (!teamData) { setIsLoading(false); return; }
+      setTeam(teamData);
 
-        // Fetch lead details
-        const primaryLeadName = (teamData.teamLeads && teamData.teamLeads.length > 0)
-          ? teamData.teamLeads[0]
-          : teamData.teamLead;
+      // Fetch lead details
+      const primaryLeadName = (teamData.teamLeads && teamData.teamLeads.length > 0)
+        ? teamData.teamLeads[0]
+        : teamData.teamLead;
 
-        if (primaryLeadName) {
-          const qLead = query(collection(db, 'users'), where('fullName', '==', primaryLeadName));
-          onSnapshot(qLead, (snap) => {
-            if (!snap.empty) {
-              setLeadDetails(snap.docs[0].data());
-            }
-          });
-        }
-
-        // Fetch members details
-        if (teamData.members && teamData.members.length > 0) {
-          const qMembers = query(collection(db, 'users'), where('fullName', 'in', teamData.members));
-          onSnapshot(qMembers, (snap) => {
-            setMembersData(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-          });
-        }
-        
-        setIsLoading(false);
-      } else {
-        setIsLoading(false);
+      if (primaryLeadName) {
+        const { data: leadUser } = await supabase
+          .from('users').select('*').eq('full_name', primaryLeadName).maybeSingle();
+        if (leadUser) setLeadDetails(leadUser);
       }
-    });
 
-    return () => unsubscribeTeam();
+      // Fetch members details
+      if (teamData.members && teamData.members.length > 0) {
+        const { data: membersResult } = await supabase
+          .from('users').select('*').in('full_name', teamData.members);
+        setMembersData(membersResult || []);
+      }
+
+      setIsLoading(false);
+    };
+
+    fetchTeam();
+
+    const channel = supabase.channel(`team-details-${id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teams', filter: `id=eq.${id}` }, fetchTeam)
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
   }, [id]);
 
   const canEditTeam = hasPermission('Team Management', 'edit');

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
-import { collection, onSnapshot, query, where, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../layouts/DashboardLayout';
 import LeadTabs from '../components/LeadTabs';
@@ -34,54 +33,34 @@ const JunkLeads = () => {
 
   useEffect(() => {
     if (!user) return;
-
     const isAdmin = user.role === 'Admin' || user.role === 'MD' || user.role === 'System Admin';
-    let q;
 
-    if (isAdmin) {
-      q = query(
-        collection(db, 'leads'),
-        where('status', '==', 'Released')
-      );
-    } else {
-      q = query(
-        collection(db, 'leads'),
-        where('status', '==', 'Released'),
-        where('assignedTo', '==', user.uid)
-      );
-    }
-
-    const unsubscribeLeads = onSnapshot(q, (snapshot) => {
-      let list = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
-      setDroppedLeads(list);
+    const fetchLeads = async () => {
+      let query = supabase.from('leads').select('*').eq('status', 'Released');
+      if (!isAdmin) query = query.eq('assigned_to', user.uid);
+      const { data, error } = await query;
+      if (error) { console.error('Error fetching junk leads:', error); }
+      else { setDroppedLeads(data || []); }
       setIsLoading(false);
-    }, (error) => {
-      console.error("Error fetching junk leads:", error);
-      setIsLoading(false);
-    });
+    };
 
-    return () => unsubscribeLeads();
+    fetchLeads();
+    const ch = supabase.channel('junk-leads')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, fetchLeads)
+      .subscribe();
+
+    return () => supabase.removeChannel(ch);
   }, [user]);
 
   // Fetch projects for filtering
   useEffect(() => {
-    const unsubTeams = onSnapshot(collection(db, 'teams'), (snapshot) => {
-      setTeams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-
-    const unsubProjects = onSnapshot(collection(db, 'projects'), (snapshot) => {
-      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setRawProjects(list);
-    });
-
-    return () => {
-      unsubTeams();
-      unsubProjects();
+    const fetchFilters = async () => {
+      const { data: teamsData } = await supabase.from('teams').select('*');
+      setTeams(teamsData || []);
+      const { data: projectsData } = await supabase.from('projects').select('*');
+      setRawProjects(projectsData || []);
     };
+    fetchFilters();
   }, []);
 
   const projects = React.useMemo(() => {

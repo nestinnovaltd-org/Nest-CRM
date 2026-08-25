@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
-import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import DashboardLayout from '../layouts/DashboardLayout';
 import Button from '../components/ui/Button';
@@ -59,21 +58,16 @@ const EditProjectPage = () => {
     const fetchProject = async () => {
       if (!id) return;
       try {
-        const docRef = doc(db, 'projects', id);
-        const docSnap = await getDoc(docRef);
-        
-        if (docSnap.exists()) {
-          setFormData({
-            ...docSnap.data(),
-            id: docSnap.id
-          });
-        } else {
-          showToast("Project not found", "error");
+        const { data, error } = await supabase.from('projects').select('*').eq('id', id).single();
+        if (error || !data) {
+          showToast('Project not found', 'error');
           setTimeout(() => navigate('/projects'), 2000);
+        } else {
+          setFormData({ ...data });
         }
       } catch (error) {
-        console.error("Error fetching project:", error);
-        showToast("Error loading project data", "error");
+        console.error('Error fetching project:', error);
+        showToast('Error loading project data', 'error');
       }
     };
 
@@ -142,16 +136,16 @@ const EditProjectPage = () => {
     e.preventDefault();
     try {
       setIsSubmitting(true);
-      const projectRef = doc(db, 'projects', id);
-      await updateDoc(projectRef, {
+      const { error } = await supabase.from('projects').update({
         ...formData,
-        updatedAt: serverTimestamp()
-      });
-      showToast("Project updated successfully!", "success");
+        updated_at: new Date().toISOString()
+      }).eq('id', id);
+      if (error) throw error;
+      showToast('Project updated successfully!', 'success');
       setTimeout(() => navigate('/projects'), 1500);
     } catch (error) {
-      console.error("Error updating project:", error);
-      showToast("Failed to update project", "error");
+      console.error('Error updating project:', error);
+      showToast('Failed to update project', 'error');
     } finally {
       setIsSubmitting(false);
     }

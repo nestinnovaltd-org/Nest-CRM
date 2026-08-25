@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { db } from '../lib/firebase';
-import { collection, onSnapshot, query, where, orderBy } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../layouts/DashboardLayout';
 import { 
@@ -58,45 +57,31 @@ const SalesPipeline = () => {
   useEffect(() => {
     if (!currentUser) return;
 
-    const unsubUsers = onSnapshot(collection(db, 'users'), (userSnapshot) => {
-      const allUsers = userSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      const isAdmin = currentUser.role === 'Admin' || currentUser.role === 'MD' || currentUser.role === 'System Admin';
-      
-      let q;
-      let allowedUids = [];
+    const isAdmin = currentUser.role === 'Admin' || currentUser.role === 'MD' || currentUser.role === 'System Admin';
 
-      if (isAdmin) {
-        q = query(collection(db, 'leads'));
-      } else {
-        allowedUids = getSubordinateUids(allUsers, currentUser.uid);
-        if (allowedUids.length <= 30) {
-          q = query(
-            collection(db, 'leads'),
-            where('assignedTo', 'in', allowedUids)
-          );
-        } else {
-          q = query(collection(db, 'leads'));
+    const fetchData = async () => {
+      const { data: allUsers } = await supabase.from('users').select('*');
+      const users = allUsers || [];
+
+      let query = supabase.from('leads').select('*');
+      if (!isAdmin) {
+        const allowedUids = getSubordinateUids(users, currentUser.uid);
+        if (allowedUids.length > 0) {
+          query = query.in('assigned_to', allowedUids);
         }
       }
+      const { data: leadsData } = await query;
+      setLeads(leadsData || []);
+      setIsLoading(false);
+    };
 
-      const unsubscribeLeads = onSnapshot(q, (snapshot) => {
-        let list = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+    fetchData();
 
-        if (!isAdmin && allowedUids.length > 30) {
-          list = list.filter(l => allowedUids.includes(l.assignedTo));
-        }
+    const leadsChannel = supabase.channel('pipeline-leads')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, fetchData)
+      .subscribe();
 
-        setLeads(list);
-        setIsLoading(false);
-      });
-
-      return () => unsubscribeLeads();
-    });
-
-    return () => unsubUsers();
+    return () => supabase.removeChannel(leadsChannel);
   }, [currentUser]);
 
   const onDragStart = (e, id) => {

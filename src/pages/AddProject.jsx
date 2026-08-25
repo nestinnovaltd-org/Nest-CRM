@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { db } from '../lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { useNavigate, Link } from 'react-router-dom';
 import DashboardLayout from '../layouts/DashboardLayout';
 import Button from '../components/ui/Button';
@@ -119,16 +118,17 @@ const AddProjectPage = () => {
     e.preventDefault();
     try {
       setIsSubmitting(true);
-      await addDoc(collection(db, 'projects'), {
+      const { error } = await supabase.from('projects').insert({
         ...formData,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       });
-      showToast("Project created successfully!", "success");
+      if (error) throw error;
+      showToast('Project created successfully!', 'success');
       setTimeout(() => navigate('/projects'), 1500);
     } catch (error) {
-      console.error("Error creating project:", error);
-      showToast("Failed to create project. Check permissions.", "error");
+      console.error('Error creating project:', error);
+      showToast('Failed to create project. Check permissions.', 'error');
     } finally {
       setIsSubmitting(false);
     }

@@ -1,8 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db, firebaseConfig } from '../lib/firebase';
-import { initializeApp, deleteApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
-import { collection, addDoc, serverTimestamp, onSnapshot, query, orderBy, doc, setDoc } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../layouts/DashboardLayout';
 import Button from '../components/ui/Button';
@@ -65,25 +62,15 @@ const AddUserPage = () => {
 
   // Load Roles & Potential Managers
   useEffect(() => {
-    // Load Roles
-    const qRoles = query(collection(db, 'roles'), orderBy('level', 'desc'));
-    const unsubRoles = onSnapshot(qRoles, (snapshot) => {
-      const rolesList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setRoles(rolesList);
-    });
+    const fetchData = async () => {
+      const { data: rolesData } = await supabase.from('roles').select('*').order('level', { ascending: false });
+      setRoles(rolesData || []);
 
-    // Load Users (for Reports To)
-    const qUsers = query(collection(db, 'users'), orderBy('fullName', 'asc'));
-    const unsubUsers = onSnapshot(qUsers, (snapshot) => {
-      const usersList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setUsers(usersList);
+      const { data: usersData } = await supabase.from('users').select('*').order('full_name', { ascending: true });
+      setUsers(usersData || []);
       setIsLoading(false);
-    });
-
-    return () => {
-      unsubRoles();
-      unsubUsers();
     };
+    fetchData();
   }, []);
 
   // When role changes, sync permissions preview
@@ -155,34 +142,48 @@ const AddUserPage = () => {
   const handleSubmit = async (e, addAnother = false) => {
     e?.preventDefault();
     if (!password) {
-      alert("Please generate or enter a password for the user.");
+      alert('Please generate or enter a password for the user.');
       setCurrentStep(2);
       return;
     }
 
     try {
       setIsSubmitting(true);
-      
 
-      const tempAppName = `temp-app-${Date.now()}`;
-      const tempApp = initializeApp(firebaseConfig, tempAppName);
-      const tempAuth = getAuth(tempApp);
-
-      const userCredential = await createUserWithEmailAndPassword(tempAuth, formData.email, password);
-      const newUser = userCredential.user;
-
-      await setDoc(doc(db, 'users', newUser.uid), {
-        ...formData,
-        uid: newUser.uid,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+      // Create user in Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: password,
+        options: {
+          data: {
+            full_name: formData.fullName,
+            role: formData.role
+          }
+        }
       });
 
-      await signOut(tempAuth);
-      await deleteApp(tempApp);
+      if (authError) throw authError;
+      const newUserId = authData.user?.id;
+
+      // Store user profile in users table
+      await supabase.from('users').upsert({
+        id: newUserId,
+        full_name: formData.fullName,
+        email: formData.email,
+        phone: formData.phone,
+        username: formData.username,
+        role: formData.role,
+        reports_to: formData.reportsTo,
+        send_email: formData.sendEmail,
+        status: formData.status,
+        permissions: formData.permissions,
+        uid: newUserId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
 
       alert(`✅ User ${formData.fullName} created successfully!`);
-      
+
       if (addAnother) {
         setFormData({
           fullName: '',
@@ -201,10 +202,10 @@ const AddUserPage = () => {
         navigate('/users/all');
       }
     } catch (error) {
-      console.error("Error creating user:", error);
-      let message = "Failed to create user.";
-      if (error.code === 'auth/email-already-in-use') message = "This email is already registered.";
-      if (error.code === 'auth/weak-password') message = "The password is too weak.";
+      console.error('Error creating user:', error);
+      let message = 'Failed to create user.';
+      if (error.message?.includes('already registered') || error.message?.includes('already been registered')) message = 'This email is already registered.';
+      if (error.message?.includes('weak') || error.message?.includes('short')) message = 'The password is too weak (min 6 characters).';
       alert(`❌ Error: ${message}\n${error.message}`);
     } finally {
       setIsSubmitting(false);

@@ -25,9 +25,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { db, auth } from '../lib/firebase';
-import { doc, onSnapshot, updateDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
-import { updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
+import { supabase } from '../lib/supabase';
 import Toast from '../components/ui/Toast';
 import './Profile.css';
 
@@ -76,10 +74,10 @@ const ProfilePage = () => {
   useEffect(() => {
     if (!user?.uid) return;
 
-    const unsubscribe = onSnapshot(doc(db, 'users', user.uid), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        const fullName = data.fullName || data.name || '';
+    const fetchUserProfile = async () => {
+      const { data } = await supabase.from('users').select('*').eq('id', user.uid).maybeSingle();
+      if (data) {
+        const fullName = data.full_name || data.fullName || data.name || '';
         setUserData({
           name: fullName,
           email: data.email || user?.email || '',
@@ -89,8 +87,8 @@ const ProfilePage = () => {
           bio: data.bio || '',
           avatar: data.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(fullName || 'User')}&background=26e264&color=000&bold=true`,
           banner: data.banner || '',
-          joinedAt: data.createdAt || null,
-          reportsTo: data.reportsTo || ''
+          joinedAt: data.created_at || data.createdAt || null,
+          reportsTo: data.reports_to || data.reportsTo || ''
         });
         setEditData({
           name: fullName,
@@ -100,13 +98,13 @@ const ProfilePage = () => {
         });
       }
       setLoading(false);
-    }, (error) => {
-      console.error("Profile listen error:", error);
-      showToast("Failed to sync profile data", "error");
-      setLoading(false);
-    });
+    };
 
-    return () => unsubscribe();
+    fetchUserProfile();
+    const ch = supabase.channel('profile-user')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users', filter: `id=eq.${user.uid}` }, fetchUserProfile)
+      .subscribe();
+    return () => supabase.removeChannel(ch);
   }, [user?.uid]);
 
   // Load real lead stats
@@ -114,14 +112,13 @@ const ProfilePage = () => {
     if (!user?.uid) return;
     const fetchStats = async () => {
       try {
-        const leadsQ = query(collection(db, 'leads'), where('assignedTo', '==', user.uid));
-        const snap = await getDocs(leadsQ);
-        const leads = snap.docs.map(d => d.data());
+        const { data: leads } = await supabase.from('leads').select('*').or(`assigned_to.eq.${user.uid},assignedTo.eq.${user.uid}`);
+        const l = leads || [];
         setLeadStats({
-          total: leads.length,
-          followUps: leads.filter(l => l.nextFollowUpDate).length,
-          visits: leads.filter(l => l.visitDate).length,
-          deals: leads.filter(l => l.status === 'Deal Confirmed').length,
+          total: l.length,
+          followUps: l.filter(ld => ld.next_follow_up_date || ld.nextFollowUpDate).length,
+          visits: l.filter(ld => ld.visit_date || ld.visitDate).length,
+          deals: l.filter(ld => ld.status === 'Deal Confirmed').length,
         });
       } catch (e) {
         console.error('Stats fetch error:', e);
@@ -144,7 +141,7 @@ const ProfilePage = () => {
     if (!file || !user?.uid) return;
 
     if (file.size > 800 * 1024) {
-      showToast("File is too large. Max 800KB allowed.", "error");
+      showToast('File is too large. Max 800KB allowed.', 'error');
       return;
     }
 
@@ -158,15 +155,14 @@ const ProfilePage = () => {
       });
 
       const base64String = await base64Promise;
-      const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, {
+      await supabase.from('users').update({
         [type === 'avatar' ? 'avatar' : 'banner']: base64String,
-        updatedAt: serverTimestamp()
-      });
-      showToast(`${type === 'avatar' ? 'Profile picture' : 'Cover photo'} updated!`, "success");
+        updated_at: new Date().toISOString()
+      }).eq('id', user.uid);
+      showToast(`${type === 'avatar' ? 'Profile picture' : 'Cover photo'} updated!`, 'success');
     } catch (error) {
-      console.error("Upload error:", error);
-      showToast("Failed to process image", "error");
+      console.error('Upload error:', error);
+      showToast('Failed to process image', 'error');
     } finally {
       setUploading({ type: null, status: false });
       e.target.value = '';
@@ -177,19 +173,18 @@ const ProfilePage = () => {
     if (!user?.uid) return;
     setIsSaving(true);
     try {
-      const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, {
-        fullName: editData.name,
+      await supabase.from('users').update({
+        full_name: editData.name,
         phone: editData.phone,
         location: editData.location,
         bio: editData.bio,
-        updatedAt: serverTimestamp()
-      });
-      showToast("Profile updated successfully!", "success");
+        updated_at: new Date().toISOString()
+      }).eq('id', user.uid);
+      showToast('Profile updated successfully!', 'success');
       setHasChanges(false);
     } catch (error) {
-      console.error("Save error:", error);
-      showToast("Failed to update profile", "error");
+      console.error('Save error:', error);
+      showToast('Failed to update profile', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -216,25 +211,16 @@ const ProfilePage = () => {
 
     setIsUpdatingPassword(true);
     try {
-      const userEmail = auth.currentUser?.email || user?.email;
-      if (!userEmail) throw new Error('User email not found. Please log in again.');
-      
-      const credential = EmailAuthProvider.credential(userEmail, currentPassword);
-      await reauthenticateWithCredential(auth.currentUser, credential);
-      await updatePassword(auth.currentUser, newPassword);
-      
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+
       showToast('Password updated successfully!', 'success');
       setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
       setShowCurrentPassword(false); setShowNewPassword(false); setShowConfirmPassword(false);
       setIsPasswordModalOpen(false);
     } catch (err) {
       console.error('Password update error:', err);
-      let errMsg = 'Failed to update password. Please try again.';
-      if (err.code === 'auth/wrong-password') errMsg = 'Incorrect current password.';
-      else if (err.code === 'auth/requires-recent-login') errMsg = 'Please log in again and retry.';
-      else if (err.code === 'auth/weak-password') errMsg = 'The new password is too weak.';
-      else if (err.message) errMsg = err.message;
-      setPasswordError(errMsg);
+      setPasswordError(err.message || 'Failed to update password. Please try again.');
     } finally {
       setIsUpdatingPassword(false);
     }

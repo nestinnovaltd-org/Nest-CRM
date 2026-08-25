@@ -1,0 +1,186 @@
+.org-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 8px 4px;
+}
+
+.org-header {
+  margin-bottom: 22px;
+}
+
+.org-header h1 {
+  font-size: 22px;
+  color: var(--text-primary);
+  margin: 0 0 6px;
+  font-weight: 700;
+}
+
+.org-header p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.org-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  margin-bottom: 20px;
+}
+
+.org-message.success {
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  color: var(--success);
+}
+
+.org-message.error {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: var(--danger);
+}
+
+.org-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.org-col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.org-card {
+  margin-bottom: 0 !important;
+}
+
+.org-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  width: 100%;
+}
+
+.org-label input,
+.org-label textarea,
+.org-label select {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: inherit;
+  outline: none;
+  transition: all 0.2s;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.org-label input:focus,
+.org-label textarea:focus,
+.org-label select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.org-label input::placeholder {
+  color: var(--text-muted);
+}
+
+.form-group-row {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+
+.address-fields-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.address-fields-grid input {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.address-fields-grid input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+/* ─── Theme / Branding Selector ────────────────────────────── */
+.theme-options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.theme-color-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.theme-color-btn:hover {
+  background: var(--surface-hover);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.theme-color-btn.selected {
+  background: var(--surface-elevated);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.theme-color-preview {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.theme-color-btn span {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.org-footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+  padding-bottom: 24px;
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+}
+
+@media (max-width: 900px) {
+  .org-grid {
+    grid-template-columns: 1fr;
+  }
+}

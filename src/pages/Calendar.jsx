@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { db } from '../lib/firebase';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../layouts/DashboardLayout';
 import Card from '../components/ui/Card';
@@ -25,26 +24,14 @@ import {
   LayoutGrid,
   List as ListIcon
 } from 'lucide-react';
-import { doc, updateDoc, arrayUnion, serverTimestamp } from 'firebase/firestore';
+
 import Toast from '../components/ui/Toast';
-import useEventStore from '../store/useEventStore';
 import './Calendar.css';
 
 const formatDateToISOString = (dateVal) => {
   if (!dateVal) return '';
   try {
-    let dateObj;
-    if (dateVal.toDate && typeof dateVal.toDate === 'function') {
-      dateObj = dateVal.toDate();
-    } else {
-      dateObj = new Date(dateVal);
-    }
-    
-    if (isNaN(dateObj.getTime())) {
-      const cleaned = String(dateVal).trim();
-      dateObj = new Date(cleaned);
-    }
-    
+    const dateObj = new Date(dateVal);
     if (!isNaN(dateObj.getTime())) {
       const yyyy = dateObj.getFullYear();
       const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
@@ -52,7 +39,7 @@ const formatDateToISOString = (dateVal) => {
       return `${yyyy}-${mm}-${dd}`;
     }
   } catch (e) {
-    console.error("Error formatting date:", e);
+    console.error('Error formatting date:', e);
   }
   return '';
 };
@@ -86,94 +73,11 @@ const getSafeDate = (dateVal) => {
 };
 
 const CalendarPage = () => {
-  const { user } = useAuth();
+  const { user, currentTenant } = useAuth();
   const [events, setEvents] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [allLeads, setAllLeads] = useState([]);
 
-  const getSubordinateUids = (allUsers, currentUserId) => {
-    const subordinates = allUsers.filter(u => u.reportsTo === currentUserId);
-    let uids = [currentUserId, ...subordinates.map(u => u.id)];
-    
-    subordinates.forEach(sub => {
-      const descendants = getSubordinateUids(allUsers, sub.id);
-      uids = [...uids, ...descendants];
-    });
-    
-    return [...new Set(uids)];
-  };
-
-  useEffect(() => {
-    if (!user) return;
-
-    // Fetch all users to determine hierarchy
-    const unsubUsers = onSnapshot(collection(db, 'users'), (userSnapshot) => {
-      const allUsers = userSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      const isAdmin = user.role === 'Admin' || user.role === 'MD' || user.role === 'System Admin';
-      
-      let q;
-      let allowedUids = [];
-
-      if (isAdmin) {
-        q = query(collection(db, 'leads'));
-      } else {
-        allowedUids = getSubordinateUids(allUsers, user.uid);
-        if (allowedUids.length <= 30) {
-          q = query(
-            collection(db, 'leads'),
-            where('assignedTo', 'in', allowedUids)
-          );
-        } else {
-          q = query(collection(db, 'leads'));
-        }
-      }
-
-      const unsubscribeLeads = onSnapshot(q, (snapshot) => {
-        let leads = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(l => l.status !== 'Released');
-
-        // In-memory filter if allowedUids is large and not admin
-        if (!isAdmin && allowedUids.length > 30) {
-          leads = leads.filter(l => allowedUids.includes(l.assignedTo));
-        }
-
-        setAllLeads(leads);
-
-        const calendarEvents = [];
-        leads.forEach(l => {
-          if (l.visitDate) {
-            const isoVisitDate = formatDateToISOString(l.visitDate);
-            if (isoVisitDate) {
-              const todayStr = new Date().toISOString().split('T')[0];
-              let status = 'upcoming';
-              if (isoVisitDate < todayStr) {
-                status = 'missed';
-              }
-
-              calendarEvents.push({
-                id: `${l.id}-visit`,
-                title: `${l.fullName || l.name} (Visit)`,
-                type: 'Property Visit',
-                start: `${isoVisitDate}T${l.visitTime || '10:00:00'}`,
-                end: `${isoVisitDate}T${l.visitTime ? '12:00:00' : '12:00:00'}`,
-                status: status,
-                location: l.visitLocation || 'Project Site',
-                notes: l.visitNote || 'Scheduled site visit'
-              });
-            }
-          }
-        });
-        
-        setEvents(calendarEvents);
-        setIsLoading(false);
-      }, (error) => {
-        console.error("Error fetching calendar events:", error);
-        setIsLoading(false);
-      });
-
-      return () => unsubscribeLeads();
-    });
-
-    return () => unsubUsers();
-  }, [user]);
   const [viewMode, setViewMode] = useState('month'); // month, week, day
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showAddModal, setShowAddModal] = useState(false);
@@ -183,7 +87,6 @@ const CalendarPage = () => {
   const [rescheduleTime, setRescheduleTime] = useState('');
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [selectedDate, setSelectedDate] = useState('');
-  const [allLeads, setAllLeads] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLead, setSelectedLead] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -206,8 +109,99 @@ const CalendarPage = () => {
     { id: 2, text: 'Site visit scheduled for tomorrow', time: '2h ago', type: 'info', read: true }
   ]);
 
-  // Removed mock events as they are now in useEventStore
-  
+  const loadData = async () => {
+    if (!user) return;
+    setIsLoading(true);
+    try {
+      const isSA = user.account_type === 'super_admin';
+      
+      // Filter by Tenant organization or individual
+      let q = supabase.from('leads').select('*').neq('status', 'Released');
+      
+      if (isSA) {
+        if (currentTenant?.type === 'org') {
+          q = q.eq('org_id', currentTenant.id);
+        } else if (currentTenant?.type === 'individual') {
+          q = q.eq('owner_id', currentTenant.id);
+        }
+      } else {
+        if (user.org_id) {
+          q = q.eq('org_id', user.org_id);
+        } else {
+          q = q.eq('owner_id', user.uid);
+        }
+      }
+
+      const { data: leads, error } = await q;
+      if (error) throw error;
+
+      setAllLeads(leads || []);
+
+      const calendarEvents = [];
+      (leads || []).forEach(l => {
+        // 1. Check for Property Visits
+        const visitDate = l.visit_date || l.visitDate;
+        if (visitDate) {
+          const isoVisitDate = formatDateToISOString(visitDate);
+          if (isoVisitDate) {
+            const todayStr = new Date().toISOString().split('T')[0];
+            let status = 'upcoming';
+            if (isoVisitDate < todayStr) {
+              status = 'missed';
+            }
+
+            calendarEvents.push({
+              id: `${l.id}-visit`,
+              leadId: l.id,
+              title: `${l.full_name || l.name || 'Unnamed'} (Visit)`,
+              type: 'Property Visit',
+              start: `${isoVisitDate}T${l.visit_time || l.visitTime || '10:00:00'}`,
+              end: `${isoVisitDate}T12:00:00`,
+              status: status,
+              location: l.visit_location || l.visitLocation || 'Project Site',
+              notes: l.visit_note || l.visitNote || 'Scheduled site visit'
+            });
+          }
+        }
+
+        // 2. Check for Next Follow ups
+        const followDate = l.next_follow_up_date || l.nextFollowUpDate || l.nextFollowUp;
+        if (followDate) {
+          const isoFollowDate = formatDateToISOString(followDate);
+          if (isoFollowDate) {
+            const todayStr = new Date().toISOString().split('T')[0];
+            let status = 'upcoming';
+            if (isoFollowDate < todayStr) {
+              status = 'missed';
+            }
+
+            calendarEvents.push({
+              id: `${l.id}-followup`,
+              leadId: l.id,
+              title: `${l.full_name || l.name || 'Unnamed'} (Follow-up)`,
+              type: 'Follow-up',
+              start: `${isoFollowDate}T${l.next_follow_up_time || '09:00:00'}`,
+              end: `${isoFollowDate}T10:00:00`,
+              status: status,
+              location: 'Phone Call',
+              notes: l.notes && l.notes.length > 0 ? l.notes[l.notes.length - 1].note : 'Scheduled follow-up'
+            });
+          }
+        }
+      });
+
+      setEvents(calendarEvents);
+    } catch (err) {
+      console.error('Error fetching calendar events:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, [user, currentTenant]);
+
   const handlePrev = () => {
     const d = new Date(currentDate);
     d.setMonth(d.getMonth() - 1);
@@ -231,82 +225,146 @@ const CalendarPage = () => {
   const handleRescheduleConfirm = async (e) => {
     e.preventDefault();
     if (!selectedEvent || !rescheduleDate) return;
+    setIsSaving(true);
     
     try {
-      const leadId = selectedEvent.id.replace('-followup', '').replace('-visit', '');
-      const leadRef = doc(db, 'leads', leadId);
+      const leadId = selectedEvent.leadId;
       const isFollowup = selectedEvent.type === 'Follow-up';
       
       const updatePayload = {
-        updatedAt: serverTimestamp()
+        updated_at: new Date().toISOString()
       };
       
       if (isFollowup) {
-        updatePayload.nextFollowUp = rescheduleDate;
-        updatePayload.nextFollowUpDate = rescheduleDate;
-        updatePayload.nextFollowUpTime = rescheduleTime || '09:00';
+        updatePayload.next_follow_up_date = rescheduleDate;
+        updatePayload.next_follow_up_time = rescheduleTime || '09:00';
       } else {
-        updatePayload.visitDate = rescheduleDate;
-        updatePayload.visitTime = rescheduleTime || '10:00';
+        updatePayload.visit_date = rescheduleDate;
+        updatePayload.visit_time = rescheduleTime || '10:00';
       }
       
+      const matchedLead = allLeads.find(l => l.id === leadId);
+      const existingHistory = matchedLead?.history || [];
       const historyEntry = {
         date: new Date().toISOString(),
-        note: `${selectedEvent.type} rescheduled to ${rescheduleDate} at ${rescheduleTime || '09:00'} by ${user?.fullName || user?.name || 'User'}.`,
+        note: `${selectedEvent.type} rescheduled to ${rescheduleDate} at ${rescheduleTime || '09:00'} by ${user?.full_name || user?.name || 'User'}.`,
         type: 'System',
-        createdBy: user?.fullName || user?.name || 'User'
+        createdBy: user?.full_name || user?.name || 'User'
       };
-      updatePayload.history = arrayUnion(historyEntry);
+      updatePayload.history = [...existingHistory, historyEntry];
       
-      await updateDoc(leadRef, updatePayload);
+      const { error } = await supabase.from('leads').update(updatePayload).eq('id', leadId);
+      if (error) throw error;
+
       showToast(`${selectedEvent.type} rescheduled successfully!`, 'success');
       setShowDetailModal(false);
       setIsRescheduling(false);
+      loadData();
     } catch (error) {
       console.error("Error rescheduling event:", error);
       showToast("Failed to reschedule event.", "error");
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const handleMarkCompleted = async () => {
     if (!selectedEvent) return;
+    setIsSaving(true);
     
     try {
-      const leadId = selectedEvent.id.replace('-followup', '').replace('-visit', '');
-      const leadRef = doc(db, 'leads', leadId);
+      const leadId = selectedEvent.leadId;
       const isFollowup = selectedEvent.type === 'Follow-up';
       
       const updatePayload = {
-        updatedAt: serverTimestamp()
+        updated_at: new Date().toISOString()
       };
       
       if (isFollowup) {
-        updatePayload.nextFollowUp = '';
-        updatePayload.nextFollowUpDate = null;
-        updatePayload.nextFollowUpTime = '';
+        updatePayload.next_follow_up_date = null;
+        updatePayload.next_follow_up_time = '';
       } else {
-        updatePayload.visitDate = '';
-        updatePayload.visitTime = '';
+        updatePayload.visit_date = null;
+        updatePayload.visit_time = '';
+        updatePayload.visit_status = 'Completed';
       }
       
+      const matchedLead = allLeads.find(l => l.id === leadId);
+      const existingHistory = matchedLead?.history || [];
       const historyEntry = {
         date: new Date().toISOString(),
-        note: `${selectedEvent.type} completed and closed on timeline by ${user?.fullName || user?.name || 'User'}.`,
+        note: `${selectedEvent.type} completed and closed on timeline by ${user?.full_name || user?.name || 'User'}.`,
         type: 'System',
-        createdBy: user?.fullName || user?.name || 'User'
+        createdBy: user?.full_name || user?.name || 'User'
       };
-      updatePayload.history = arrayUnion(historyEntry);
+      updatePayload.history = [...existingHistory, historyEntry];
       
-      await updateDoc(leadRef, updatePayload);
+      const { error } = await supabase.from('leads').update(updatePayload).eq('id', leadId);
+      if (error) throw error;
+
       showToast(`${selectedEvent.type} marked as completed!`, 'success');
       setShowDetailModal(false);
+      loadData();
     } catch (error) {
       console.error("Error completing event:", error);
       showToast("Failed to update event status.", "error");
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  // Helper to get days in month
+  const handleSaveEvent = async (e) => {
+    e.preventDefault();
+    if (!selectedLead || !selectedDate) {
+      showToast('Please select a lead and date', 'error');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const updatePayload = {
+        visit_date: selectedDate,
+        visit_time: newEventData.time,
+        visit_location: selectedLead.area || selectedLead.location || 'Project Site',
+        visit_status: 'Confirmed',
+        visit_note: newEventData.notes || 'Scheduled site visit',
+        updated_at: new Date().toISOString()
+      };
+      
+      const existingHistory = selectedLead.history || [];
+      const historyEntry = {
+        date: new Date().toISOString().split('T')[0],
+        time: newEventData.time,
+        type: 'Appointment',
+        note: `Scheduled Property Visit: ${newEventData.notes || 'No notes added'}`,
+        createdBy: user?.full_name || user?.name || 'User'
+      };
+      updatePayload.history = [...existingHistory, historyEntry];
+
+      const { error } = await supabase.from('leads').update(updatePayload).eq('id', selectedLead.id);
+      if (error) throw error;
+
+      showToast(`Property Visit scheduled successfully!`);
+      setShowAddModal(false);
+      
+      // Reset form
+      setSelectedLead(null);
+      setSearchQuery('');
+      setNewEventData({
+        type: 'Property Visit',
+        time: '10:00',
+        notes: '',
+        reminder: '10 minutes before'
+      });
+      loadData();
+    } catch (error) {
+      console.error("Error saving event:", error);
+      showToast('Failed to save event', 'error');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
   const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
 
@@ -367,59 +425,9 @@ const CalendarPage = () => {
     );
   };
 
-  const handleSaveEvent = async (e) => {
-    e.preventDefault();
-    if (!selectedLead || !selectedDate) {
-      showToast('Please select a lead and date', 'error');
-      return;
-    }
-
-    setIsSaving(true);
-    try {
-      const leadRef = doc(db, 'leads', selectedLead.id);
-      
-      const updatePayload = {
-        visitDate: selectedDate,
-        visitTime: newEventData.time,
-        visitLocation: selectedLead.area || selectedLead.location || 'Project Site',
-        visitStatus: 'Confirmed',
-        visitNote: newEventData.notes || 'Scheduled site visit',
-        updatedAt: serverTimestamp()
-      };
-      
-      const historyEntry = {
-        date: new Date().toISOString().split('T')[0],
-        time: newEventData.time,
-        type: 'Appointment',
-        note: `Scheduled Property Visit: ${newEventData.notes || 'No notes added'}`,
-        createdBy: user?.fullName || user?.name || 'User'
-      };
-      updatePayload.history = arrayUnion(historyEntry);
-
-      await updateDoc(leadRef, updatePayload);
-
-      showToast(`Property Visit scheduled successfully!`);
-      setShowAddModal(false);
-      // Reset form
-      setSelectedLead(null);
-      setSearchQuery('');
-      setNewEventData({
-        type: 'Property Visit',
-        time: '10:00',
-        notes: '',
-        reminder: '10 minutes before'
-      });
-    } catch (error) {
-      console.error("Error saving event:", error);
-      showToast('Failed to save event', 'error');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
   const filteredLeads = searchQuery.length > 0
     ? allLeads.filter(l => 
-        (l.fullName || l.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (l.full_name || l.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (l.phone || '').includes(searchQuery)
       )
     : [];
@@ -470,7 +478,9 @@ const CalendarPage = () => {
           </div>
 
           <div className="calendar-viewport">
-            {viewMode === 'month' ? renderMonthView() : (
+            {isLoading ? (
+              <div className="view-placeholder"><p>Loading calendar...</p></div>
+            ) : viewMode === 'month' ? renderMonthView() : (
               <div className="view-placeholder">
                 <LayoutGrid size={48} />
                 <p>{viewMode.charAt(0).toUpperCase() + viewMode.slice(1)} view is under development</p>
@@ -547,10 +557,10 @@ const CalendarPage = () => {
                       className="search-result-item"
                       onClick={() => {
                         setSelectedLead(l);
-                        setSearchQuery(l.fullName || l.name);
+                        setSearchQuery(l.full_name || l.name);
                       }}
                     >
-                      <span className="res-name">{l.fullName || l.name}</span>
+                      <span className="res-name">{l.full_name || l.name}</span>
                       <span className="res-phone">{l.phone}</span>
                     </div>
                   ))}

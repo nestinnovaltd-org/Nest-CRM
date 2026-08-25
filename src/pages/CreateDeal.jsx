@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { db } from '../lib/firebase';
-import { doc, getDoc, collection, getDocs, addDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../layouts/DashboardLayout';
 import Card from '../components/ui/Card';
@@ -46,17 +45,17 @@ const CreateDeal = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const leadDoc = await getDoc(doc(db, 'leads', leadId));
-        if (leadDoc.exists()) setLead({ id: leadDoc.id, ...leadDoc.data() });
-        
-        const projSnap = await getDocs(collection(db, 'projects'));
-        setRawProjectsList(projSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-        
-        const userSnap = await getDocs(collection(db, 'users'));
-        setUsersList(userSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        const { data: leadRow } = await supabase.from('leads').select('*').eq('id', leadId).maybeSingle();
+        if (leadRow) setLead(leadRow);
 
-        const teamsSnap = await getDocs(collection(db, 'teams'));
-        setTeams(teamsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        const { data: projects } = await supabase.from('projects').select('*');
+        setRawProjectsList(projects || []);
+
+        const { data: users } = await supabase.from('users').select('*');
+        setUsersList(users || []);
+
+        const { data: teamsData } = await supabase.from('teams').select('*');
+        setTeams(teamsData || []);
       } catch (e) {
         console.error(e);
       } finally {
@@ -200,21 +199,21 @@ const CreateDeal = () => {
         installments: calculatedInstallments,
         
         status: 'Pending Approval',
-        createdAt: serverTimestamp(),
-        createdBy: user?.uid || user?.id,
-        createdByName: user?.fullName || user?.name
+        created_at: new Date().toISOString(),
+        created_by: user?.uid || user?.id,
+        created_by_name: user?.full_name || user?.fullName || user?.name
       };
 
-      await addDoc(collection(db, 'deals'), dealPayload);
+      await supabase.from('deals').insert(dealPayload);
 
       if (dealData.projectId) {
-        const projectRef = doc(db, 'projects', dealData.projectId);
-        const currentQty = parseInt(selectedProject?.totalApartments || 0);
+        const selectedProject = rawProjectsList.find(p => p.id === dealData.projectId);
+        const currentQty = parseInt(selectedProject?.total_apartments || selectedProject?.totalApartments || 0);
         if (currentQty > 0) {
-          await updateDoc(projectRef, {
-            totalApartments: currentQty - 1,
-            updatedAt: serverTimestamp()
-          });
+          await supabase.from('projects').update({
+            total_apartments: currentQty - 1,
+            updated_at: new Date().toISOString()
+          }).eq('id', dealData.projectId);
         }
       }
 

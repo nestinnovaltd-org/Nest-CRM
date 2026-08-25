@@ -724,7 +724,208 @@
   color: #047857;
 }
 
+
+/* Sign Up Option Grid and Types */
+.signup-type-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.signup-type-card {
+  padding: 16px 20px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: left;
+}
+
+[data-theme='dark'] .signup-type-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+[data-theme='light'] .signup-type-card {
+  background: rgba(15, 23, 42, 0.02);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+[data-theme='dark'] .signup-type-card:hover {
+  background: rgba(0, 245, 122, 0.05);
+  border-color: rgba(0, 245, 122, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 245, 122, 0.08);
+}
+
+[data-theme='light'] .signup-type-card:hover {
+  background: rgba(37, 99, 235, 0.04);
+  border-color: rgba(37, 99, 235, 0.25);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.08);
+}
+
+.stc-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.3s ease;
+}
+
+[data-theme='dark'] .stc-icon {
+  background: rgba(0, 245, 122, 0.08);
+  color: #00F57A;
+}
+
+[data-theme='light'] .stc-icon {
+  background: rgba(37, 99, 235, 0.08);
+  color: #2563EB;
+}
+
+.stc-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stc-content h3 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+[data-theme='dark'] .stc-content h3 {
+  color: #F5F7F6;
+}
+
+[data-theme='light'] .stc-content h3 {
+  color: var(--text-primary);
+}
+
+.stc-content p {
+  font-size: 0.75rem;
+  margin: 0;
+  line-height: 1.3;
+}
+
+[data-theme='dark'] .stc-content p {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+[data-theme='light'] .stc-content p {
+  color: var(--text-muted);
+}
+
+/* Custom Domain Info Card */
+.custom-domain-info-card {
+  padding: 20px;
+  border-radius: 16px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+[data-theme='dark'] .custom-domain-info-card {
+  background: rgba(0, 245, 122, 0.03);
+  border: 1px solid rgba(0, 245, 122, 0.1);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+[data-theme='light'] .custom-domain-info-card {
+  background: rgba(37, 99, 235, 0.03);
+  border: 1px solid rgba(37, 99, 235, 0.1);
+  color: var(--text-secondary);
+}
+
+.custom-info-icon {
+  margin-bottom: 4px;
+}
+
+[data-theme='dark'] .custom-info-icon {
+  color: #00F57A;
+}
+
+[data-theme='light'] .custom-info-icon {
+  color: #2563EB;
+}
+
+/* SignUp Select Dropdown styling */
+.signup-select-input {
+  width: 100%;
+  padding: 10px 12px 10px 38px;
+  border-radius: 12px;
+  outline: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  appearance: none;
+  transition: all 0.3s ease;
+}
+
+[data-theme='dark'] .signup-select-input {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  color: #F5F7F6;
+}
+
+[data-theme='light'] .signup-select-input {
+  background: rgba(15, 23, 42, 0.02) !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  color: var(--text-primary);
+}
+
+[data-theme='dark'] .signup-select-input option {
+  background-color: #111827;
+  color: #F5F7F6;
+}
+
+[data-theme='light'] .signup-select-input option {
+  background-color: #FFFFFF;
+  color: var(--text-primary);
+}
+
+/* Signup Back Link */
+.signup-back-link {
+  position: absolute;
+  left: 0;
+  top: 4px;
+  background: none;
+  border: none;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: opacity 0.2s ease;
+  padding: 4px 8px;
+  z-index: 10;
+}
+
+[data-theme='dark'] .signup-back-link {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+[data-theme='light'] .signup-back-link {
+  color: var(--text-secondary);
+}
+
+.signup-back-link:hover {
+  opacity: 0.8;
+}
+
 /* Mobile Responsiveness Overrides */
+
 @media (max-width: 768px) {
   .login-page {
     position: fixed;

@@ -1,146 +1,303 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { 
-  onAuthStateChanged, 
-  signInWithEmailAndPassword, 
-  signOut 
-} from 'firebase/auth';
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { auth, db } from '../lib/firebase';
+import { supabase } from '../lib/supabase';
 
 const AuthContext = createContext(null);
+
+export const SUPER_ADMIN_UID = '970690f1-d3d5-47fd-bd79-fe9c3a2be65c';
+
+export const getIndividualModules = (pkg) => {
+  const base = ['Lead Management', 'Calendar & Schedule', 'Notifications', 'Settings'];
+  if (pkg === 'individual_pro') return [...base, 'Visits', 'Payments'];
+  return base;
+};
+
+export const getOrgModules = (pkg) => {
+  const starter = ['Lead Management', 'Calendar & Schedule', 'Payments', 'Notifications', 'Settings', 'User Management'];
+  const professional = [...starter, 'Project Management', 'Team Management', 'Reports & Analytics', 'HR Operations'];
+  const enterprise = [...professional, 'Custom Domain'];
+  if (pkg === 'enterprise') return enterprise;
+  if (pkg === 'professional') return professional;
+  return starter;
+};
+
+export const BILLING_PACKAGES = {
+  individual: [
+    { id: 'free_trial', name: 'Free Trial', price: 0, duration: '1 Month', maxUsers: 1, badge: 'Trial', color: '#6B7280' },
+    { id: 'individual_pro', name: 'Individual Pro', price: 19, duration: '/month', maxUsers: 1, badge: 'Pro', color: '#8B5CF6' },
+  ],
+  organization: [
+    { id: 'starter', name: 'Starter', price: 49, duration: '/month', maxUsers: 10, badge: 'Starter', color: '#10B981' },
+    { id: 'professional', name: 'Professional', price: 99, duration: '/month', maxUsers: 25, badge: 'Pro', color: '#3B82F6', popular: true },
+    { id: 'enterprise', name: 'Enterprise', price: 199, duration: '/month', maxUsers: -1, badge: 'Enterprise', color: '#F59E0B', customDomain: true },
+  ],
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [currentTenant, setCurrentTenant] = useState(null);
+
+  const fetchUserProfile = async (supabaseUser) => {
+    try {
+      const { data: userData, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', supabaseUser.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+
+      let profile = userData || {};
+
+      // Auto-provision Super Admin profile
+      if (!userData && supabaseUser.id === SUPER_ADMIN_UID) {
+        const adminData = {
+          id: SUPER_ADMIN_UID,
+          full_name: 'Mohammad Sajjad Khan',
+          email: 'nestinnovaltd@gmail.com',
+          phone: '+8801972372395',
+          username: 'nest_innova',
+          role: 'Super Admin',
+          account_type: 'super_admin',
+          permissions: ['All'],
+          status: 'Active',
+          approval_status: 'approved',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        const { data: inserted } = await supabase
+          .from('users')
+          .upsert(adminData, { onConflict: 'id' })
+          .select()
+          .single();
+        profile = inserted || adminData;
+      }
+
+      const accountType = profile.account_type ||
+        (supabaseUser.id === SUPER_ADMIN_UID ? 'super_admin' : 'individual');
+
+      // Super Admin: Auto-provision 'Nest CRM' organization
+      if (accountType === 'super_admin') {
+        const { data: existingNestOrg } = await supabase
+          .from('organizations')
+          .select('*')
+          .eq('name', 'Nest CRM')
+          .maybeSingle();
+
+        let nestOrg = existingNestOrg;
+
+        if (!existingNestOrg) {
+          const { data: newOrg } = await supabase
+            .from('organizations')
+            .insert({
+              name: 'Nest CRM',
+              slug: 'nest-crm',
+              domain: 'nestcrm.com',
+              status: 'approved',
+              billing_package: 'enterprise',
+              billing_status: 'active',
+              owner_id: supabaseUser.id,
+              max_users: -1,
+            })
+            .select()
+            .single();
+          nestOrg = newOrg;
+
+          // Update user profile with org_id
+          await supabase.from('users').update({ org_id: newOrg.id }).eq('id', supabaseUser.id);
+          profile.org_id = newOrg.id;
+        }
+
+        // Set default tenant to Nest CRM Org
+        if (nestOrg && !currentTenant) {
+          setCurrentTenant({ type: 'org', id: nestOrg.id, name: nestOrg.name, theme_color: nestOrg.theme_color });
+        }
+      }
+
+      let orgData = null;
+      if (profile.org_id && ['org_admin', 'org_employee', 'super_admin'].includes(accountType)) {
+        const { data: org } = await supabase
+          .from('organizations')
+          .select('*')
+          .eq('id', profile.org_id)
+          .single();
+        orgData = org || null;
+      }
+
+      // Set default tenant for Org members & Individuals if not already set
+      if (!currentTenant) {
+        if (['org_admin', 'org_employee'].includes(accountType) && orgData) {
+          setCurrentTenant({ type: 'org', id: orgData.id, name: orgData.name, theme_color: orgData.theme_color });
+        } else if (accountType === 'individual') {
+          setCurrentTenant({ type: 'individual', id: supabaseUser.id, name: profile.full_name || profile.name || 'Personal Account' });
+        }
+      }
+
+      let trialExpired = false;
+      let subscriptionStatus = profile.subscription_status || 'trial';
+      if (accountType === 'individual') {
+        const createdAt = new Date(profile.created_at || supabaseUser.created_at);
+        const trialEnd = new Date(createdAt.getTime() + 30 * 24 * 60 * 60 * 1000);
+        trialExpired = new Date() > trialEnd && subscriptionStatus === 'trial';
+      }
+
+      if (profile.role && !['Super Admin', 'Admin', 'System Admin'].includes(profile.role)) {
+        const roleId = profile.role.toLowerCase().replace(/\s+/g, '_');
+        const { data: roleData } = await supabase
+          .from('roles').select('permissions').eq('id', roleId).single();
+        if (roleData) profile.rolePermissions = roleData.permissions;
+      }
+
+      setUser({
+        uid: supabaseUser.id,
+        id: supabaseUser.id,
+        email: supabaseUser.email,
+        ...profile,
+        name: profile.full_name || profile.name || 'User',
+        account_type: accountType,
+        trialExpired,
+        subscriptionStatus,
+        org: orgData,
+      });
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+      const isSA = supabaseUser.id === SUPER_ADMIN_UID;
+      setUser({
+        uid: supabaseUser.id,
+        id: supabaseUser.id,
+        email: supabaseUser.email,
+        role: isSA ? 'Super Admin' : 'Team Member',
+        account_type: isSA ? 'super_admin' : 'individual',
+        permissions: isSA ? ['All'] : [],
+      });
+    }
+  };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        try {
-          const userDocRef = doc(db, 'users', firebaseUser.uid);
-          const userDoc = await getDoc(userDocRef);
-          
-          let userData = {};
-          if (userDoc.exists()) {
-            userData = userDoc.data();
-          } else {
-            // Check if this is the target Admin user to auto-provision
-            const adminUID = "Xx2tPCJro5akfg2HIHNCxXBvZXs1";
-            if (firebaseUser.uid === adminUID) {
-              userData = {
-                fullName: "Mohammad Sajjad Khan",
-                email: "nestinnovaltd@gmail.com",
-                phone: "+8801972372395",
-                username: "nest_innova",
-                role: "Admin",
-                permissions: ["All"],
-                uid: adminUID,
-                status: "Active",
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
-              };
-              await setDoc(userDocRef, userData);
-              console.log("✅ Admin profile auto-provisioned!");
-            }
-          }
-
-          // Fetch role permissions (as default) or use user-level overrides
-          if (userData.permissions && Object.keys(userData.permissions).length > 0) {
-            userData.rolePermissions = userData.permissions;
-          } else if (userData.role) {
-            const roleId = userData.role.toLowerCase().replace(/\s+/g, '_');
-            const roleDoc = await getDoc(doc(db, 'roles', roleId));
-            if (roleDoc.exists()) {
-              userData.rolePermissions = roleDoc.data().permissions;
-            }
-          }
-
-          setUser({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            name: userData.fullName || userData.name || 'User',
-            role: userData.role || 'Team Member',
-            ...userData
-          });
-
-        } catch (error) {
-          console.error("Error fetching user profile:", error);
-          setUser({
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            role: 'Team Member'
-          });
-        }
-      } else {
-        setUser(null);
-      }
-      setLoading(false);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) fetchUserProfile(session.user).finally(() => setLoading(false));
+      else { setUser(null); setLoading(false); }
     });
 
-    return () => unsubscribe();
-  }, []);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session?.user) await fetchUserProfile(session.user);
+        else setUser(null);
+        setLoading(false);
+      }
+    );
+    return () => subscription.unsubscribe();
+  }, [currentTenant]);
+
+  useEffect(() => {
+    let themeColor = '#26E264'; // Default CRM accent color (Radium Green)
+
+    if (user?.account_type === 'super_admin') {
+      if (currentTenant?.type === 'org') {
+        themeColor = currentTenant.theme_color || '#8B5CF6';
+      } else {
+        themeColor = '#26E264'; // Individual user
+      }
+    } else if (user?.org?.theme_color) {
+      themeColor = user.org.theme_color;
+    }
+
+    const adjustColor = (col, amt) => {
+      let usePound = false;
+      if (col[0] === "#") { col = col.slice(1); usePound = true; }
+      let num = parseInt(col, 16);
+      let r = (num >> 16) + amt;
+      if (r > 255) r = 255; else if (r < 0) r = 0;
+      let b = ((num >> 8) & 0x00FF) + amt;
+      if (b > 255) b = 255; else if (b < 0) b = 0;
+      let g = (num & 0x0000FF) + amt;
+      if (g > 255) g = 255; else if (g < 0) g = 0;
+      return (usePound ? "#" : "") + (g | (b << 8) | (r << 16)).toString(16).padStart(6, '0');
+    };
+
+    const getGradientEndColor = (col) => {
+      if (!col) return '#00F0FF';
+      const upper = col.toUpperCase();
+      if (upper === '#26E264') return '#00F0FF'; // Vibrant Green -> Cyan
+      if (upper === '#8B5CF6') return '#EC4899'; // Indigo Purple -> Pink/Magenta
+      if (upper === '#3B82F6') return '#00F0FF'; // Sky Blue -> Cyan/Teal
+      if (upper === '#F59E0B') return '#EF4444'; // Bright Amber -> Deep Crimson
+      if (upper === '#EF4444') return '#EC4899'; // Deep Crimson -> Pink/Magenta
+      return adjustColor(col, 40); // fallback
+    };
+
+    try {
+      const gradientEnd = getGradientEndColor(themeColor);
+      document.documentElement.style.setProperty('--primary', themeColor);
+      document.documentElement.style.setProperty('--primary-hover', adjustColor(themeColor, 20));
+      document.documentElement.style.setProperty('--primary-dark', adjustColor(themeColor, -20));
+      document.documentElement.style.setProperty('--primary-soft', `${themeColor}14`);
+      document.documentElement.style.setProperty('--primary-glow', `${themeColor}22`);
+      document.documentElement.style.setProperty('--primary-border', `${themeColor}33`);
+      document.documentElement.style.setProperty('--gradient-primary', `linear-gradient(135deg, ${themeColor} 0%, ${gradientEnd} 100%)`);
+      document.documentElement.style.setProperty('--gradient-button', `linear-gradient(135deg, ${themeColor} 0%, ${gradientEnd} 100%)`);
+    } catch (e) {
+      console.error('Error applying theme variables:', e);
+    }
+  }, [user, currentTenant]);
 
   const login = async (email, password) => {
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
       return { success: true };
     } catch (error) {
-      console.error("Login Error:", error.code);
-      let message = "Invalid credentials";
-      if (error.code === 'auth/user-not-found') message = "User not found";
-      if (error.code === 'auth/wrong-password') message = "Incorrect password";
-      if (error.code === 'auth/invalid-email') message = "Invalid email address";
+      let message = 'Invalid credentials';
+      if (error.message.includes('Invalid login credentials')) message = 'Incorrect email or password';
+      if (error.message.includes('Email not confirmed')) message = 'Please confirm your email first';
       return { success: false, message };
     }
   };
 
-  const logout = async () => {
-    try {
-      await signOut(auth);
-    } catch (error) {
-      console.error("Logout Error:", error);
-    }
-  };
+  const logout = async () => { try { await supabase.auth.signOut(); } catch (e) { console.error(e); } };
 
-  // Helper to check permissions
-  const hasPermission = (module, action = 'read', subModule = null) => {
+  const isSuperAdmin = () => user?.account_type === 'super_admin' || user?.id === SUPER_ADMIN_UID;
+  const isOrgAdmin = () => user?.account_type === 'org_admin';
+  const isOrgEmployee = () => user?.account_type === 'org_employee';
+  const isIndividual = () => user?.account_type === 'individual';
+  const isOrganizationMember = () => ['org_admin', 'org_employee'].includes(user?.account_type);
+
+  const hasPermission = (module, action = 'read') => {
     if (!user) return false;
-    
-    // Always allow Admin
-    if (user.role === 'Admin' || user.role === 'System Admin') return true;
-    
-    // Check dynamic permissions from DB
+    if (isSuperAdmin()) return true;
+    if (Array.isArray(user.permissions) && user.permissions.includes('All')) return true;
+    if (user.trialExpired) return module === 'Lead Management' && action === 'read';
+
+    if (isIndividual()) {
+      const allowed = getIndividualModules(user.subscription_package || 'free_trial');
+      if (!allowed.includes(module)) return false;
+      return true;
+    }
+    if (isOrgAdmin()) {
+      const allowed = getOrgModules(user.org?.billing_package || 'starter');
+      return allowed.includes(module);
+    }
+    if (isOrgEmployee()) {
+      const allowed = getOrgModules(user.org?.billing_package || 'starter');
+      if (!allowed.includes(module)) return false;
+      if (action === 'delete') return false;
+      return true;
+    }
     if (user.rolePermissions && user.rolePermissions[module]) {
       const modulePerms = user.rolePermissions[module];
-      
-      // Map actions to CRUD
-      const actionMap = {
-        'view': 'read',
-        'read': 'read',
-        'add': 'create',
-        'create': 'create',
-        'edit': 'update',
-        'update': 'update',
-        'delete': 'delete'
-      };
-      
-      const firestoreAction = actionMap[action] || action;
-      
-      // If a specific sub-module is provided, check it exactly
-      if (subModule && modulePerms[subModule]) {
-        return modulePerms[subModule][firestoreAction] === true;
-      }
-      
-      // If no sub-module is provided, check if any sub-module in this module has the action permission
-      // This is used for module-level visibility in the sidebar
-      return Object.values(modulePerms).some(subPerm => subPerm[firestoreAction] === true);
+      const actionMap = { view:'read', read:'read', add:'create', create:'create', edit:'update', update:'update', delete:'delete' };
+      const dbAction = actionMap[action] || action;
+      return Object.values(modulePerms).some(p => p[dbAction] === true);
     }
-
     return false;
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, hasPermission }}>
+    <AuthContext.Provider value={{
+      user, loading, login, logout, hasPermission,
+      isSuperAdmin, isOrgAdmin, isOrgEmployee, isIndividual, isOrganizationMember,
+      SUPER_ADMIN_UID, currentTenant, setCurrentTenant
+    }}>
       {children}
     </AuthContext.Provider>
   );

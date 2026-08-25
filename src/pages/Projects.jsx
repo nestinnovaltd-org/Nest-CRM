@@ -1,13 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { db } from '../lib/firebase';
-import { 
-  collection, 
-  onSnapshot, 
-  query, 
-  doc, 
-  updateDoc, 
-  deleteDoc 
-} from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../layouts/DashboardLayout';
@@ -42,7 +34,7 @@ import './Projects.css';
 
 const ProjectsPage = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, currentTenant } = useAuth();
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'table'
   const [searchTerm, setSearchTerm] = useState('');
   const [rawProjects, setRawProjects] = useState([]);
@@ -62,28 +54,34 @@ const ProjectsPage = () => {
   const filterRef = useRef(null);
 
   useEffect(() => {
-    const unsubTeams = onSnapshot(collection(db, 'teams'), (snapshot) => {
-      setTeams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    const fetchData = async () => {
+      const filterTenant = (q) => {
+        if (user?.account_type === 'super_admin') {
+          if (currentTenant?.type === 'org') return q.eq('org_id', currentTenant.id);
+          return q.eq('owner_id', currentTenant.id);
+        }
+        if (user?.org_id) return q.eq('org_id', user.org_id);
+        return q.eq('owner_id', user.uid);
+      };
 
-    const q = query(collection(db, 'projects'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const projectsList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setRawProjects(projectsList);
-      setIsLoading(false);
-    }, (error) => {
-      console.error("Error fetching projects:", error);
-      setIsLoading(false);
-    });
+      const { data: teamsData } = await filterTenant(supabase.from('teams').select('*'));
+      setTeams(teamsData || []);
 
-    return () => {
-      unsubTeams();
-      unsubscribe();
+      const { data: projectsList, error } = await filterTenant(supabase.from('projects').select('*'));
+      if (error) { console.error('Error fetching projects:', error); }
+      else { setRawProjects(projectsList || []); }
+      setIsLoading(false);
     };
-  }, []);
+
+    fetchData();
+
+    const ch = supabase.channel('projects-page')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, fetchData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teams' }, fetchData)
+      .subscribe();
+
+    return () => supabase.removeChannel(ch);
+  }, [currentTenant]);
 
   const projects = React.useMemo(() => {
     const isAdmin = user?.role === 'Admin' || user?.role === 'MD' || user?.role === 'System Admin';

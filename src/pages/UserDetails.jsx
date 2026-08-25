@@ -12,24 +12,16 @@ import {
   Cell,
   CartesianGrid
 } from 'recharts';
-import { 
-  collection, 
-  query, 
-  where, 
-  onSnapshot, 
-  doc, 
-  getDoc,
-  or
-} from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import DashboardLayout from '../layouts/DashboardLayout';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
 import Skeleton from '../components/ui/Skeleton';
-import { 
-  User, 
-  Mail, 
-  Phone, 
-  MapPin, 
+import {
+  User,
+  Mail,
+  Phone,
+  MapPin,
   TrendingUp,
   Target,
   Users,
@@ -42,7 +34,6 @@ import {
   Calendar,
   AlertCircle
 } from 'lucide-react';
-import { db } from '../lib/firebase';
 import './Profile.css';
 
 const UserDetails = () => {
@@ -63,44 +54,35 @@ const UserDetails = () => {
 
   useEffect(() => {
     if (!userId) return;
-
-    const unsubscribe = onSnapshot(doc(db, 'users', userId), (doc) => {
-      if (doc.exists()) {
-        const data = doc.data();
-        const resolvedName = (
-          data.fullName || 
-          data.displayName || 
-          data.name || 
-          data.username || 
-          (data.firstName ? `${data.firstName} ${data.lastName || ''}` : null) ||
-          data.email || 
-          'Unnamed User'
-        ).toString().trim();
-
-        setUserData({
-          id: doc.id,
-          name: resolvedName,
-          email: data.email || data.username || 'No email',
-          phone: data.phone || 'No phone',
-          role: data.role || 'Team Member',
-          location: data.location || 'Not specified',
-          bio: data.bio || 'This user hasn\'t added a bio yet.',
-          avatar: data.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(resolvedName)}&background=random`,
-          status: data.status || 'Active',
-          target: data.target || null
-        });
-        setError(false);
-      } else {
-        setError(true);
-      }
+    const fetchUser = async () => {
+      const { data, error } = await supabase.from('users').select('*').eq('id', userId).maybeSingle();
+      if (error || !data) { setError(true); setLoading(false); return; }
+      const resolvedName = (
+        data.full_name ||
+        data.fullName ||
+        data.display_name ||
+        data.name ||
+        data.username ||
+        (data.first_name ? `${data.first_name} ${data.last_name || ''}` : null) ||
+        data.email ||
+        'Unnamed User'
+      ).toString().trim();
+      setUserData({
+        id: data.id,
+        name: resolvedName,
+        email: data.email || data.username || 'No email',
+        phone: data.phone || 'No phone',
+        role: data.role || 'Team Member',
+        location: data.location || 'Not specified',
+        bio: data.bio || "This user hasn't added a bio yet.",
+        avatar: data.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(resolvedName)}&background=random`,
+        status: data.status || 'Active',
+        target: data.target || null
+      });
+      setError(false);
       setLoading(false);
-    }, (err) => {
-      console.error("Error fetching user details:", err);
-      setError(true);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    };
+    fetchUser();
   }, [userId]);
 
   const [leadStats, setLeadStats] = useState({
@@ -114,28 +96,21 @@ const UserDetails = () => {
 
   useEffect(() => {
     if (!userId) return;
+    const fetchLeads = async () => {
+      const { data: assignedLeads } = await supabase.from('leads').select('*').eq('assigned_to', userId);
+      const { data: ownedLeads } = await supabase.from('leads').select('*').eq('owner_id', userId);
+      const allLeads = [
+        ...(assignedLeads || []),
+        ...(ownedLeads || []).filter(l => !assignedLeads?.some(a => a.id === l.id))
+      ];
 
-    // Listen for leads assigned to or owned by this user
-    const q = query(
-      collection(db, 'leads'),
-      or(
-        where('assignedTo', '==', userId),
-        where('ownerId', '==', userId)
-      )
-    );
-
-    const unsubscribeLeads = onSnapshot(q, (snapshot) => {
-      const allLeads = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      const entries = allLeads.filter(l => l.ownerId === userId).length;
-      const assigned = allLeads.filter(l => l.assignedTo === userId).length;
-      const success = allLeads.filter(l => l.assignedTo === userId && l.status === 'Deal Confirmed').length;
-      const followups = allLeads.filter(l => l.assignedTo === userId && l.nextFollowUpDate).length;
+      const entries = allLeads.filter(l => (l.owner_id || l.ownerId) === userId).length;
+      const assigned = allLeads.filter(l => (l.assigned_to || l.assignedTo) === userId).length;
+      const success = allLeads.filter(l => (l.assigned_to || l.assignedTo) === userId && l.status === 'Deal Confirmed').length;
+      const followups = allLeads.filter(l => (l.assigned_to || l.assignedTo) === userId && (l.next_follow_up_date || l.nextFollowUpDate)).length;
       const kpi = assigned > 0 ? Math.round((success / assigned) * 100) : 0;
-
       setLeadStats({ entries, assigned, success, followups, kpi });
 
-      // Calculate Pie Chart Data (Status Distribution)
       const statusCounts = allLeads.reduce((acc, lead) => {
         const status = lead.status || 'Fresh Lead';
         acc[status] = (acc[status] || 0) + 1;
@@ -149,33 +124,23 @@ const UserDetails = () => {
       ];
       setPieData(processedPieData.filter(d => d.value > 0));
 
-      // Calculate Bar Chart Data (Weekly Activity)
       const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       const last7Days = Array.from({ length: 7 }, (_, i) => {
         const d = new Date();
         d.setDate(d.getDate() - i);
-        return { 
-          name: days[d.getDay()], 
-          dateStr: d.toISOString().split('T')[0],
-          leads: 0,
-          deals: 0
-        };
+        return { name: days[d.getDay()], dateStr: d.toISOString().split('T')[0], leads: 0, deals: 0 };
       }).reverse();
 
       allLeads.forEach(lead => {
-        if (!lead.createdAt) return;
-        const leadDate = new Date(lead.createdAt.seconds * 1000).toISOString().split('T')[0];
+        const createdAt = lead.created_at || lead.createdAt;
+        if (!createdAt) return;
+        const leadDate = new Date(createdAt).toISOString().split('T')[0];
         const dayMatch = last7Days.find(d => d.dateStr === leadDate);
-        if (dayMatch) {
-          dayMatch.leads++;
-          if (lead.status === 'Deal Confirmed') dayMatch.deals++;
-        }
+        if (dayMatch) { dayMatch.leads++; if (lead.status === 'Deal Confirmed') dayMatch.deals++; }
       });
-
       setChartData(last7Days);
-    });
-
-    return () => unsubscribeLeads();
+    };
+    fetchLeads();
   }, [userId]);
 
   const COLORS = ['#10B981', 'var(--primary)', '#EF4444'];

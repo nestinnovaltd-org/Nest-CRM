@@ -1,17 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
-import { 
-  collection, 
-  onSnapshot, 
-  query, 
-  where, 
-  doc, 
-  addDoc, 
-  updateDoc, 
-  getDocs,
-  serverTimestamp,
-  arrayUnion
-} from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../layouts/DashboardLayout';
 import Card from '../components/ui/Card';
@@ -42,7 +30,7 @@ import {
 import './Payments.css';
 
 const Payments = () => {
-  const { user } = useAuth();
+  const { user, currentTenant } = useAuth();
   const [activeTab, setActiveTab] = useState('sale_receives');
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -87,11 +75,11 @@ const Payments = () => {
   const [incentivePercent, setIncentivePercent] = useState('30');
   const [calculatedClaimAmount, setCalculatedClaimAmount] = useState(0);
   const [orgBranding, setOrgBranding] = useState({
-    orgName: 'FAHAM ESTATE LTD.',
+    orgName: 'NEST CRM',
     orgLogo: '',
     orgAddress: 'Corporate Office: Jabbar Tower, Gulshan-1, Dhaka-1212, Bangladesh',
     orgPhone: '+880 2-988XXXX',
-    orgEmail: 'info@fahamestate.com'
+    orgEmail: 'info@nestcrm.com'
   });
 
   const showToast = (message, type = 'success') => {
@@ -100,69 +88,53 @@ const Payments = () => {
 
   const isAdminOrAccounts = user?.role === 'Admin' || user?.role === 'MD' || user?.role === 'System Admin' || user?.role === 'Accounts' || user?.role === 'Accountant';
 
-  // Subscriptions to Firestore collections
+  // Subscriptions to Supabase tables
   useEffect(() => {
-    // 1. Client Payments
-    const unsubPayments = onSnapshot(collection(db, 'payments'), (snap) => {
-      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setPaymentsList(list);
-    });
+    const fetchAll = async () => {
+      const filterTenant = (q) => {
+        if (user?.account_type === 'super_admin') {
+          if (currentTenant?.type === 'org') return q.eq('org_id', currentTenant.id);
+          return q.eq('owner_id', currentTenant.id);
+        }
+        if (user?.org_id) return q.eq('org_id', user.org_id);
+        return q.eq('owner_id', user.uid);
+      };
 
-    // 2. Salary Payroll Approvals
-    const unsubSalaries = onSnapshot(collection(db, 'salary_payroll_approvals'), (snap) => {
-      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setSalaryApprovals(list);
-    });
-
-    // 3. Visit Allowances
-    const unsubAllowances = onSnapshot(collection(db, 'visit_allowances'), (snap) => {
-      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setVisitAllowances(list);
-    });
-
-    // 4. Incentive claims
-    const unsubIncentives = onSnapshot(collection(db, 'incentive_claims'), (snap) => {
-      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setIncentiveClaims(list);
-    });
-
-    // 5. Deals
-    const unsubDeals = onSnapshot(collection(db, 'deals'), (snap) => {
-      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setDealsList(list);
-    });
-
-    // 6. Closed Leads (to list for adding client payments)
-    const unsubLeads = onSnapshot(query(collection(db, 'leads'), where('status', 'in', ['Sold', 'Deal Closed', 'Closed'])), (snap) => {
-      const list = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setClosedLeads(list);
-      setIsLoading(false);
-    });
-
-    // 7. Organization Branding Config
-    const unsubBranding = onSnapshot(doc(db, 'hr_settings', 'config'), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
+      const [paymentsRes, salariesRes, allowancesRes, incentivesRes, dealsRes, leadsRes, hrRes] = await Promise.all([
+        filterTenant(supabase.from('payments').select('*')),
+        filterTenant(supabase.from('salary_payroll_approvals').select('*')),
+        filterTenant(supabase.from('visit_allowances').select('*')),
+        filterTenant(supabase.from('incentive_claims').select('*')),
+        filterTenant(supabase.from('deals').select('*')),
+        filterTenant(supabase.from('leads').select('*').in('status', ['Sold', 'Deal Closed', 'Closed'])),
+        supabase.from('hr_settings').select('*').eq('id', 'config').maybeSingle()
+      ]);
+      setPaymentsList(paymentsRes.data || []);
+      setSalaryApprovals(salariesRes.data || []);
+      setVisitAllowances(allowancesRes.data || []);
+      setIncentiveClaims(incentivesRes.data || []);
+      setDealsList(dealsRes.data || []);
+      setClosedLeads(leadsRes.data || []);
+      if (hrRes.data) {
+        const data = hrRes.data;
         setOrgBranding({
-          orgName: data.orgName || 'FAHAM ESTATE LTD.',
-          orgLogo: data.orgLogo || '',
-          orgAddress: data.orgAddress || 'Corporate Office: Jabbar Tower, Gulshan-1, Dhaka-1212, Bangladesh',
-          orgPhone: data.orgPhone || '+880 2-988XXXX',
-          orgEmail: data.orgEmail || 'info@fahamestate.com'
+          orgName: data.org_name || data.orgName || 'Nest CRM',
+          orgLogo: data.org_logo || data.orgLogo || '',
+          orgAddress: data.org_address || data.orgAddress || '',
+          orgPhone: data.org_phone || data.orgPhone || '',
+          orgEmail: data.org_email || data.orgEmail || ''
         });
       }
-    });
-
-    return () => {
-      unsubPayments();
-      unsubSalaries();
-      unsubAllowances();
-      unsubIncentives();
-      unsubDeals();
-      unsubLeads();
-      unsubBranding();
+      setIsLoading(false);
     };
-  }, []);
+    fetchAll();
+    const ch = supabase.channel('payments-page')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'deals' }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'incentive_claims' }, fetchAll)
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [currentTenant]);
 
   // Update calculated claim amount when deal or percent changes
   useEffect(() => {
@@ -204,29 +176,29 @@ const Payments = () => {
       const leadName = targetLead ? (targetLead.fullName || targetLead.name) : 'Unknown Client';
       const projectName = targetLead ? (targetLead.projectName || 'General') : 'General';
 
-      await addDoc(collection(db, 'payments'), {
-        leadId: formLeadId,
-        leadName,
-        projectName,
+      await supabase.from('payments').insert({
+        lead_id: formLeadId,
+        lead_name: leadName,
+        project_name: projectName,
         amount: parseFloat(formAmount),
         method: formMethod,
-        paymentType: formType,
+        payment_type: formType,
         note: formNote,
         status: 'Pending Approval',
-        receivedBy: user.uid,
-        receivedByName: user.fullName || user.name || 'Sales Representative',
+        received_by: user.uid,
+        received_by_name: user.full_name || user.fullName || user.name || 'Sales Representative',
         date: new Date().toISOString().split('T')[0],
-        createdAt: serverTimestamp()
+        created_at: new Date().toISOString()
       });
 
-      showToast("Client money receipt uploaded! Awaiting Accounts Approval.", "success");
+      showToast('Client money receipt uploaded! Awaiting Accounts Approval.', 'success');
       setShowAddModal(false);
       setFormLeadId('');
       setFormAmount('');
       setFormNote('');
     } catch (err) {
       console.error(err);
-      showToast("Failed to upload client payment", "error");
+      showToast('Failed to upload client payment', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -235,49 +207,46 @@ const Payments = () => {
   // Handle Client Payment Approval (Accounts)
   const handleApprovePayment = async (payId, status) => {
     try {
-      const payRef = doc(db, 'payments', payId);
-      await updateDoc(payRef, {
+      await supabase.from('payments').update({
         status,
-        approvedBy: user.fullName || user.name || 'Accounts Staff',
-        approvedAt: serverTimestamp()
-      });
-      showToast(`Payment receipt marked as ${status}!`, "success");
+        approved_by: user.full_name || user.fullName || user.name || 'Accounts Staff',
+        approved_at: new Date().toISOString()
+      }).eq('id', payId);
+      showToast(`Payment receipt marked as ${status}!`, 'success');
     } catch (err) {
       console.error(err);
-      showToast("Failed to update payment status", "error");
+      showToast('Failed to update payment status', 'error');
     }
   };
 
   // Handle Salary Sheet Approval (Accounts)
   const handleApproveSalarySheet = async (sheetId, status) => {
     try {
-      const ref = doc(db, 'salary_payroll_approvals', sheetId);
-      await updateDoc(ref, {
+      await supabase.from('salary_payroll_approvals').update({
         status,
-        approvedBy: user.fullName || user.name || 'Accounts Manager',
-        approvedAt: serverTimestamp()
-      });
+        approved_by: user.full_name || user.fullName || user.name || 'Accounts Manager',
+        approved_at: new Date().toISOString()
+      }).eq('id', sheetId);
       setSelectedSalarySheet(prev => prev && prev.id === sheetId ? { ...prev, status } : prev);
-      showToast(`Salary payroll sheet has been set to ${status}!`, "success");
+      showToast(`Salary payroll sheet has been set to ${status}!`, 'success');
     } catch (err) {
       console.error(err);
-      showToast("Failed to update salary sheet status", "error");
+      showToast('Failed to update salary sheet status', 'error');
     }
   };
 
   // Handle Visit Allowance Approval (Accounts)
   const handleApproveVisitAllowance = async (allowanceId, status) => {
     try {
-      const ref = doc(db, 'visit_allowances', allowanceId);
-      await updateDoc(ref, {
+      await supabase.from('visit_allowances').update({
         status,
-        approvedBy: user.fullName || user.name || 'Accounts Representative',
-        approvedAt: serverTimestamp()
-      });
-      showToast(`Visit Allowance marked as ${status}!`, "success");
+        approved_by: user.full_name || user.fullName || user.name || 'Accounts Representative',
+        approved_at: new Date().toISOString()
+      }).eq('id', allowanceId);
+      showToast(`Visit Allowance marked as ${status}!`, 'success');
     } catch (err) {
       console.error(err);
-      showToast("Failed to process allowance status", "error");
+      showToast('Failed to process allowance status', 'error');
     }
   };
 
@@ -313,25 +282,25 @@ const Payments = () => {
       const incentiveRate = parseFloat(user?.salesIncentiveRate) || 5;
       const totalCommission = dealVal * (incentiveRate / 100);
 
-      await addDoc(collection(db, 'incentive_claims'), {
-        dealId,
-        projectName: selectedDealForClaim.projectName,
-        dealValue: dealVal,
-        totalIncentive: totalCommission,
-        requestedPercentage: parseFloat(incentivePercent),
-        requestedAmount: calculatedClaimAmount,
+      await supabase.from('incentive_claims').insert({
+        deal_id: dealId,
+        project_name: selectedDealForClaim.project_name || selectedDealForClaim.projectName,
+        deal_value: dealVal,
+        total_incentive: totalCommission,
+        requested_percentage: parseFloat(incentivePercent),
+        requested_amount: calculatedClaimAmount,
         status: 'Pending Approval',
-        userId: user.uid,
-        userName: user.fullName || user.name || 'Sales Staff',
-        createdAt: serverTimestamp()
+        user_id: user.uid,
+        user_name: user.full_name || user.fullName || user.name || 'Sales Staff',
+        created_at: new Date().toISOString()
       });
 
-      showToast(`Incentive payout claim of ${incentivePercent}% submitted to Accounts!`, "success");
+      showToast(`Incentive payout claim of ${incentivePercent}% submitted to Accounts!`, 'success');
       setShowIncentiveClaimModal(false);
       setSelectedDealForClaim(null);
     } catch (err) {
       console.error(err);
-      showToast("Failed to submit incentive claim", "error");
+      showToast('Failed to submit incentive claim', 'error');
     } finally {
       setIsSaving(false);
     }
@@ -340,16 +309,15 @@ const Payments = () => {
   // Handle Incentive Claim Approval (Accounts)
   const handleApproveIncentiveClaim = async (claimId, status) => {
     try {
-      const ref = doc(db, 'incentive_claims', claimId);
-      await updateDoc(ref, {
+      await supabase.from('incentive_claims').update({
         status,
-        approvedBy: user.fullName || user.name || 'Accounts Auditor',
-        approvedAt: serverTimestamp()
-      });
-      showToast(`Incentive claim ${status === 'Approved' ? 'Approved & Paid' : 'Rejected'}!`, "success");
+        approved_by: user.full_name || user.fullName || user.name || 'Accounts Auditor',
+        approved_at: new Date().toISOString()
+      }).eq('id', claimId);
+      showToast(`Incentive claim ${status === 'Approved' ? 'Approved & Paid' : 'Rejected'}!`, 'success');
     } catch (err) {
       console.error(err);
-      showToast("Failed to process incentive claim", "error");
+      showToast('Failed to process incentive claim', 'error');
     }
   };
 
@@ -1157,7 +1125,7 @@ const Payments = () => {
                   {orgBranding.orgLogo && (
                     <img src={orgBranding.orgLogo} alt="Logo" style={{ height: '60px', objectFit: 'contain', marginBottom: '10px' }} />
                   )}
-                  <h2>{orgBranding.orgName || 'Faham Estate Ltd.'}</h2>
+                  <h2>{orgBranding.orgName || 'NEST CRM'}</h2>
                   <p>{orgBranding.orgAddress || 'House 12, Road 5, Banani, Dhaka, Bangladesh'}</p>
                   {(orgBranding.orgPhone || orgBranding.orgEmail) && (
                     <p style={{ fontSize: '0.8rem', marginTop: '-4px' }}>

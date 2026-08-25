@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { db } from '../lib/firebase';
-import { collection, onSnapshot, query, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import DashboardLayout from '../layouts/DashboardLayout';
 import { useAuth } from '../context/AuthContext';
 import Button from '../components/ui/Button';
@@ -42,23 +41,31 @@ const TeamManagement = () => {
   const canEditTargets = hasPermission('Team Management', 'edit');
 
   useEffect(() => {
-    const q = query(collection(db, 'teams'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setTeams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    const fetchData = async () => {
+      const { data: teamsData, error } = await supabase.from('teams').select('*');
+      if (error) {
+        console.error('Error fetching teams:', error);
+      } else {
+        setTeams(teamsData || []);
+      }
       setIsLoading(false);
-    }, (error) => {
-      console.error("Error fetching teams:", error);
-      setIsLoading(false);
-    });
 
-    const qProjects = query(collection(db, 'projects'));
-    const unsubscribeProjects = onSnapshot(qProjects, (snapshot) => {
-      setProjects(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+      const { data: projectsData } = await supabase.from('projects').select('*');
+      setProjects(projectsData || []);
+    };
+
+    fetchData();
+
+    const teamsChannel = supabase.channel('team-mgmt-teams')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teams' }, fetchData)
+      .subscribe();
+    const projectsChannel = supabase.channel('team-mgmt-projects')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, fetchData)
+      .subscribe();
 
     return () => {
-      unsubscribe();
-      unsubscribeProjects();
+      supabase.removeChannel(teamsChannel);
+      supabase.removeChannel(projectsChannel);
     };
   }, []);
 

@@ -1,20 +1,6 @@
 import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { db } from '../lib/firebase';
-import { 
-  collection, 
-  onSnapshot, 
-  query, 
-  where, 
-  addDoc, 
-  updateDoc, 
-  doc, 
-  serverTimestamp,
-  orderBy,
-  getDocs,
-  arrayUnion,
-  or
-} from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { Link, useParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { toast } from 'react-hot-toast';
@@ -196,22 +182,19 @@ const checkMultiplePhonesDuplicateInTeam = async (cleanedPhones, user, allUsers,
   const chunkSize = 30;
   for (let i = 0; i < searchFormats.length; i += chunkSize) {
     const chunk = searchFormats.slice(i, i + chunkSize);
-    const q = query(collection(db, 'leads'), where('phone', 'in', chunk));
-    const querySnapshot = await getDocs(q);
+    const { data: matchedLeads } = await supabase.from('leads').select('*').in('phone', chunk);
 
-    if (!querySnapshot.empty) {
-      querySnapshot.docs.forEach(docSnap => {
-        const leadData = docSnap.data();
-        const assignee = leadData.assignedTo;
-        const owner = leadData.ownerId;
-        
+    if (matchedLeads && matchedLeads.length > 0) {
+      matchedLeads.forEach(leadData => {
+        const assignee = leadData.assigned_to || leadData.assignedTo;
+        const owner = leadData.owner_id || leadData.ownerId;
+
         if (teamMemberUids.includes(assignee) || teamMemberUids.includes(owner)) {
-          // Clean the lead's phone to find which of our search phones matched
           const leadCleanedPhone = cleanPhoneNumber(leadData.phone);
           duplicatesMap.set(leadCleanedPhone, {
             duplicate: true,
-            leadName: leadData.name,
-            assignedToName: leadData.assignedToName || 'someone in your team'
+            leadName: leadData.name || leadData.full_name,
+            assignedToName: leadData.assigned_to_name || leadData.assignedToName || 'someone in your team'
           });
         }
       });
@@ -1278,19 +1261,13 @@ const LeadUpdateModal = ({ isOpen, onClose, lead, newStatus, onConfirm }) => {
   const [teams, setTeams] = useState([]);
 
   useEffect(() => {
-    const unsubTeams = onSnapshot(collection(db, 'teams'), (snapshot) => {
-      setTeams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-
-    const fetchProjects = async () => {
-      const q = query(collection(db, 'projects'), orderBy('projectName', 'asc'));
-      const querySnapshot = await getDocs(q);
-      const projectsList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setAllProjects(projectsList);
+    const fetchData = async () => {
+      const { data: teamsData } = await supabase.from('teams').select('*');
+      setTeams(teamsData || []);
+      const { data: projectsData } = await supabase.from('projects').select('*').order('project_name', { ascending: true });
+      setAllProjects(projectsData || []);
     };
-    fetchProjects();
-
-    return () => unsubTeams();
+    fetchData();
   }, []);
 
   const filteredProjects = React.useMemo(() => {
@@ -1597,7 +1574,7 @@ const InterestsModal = ({ isOpen, onClose, lead, onConfirm, projects }) => {
 
 
 const MyLeads = () => {
-  const { user } = useAuth();
+  const { user, currentTenant } = useAuth();
   const { userId } = useParams();
   const [leads, setLeads] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -1628,12 +1605,10 @@ const MyLeads = () => {
   useEffect(() => {
     const fetchProjectsList = async () => {
       try {
-        const q = query(collection(db, 'projects'), orderBy('projectName', 'asc'));
-        const querySnapshot = await getDocs(q);
-        const projectsList = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setAllProjects(projectsList);
+        const { data } = await supabase.from('projects').select('*').order('project_name', { ascending: true });
+        setAllProjects(data || []);
       } catch (err) {
-        console.error("Error fetching projects in MyLeads:", err);
+        console.error('Error fetching projects in MyLeads:', err);
       }
     };
     fetchProjectsList();
@@ -1643,10 +1618,11 @@ const MyLeads = () => {
 
   useEffect(() => {
     if (!user) return;
-    const unsubTeams = onSnapshot(collection(db, 'teams'), (snapshot) => {
-      setTeams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-    return () => unsubTeams();
+    const fetchTeams = async () => {
+      const { data } = await supabase.from('teams').select('*');
+      setTeams(data || []);
+    };
+    fetchTeams();
   }, [user]);
 
   const filteredProjects = React.useMemo(() => {
@@ -1695,89 +1671,77 @@ const MyLeads = () => {
 
   useEffect(() => {
     if (!user) return;
-
-    // 1. Fetch all users to determine hierarchy
-    const unsubUsers = onSnapshot(collection(db, 'users'), (userSnapshot) => {
-      const usersData = userSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setAllUsers(usersData);
-    });
-
-    return () => unsubUsers();
+    const fetchUsers = async () => {
+      const { data } = await supabase.from('users').select('*');
+      setAllUsers(data || []);
+    };
+    fetchUsers();
   }, []);
 
   useEffect(() => {
     if (!user || allUsers.length === 0) return;
 
-    const isAdmin = user.role === 'Admin' || user.role === 'MD' || user.role === 'System Admin';
-    let q;
+    const isAdmin = user.role === 'Admin' || user.role === 'MD' || user.role === 'System Admin' || user.account_type === 'super_admin';
 
-    if (isAdmin) {
-      q = query(collection(db, 'leads'));
-    } else {
-      const currentUserName = user.fullName || user.name || '';
-      
-      // Find all teams managed by the current user
-      const managedTeams = teams.filter(t => {
-        const leads = t.teamLeads || (t.teamLead ? [t.teamLead] : []);
-        return leads.includes(currentUserName);
-      });
+    const fetchLeads = async () => {
+      let query = supabase.from('leads').select('*').neq('status', 'Released');
 
-      // Collect all member names from these teams
-      const teamMemberNames = new Set();
-      managedTeams.forEach(t => {
-        if (t.members) {
-          t.members.forEach(m => teamMemberNames.add(m));
+      // Tenant isolation filter
+      if (user.account_type === 'super_admin') {
+        if (currentTenant?.type === 'org') {
+          query = query.eq('org_id', currentTenant.id);
+        } else if (currentTenant?.type === 'individual') {
+          query = query.eq('owner_id', currentTenant.id);
         }
-      });
+      } else {
+        if (user.org_id) {
+          query = query.eq('org_id', user.org_id);
+        } else {
+          query = query.eq('owner_id', user.uid);
+        }
+      }
 
-      // Map member names to uids
-      const teamMemberUids = allUsers
-        .filter(u => teamMemberNames.has(u.fullName || u.name))
-        .map(u => u.uid || u.id)
-        .filter(Boolean);
+      if (!isAdmin) {
+        const currentUserName = user.full_name || user.fullName || user.name || '';
+        const managedTeams = teams.filter(t => {
+          const leads = t.team_leads || t.teamLeads || (t.team_lead ? [t.team_lead] : []);
+          return leads.includes(currentUserName);
+        });
+        const teamMemberNames = new Set();
+        managedTeams.forEach(t => { if (t.members) t.members.forEach(m => teamMemberNames.add(m)); });
+        const teamMemberUids = allUsers.filter(u => teamMemberNames.has(u.full_name || u.fullName || u.name)).map(u => u.uid || u.id).filter(Boolean);
+        const allowedUids = Array.from(new Set([
+          user.uid,
+          ...allUsers.filter(u => (u.reports_to || u.reportsTo) === currentUserName).map(u => u.uid || u.id).filter(Boolean),
+          ...teamMemberUids
+        ]));
+        query = query.or(`assigned_to.in.(${allowedUids.join(',')}),owner_id.in.(${allowedUids.join(',')})`);
+      }
 
-      const allowedUids = Array.from(new Set([
-        user.uid, 
-        ...allUsers.filter(u => u.reportsTo === currentUserName).map(u => u.uid || u.id).filter(Boolean),
-        ...teamMemberUids
-      ]));
+      const { data, error } = await query;
+      if (error) { console.error('Error fetching leads:', error); setIsLoading(false); return; }
 
-      // Firestore 'in' query supports at most 30 elements
-      const limitedUids = allowedUids.slice(0, 30);
+      let leadsList = (data || []).map(row => ({
+        ...row,
+        age: row.created_at ? formatDateToDDMMYYYY(row.created_at) : 'Just now'
+      }));
 
-      q = query(
-        collection(db, 'leads'), 
-        or(
-          where('assignedTo', 'in', limitedUids),
-          where('ownerId', 'in', limitedUids)
-        )
-      );
-    }
-
-    const unsubscribeLeads = onSnapshot(q, (snapshot) => {
-      let leadsList = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        age: doc.data().createdAt ? 
-             formatDateToDDMMYYYY(doc.data().createdAt) : 
-             'Just now'
-       })).filter(l => l.status !== 'Released');
-
-      leadsList.sort((a, b) => {
-        const dateA = a.createdAt?.toDate?.() || new Date(0);
-        const dateB = b.createdAt?.toDate?.() || new Date(0);
-        return dateB - dateA;
-      });
-
+      leadsList.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
       setLeads(leadsList);
       setIsLoading(false);
-    }, (error) => {
-      console.error("Error fetching leads:", error);
-      setIsLoading(false);
-    });
+    };
 
-    return () => unsubscribeLeads();
-  }, [user, allUsers, teams]);
+    fetchLeads();
+    const ch = supabase.channel('myleads-channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => {
+        fetchLeads();
+      })
+      .subscribe();
+
+    return () => {
+      ch.unsubscribe();
+    };
+  }, [user, allUsers, currentTenant, teams]);
 
   const handleDragStart = (e, leadId) => {
     setDraggedLeadId(leadId);
@@ -1817,11 +1781,10 @@ const MyLeads = () => {
 
   const confirmStatusUpdate = async (data) => {
     try {
-      const leadRef = doc(db, 'leads', updateModal.lead.id);
       const newHistory = [
         ...(updateModal.lead.history || []),
-        { 
-          date: new Date().toISOString().split('T')[0], 
+        {
+          date: new Date().toISOString().split('T')[0],
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           note: data.note,
           appointment: data.appointmentDate,
@@ -1835,23 +1798,22 @@ const MyLeads = () => {
       const updatePayload = {
         status: updateModal.lead.status === 'Fresh Lead' ? 'Follow Up' : updateModal.newStatus,
         history: newHistory,
-        updatedAt: serverTimestamp(),
-        nextFollowUpDate: data.nextFollowUp || updateModal.lead.nextFollowUpDate || null,
+        updated_at: new Date().toISOString(),
+        next_follow_up_date: data.nextFollowUp || updateModal.lead.next_follow_up_date || updateModal.lead.nextFollowUpDate || null,
         interests: data.interests || updateModal.lead.interests || []
       };
 
       if (data.isAppointment) {
-        updatePayload.visitDate = data.appointmentDate;
-        updatePayload.visitTime = data.appointmentTime;
-        updatePayload.visitLocation = data.appointmentLocation;
-        updatePayload.visitStatus = 'Confirmed';
+        updatePayload.visit_date = data.appointmentDate;
+        updatePayload.visit_time = data.appointmentTime;
+        updatePayload.visit_location = data.appointmentLocation;
+        updatePayload.visit_status = 'Confirmed';
       }
 
-      await updateDoc(leadRef, updatePayload);
-      
+      await supabase.from('leads').update(updatePayload).eq('id', updateModal.lead.id);
       setUpdateModal({ isOpen: false, lead: null, newStatus: '' });
     } catch (error) {
-      console.error("Error updating lead status:", error);
+      console.error('Error updating lead status:', error);
     }
   };
 
@@ -1860,54 +1822,47 @@ const MyLeads = () => {
 
     try {
       const lead = assignModal.lead;
-      const assignedUser = allUsers.find(u => u.uid === assigneeId);
-      const assignedToName = assignedUser ? (assignedUser.fullName || assignedUser.name) : 'Unassigned';
+      const assignedUser = allUsers.find(u => u.uid === assigneeId || u.id === assigneeId);
+      const assignedToName = assignedUser ? (assignedUser.full_name || assignedUser.fullName || assignedUser.name) : 'Unassigned';
 
-      const updatePayload = {
-        assignedTo: assigneeId,
-        assignedToName: assignedToName,
-        lastAssignedAt: serverTimestamp()
-      };
-
-      // Ensure ownerId is set if it's missing (original person assigning it becomes owner)
-      if (!lead.ownerId) {
-        updatePayload.ownerId = user.uid;
-      }
-
-      // Add to interaction history
       const historyRecord = {
         date: new Date().toISOString(),
-        note: `Lead assigned to ${assignedToName} by ${user.fullName || user.name}.${instruction ? ` Instruction: ${instruction}` : ''}`,
+        note: `Lead assigned to ${assignedToName} by ${user.full_name || user.fullName || user.name}.${instruction ? ` Instruction: ${instruction}` : ''}`,
         type: 'Assignment',
-        createdBy: user.fullName || user.name
+        createdBy: user.full_name || user.fullName || user.name
       };
 
-      updatePayload.history = arrayUnion(historyRecord);
-      updatePayload.assignedByName = user.fullName || user.name;
+      const newHistory = [...(lead.history || []), historyRecord];
 
-      await updateDoc(doc(db, 'leads', lead.id), updatePayload);
+      const updatePayload = {
+        assigned_to: assigneeId,
+        assigned_to_name: assignedToName,
+        last_assigned_at: new Date().toISOString(),
+        history: newHistory,
+        assigned_by_name: user.full_name || user.fullName || user.name
+      };
+      if (!lead.owner_id && !lead.ownerId) updatePayload.owner_id = user.uid;
 
-      // Create notification for the assignee
-      await addDoc(collection(db, 'notifications'), {
-        userId: assigneeId,
+      await supabase.from('leads').update(updatePayload).eq('id', lead.id);
+
+      await supabase.from('notifications').insert({
+        user_id: assigneeId,
         title: 'New Lead Assigned',
-        message: `${user.fullName || user.name} assigned you a lead: ${lead.name}.${instruction ? ` \nInstruction: ${instruction}` : ''}`,
+        message: `${user.full_name || user.fullName || user.name} assigned you a lead: ${lead.name}.${instruction ? ` \nInstruction: ${instruction}` : ''}`,
         type: 'assignment',
-        leadId: lead.id,
-        read: false,
-        createdAt: serverTimestamp()
+        lead_id: lead.id,
+        is_read: false,
+        created_at: new Date().toISOString()
       });
 
-      // Trigger email if enabled and assignee has an email
       if (assignedUser && assignedUser.email) {
-        // We check settings if available, otherwise default to sending
-        const shouldSendEmail = assignedUser.notificationSettings?.mailAlerts?.leadAssigned !== false;
-        
+        const shouldSendEmail = assignedUser.notification_settings?.mail_alerts?.lead_assigned !== false &&
+          assignedUser.notificationSettings?.mailAlerts?.leadAssigned !== false;
         if (shouldSendEmail) {
           await sendLeadAssignmentEmail(
             assignedUser.email,
             assignedToName,
-            user.fullName || user.name,
+            user.full_name || user.fullName || user.name,
             lead.name,
             instruction
           );
@@ -1916,18 +1871,17 @@ const MyLeads = () => {
 
       setAssignModal({ isOpen: false, lead: null });
     } catch (error) {
-      console.error("Error assigning lead:", error);
+      console.error('Error assigning lead:', error);
     }
   };
 
   const handleSaveInterests = async (selectedProjects) => {
     if (!interestsModal.lead) return;
     try {
-      const leadRef = doc(db, 'leads', interestsModal.lead.id);
-      await updateDoc(leadRef, {
+      await supabase.from('leads').update({
         interests: selectedProjects,
-        updatedAt: serverTimestamp()
-      });
+        updated_at: new Date().toISOString()
+      }).eq('id', interestsModal.lead.id);
       setInterestsModal({ isOpen: false, lead: null });
     } catch (error) {
       console.error("Error saving lead interests:", error);
@@ -2365,12 +2319,12 @@ const MyLeads = () => {
                 });
               }
 
-              return addDoc(collection(db, 'leads'), {
+              return supabase.from('leads').insert({
                 ...lead,
-                createdAt: serverTimestamp(),
-                ownerId: user.uid, // Set ownerId on import
-                assignedTo: user.uid,
-                assignedToName: user.fullName || user.name,
+                created_at: new Date().toISOString(),
+                owner_id: user.uid,
+                assigned_to: user.uid,
+                assigned_to_name: user.full_name || user.fullName || user.name,
                 status: lead.nextFollowUp ? 'Follow Up' : 'Fresh Lead',
                 history: history,
                 type: 'mine'

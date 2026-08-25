@@ -1,22 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { db } from '../lib/firebase';
-import { 
-  collection, 
-  doc, 
-  getDoc, 
-  getDocs,
-  setDoc, 
-  updateDoc, 
-  addDoc, 
-  onSnapshot, 
-  query, 
-  where, 
-  orderBy, 
-  serverTimestamp,
-  arrayUnion 
-} from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import DashboardLayout from '../layouts/DashboardLayout';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
@@ -53,7 +38,7 @@ import {
 import './HROperations.css';
 
 const HROperations = () => {
-  const { user, hasPermission } = useAuth();
+  const { user, hasPermission, currentTenant } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') || 'attendance';
@@ -170,11 +155,11 @@ const HROperations = () => {
     casualQuota: 10,
     medicalQuota: 14,
     earnedQuota: 15,
-    orgName: 'Faham Estate Ltd.',
+    orgName: 'Nest CRM',
     orgLogo: '',
     orgAddress: 'House 12, Road 5, Banani, Dhaka, Bangladesh',
     orgPhone: '+880 2-988XXXX',
-    orgEmail: 'info@fahamestate.com'
+    orgEmail: 'info@nestcrm.com'
   });
   const [newHoliday, setNewHoliday] = useState({ date: '', name: '' });
   const [isSavingSettings, setIsSavingSettings] = useState(false);
@@ -222,157 +207,150 @@ const HROperations = () => {
   useEffect(() => {
     if (!user) return;
 
-    // 1. Fetch current user additional data (e.g. base salary, custom permissions)
-    const unsubCurrentUser = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
-      if (docSnap.exists()) {
-        setCurrentUserData(docSnap.data());
-      }
-    });
+    const fetchBaseData = async () => {
+      const isSA = user.account_type === 'super_admin';
+      
+      // Determine queries based on tenant selection
+      let usersQuery = supabase.from('users').select('*');
+      let hrQuery = supabase.from('hr_settings').select('*');
 
-    // 2. Fetch standard HR configuration
-    const unsubSettings = onSnapshot(doc(db, 'hr_settings', 'config'), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setHrSettings(prev => ({ ...prev, ...data }));
-        // Sync default quotas if not set
+      if (isSA) {
+        if (currentTenant?.type === 'org') {
+          usersQuery = usersQuery.eq('org_id', currentTenant.id);
+          hrQuery = hrQuery.eq('org_id', currentTenant.id);
+        } else if (currentTenant?.type === 'individual') {
+          usersQuery = usersQuery.eq('id', currentTenant.id);
+          hrQuery = hrQuery.eq('org_id', currentTenant.id); // fallback
+        }
+      } else {
+        if (user.org_id) {
+          usersQuery = usersQuery.eq('org_id', user.org_id);
+          hrQuery = hrQuery.eq('org_id', user.org_id);
+        } else {
+          usersQuery = usersQuery.eq('id', user.uid);
+        }
+      }
+
+      const [userRes, hrRes, usersRes] = await Promise.all([
+        supabase.from('users').select('*').eq('id', user.uid).maybeSingle(),
+        hrQuery.eq('id', 'config').maybeSingle(),
+        usersQuery
+      ]);
+
+      if (userRes.data) setCurrentUserData(userRes.data);
+
+      if (hrRes.data) {
+        setHrSettings(prev => ({ ...prev, ...hrRes.data }));
         setLeaveBalances(prev => ({
-          casual: { ...prev.casual, quota: data.casualQuota || 10 },
-          medical: { ...prev.medical, quota: data.medicalQuota || 14 },
-          earn: { ...prev.earn, quota: data.earnedQuota || 15 }
+          casual: { ...prev.casual, quota: hrRes.data.casual_quota || hrRes.data.casualQuota || 10 },
+          medical: { ...prev.medical, quota: hrRes.data.medical_quota || hrRes.data.medicalQuota || 14 },
+          earn: { ...prev.earn, quota: hrRes.data.earned_quota || hrRes.data.earnedQuota || 15 }
         }));
       } else {
-        // Initialize default config in Firestore
-        setDoc(doc(db, 'hr_settings', 'config'), hrSettings).catch(console.error);
+        const defaultSettings = { ...hrSettings };
+        if (currentTenant?.type === 'org') {
+          defaultSettings.org_id = currentTenant.id;
+        } else if (user.org_id) {
+          defaultSettings.org_id = user.org_id;
+        }
+        await supabase.from('hr_settings').upsert({ id: 'config', ...defaultSettings });
       }
-    });
 
-    // 3. Fetch all system users
-    const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const users = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        name: doc.data().fullName || doc.data().name || 'Employee'
-      }));
+      const users = (usersRes.data || []).map(u => ({ ...u, name: u.full_name || u.fullName || u.name || 'Employee' }));
       setUsersList(users);
       setLoading(false);
-    });
-
-    return () => {
-      unsubCurrentUser();
-      unsubSettings();
-      unsubUsers();
     };
-  }, [user]);
+
+    fetchBaseData();
+  }, [user, currentTenant]);
 
   // Load attendance data
   useEffect(() => {
     if (!user) return;
     const todayStr = new Date().toISOString().split('T')[0];
+    const uids = usersList.map(u => u.id || u.uid);
 
-    // Listen to current user today's attendance record
-    const unsubToday = onSnapshot(doc(db, 'attendance', `${user.uid}_${todayStr}`), (docSnap) => {
-      if (docSnap.exists()) {
-        setUserTodayAttendance(docSnap.data());
-      } else {
-        setUserTodayAttendance(null);
+    const fetchAttendance = async () => {
+      const [todayRes, historyRes] = await Promise.all([
+        supabase.from('attendance').select('*').eq('user_id', user.uid).eq('date', todayStr).maybeSingle(),
+        supabase.from('attendance').select('*').eq('user_id', user.uid).order('date', { ascending: false })
+      ]);
+      setUserTodayAttendance(todayRes.data || null);
+      setUserAttendanceHistory(historyRes.data || []);
+      
+      if (isAdmin || user.account_type === 'super_admin') {
+        let query = supabase.from('attendance').select('*').order('date', { ascending: false });
+        if (uids.length > 0) {
+          query = query.in('user_id', uids);
+        } else {
+          query = query.eq('user_id', '00000000-0000-0000-0000-000000000000'); // empty fallback
+        }
+        const { data: allLogs } = await query;
+        setAllAttendanceLogs(allLogs || []);
       }
-    });
-
-    // Listen to current user general attendance history
-    const qHistory = query(
-      collection(db, 'attendance'),
-      where('userId', '==', user.uid),
-      orderBy('date', 'desc')
-    );
-    const unsubHistory = onSnapshot(qHistory, (snapshot) => {
-      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setUserAttendanceHistory(list);
-    });
-
-    // Listen to all attendance logs for admin view
-    let unsubAllLogs = () => {};
-    if (isAdmin) {
-      const qAllLogs = query(
-        collection(db, 'attendance'),
-        orderBy('date', 'desc')
-      );
-      unsubAllLogs = onSnapshot(qAllLogs, (snapshot) => {
-        const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setAllAttendanceLogs(list);
-      });
-    }
-
-    return () => {
-      unsubToday();
-      unsubHistory();
-      unsubAllLogs();
     };
-  }, [user, isAdmin]);
+    fetchAttendance();
+    const ch = supabase.channel('hr-attendance')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, fetchAttendance)
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [user, isAdmin, usersList]);
 
   // Load Leave Management data
   useEffect(() => {
     if (!user) return;
+    const uids = usersList.map(u => u.id || u.uid);
 
-    // Current user's leaves
-    const qLeaves = query(
-      collection(db, 'leave_applications'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc')
-    );
-    const unsubLeaves = onSnapshot(qLeaves, (snapshot) => {
-      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setLeaveApplications(list);
+    const fetchLeaves = async () => {
+      const { data: myLeaves } = await supabase.from('leave_applications').select('*').eq('user_id', user.uid).order('created_at', { ascending: false });
+      setLeaveApplications(myLeaves || []);
 
-      // Re-calculate user taken balances on the fly
-      const approvedLeaves = list.filter(l => l.status === 'Approved');
+      const approvedLeaves = (myLeaves || []).filter(l => l.status === 'Approved');
       const taken = { casual: 0, medical: 0, earn: 0 };
       approvedLeaves.forEach(l => {
-        const type = l.leaveType?.toLowerCase();
+        const type = (l.leave_type || l.leaveType || '').toLowerCase();
         if (type === 'casual') taken.casual += l.days || 0;
         else if (type === 'medical' || type === 'sick') taken.medical += l.days || 0;
         else if (type === 'earned' || type === 'earn') taken.earn += l.days || 0;
       });
-
       setLeaveBalances(prev => ({
         casual: { ...prev.casual, taken: taken.casual },
         medical: { ...prev.medical, taken: taken.medical },
         earn: { ...prev.earn, taken: taken.earn }
       }));
-    });
 
-    // All leave applications for Admin Approval
-    let unsubAllLeaves = () => {};
-    if (isAdmin) {
-      const qAll = query(collection(db, 'leave_applications'), orderBy('createdAt', 'desc'));
-      unsubAllLeaves = onSnapshot(qAll, (snapshot) => {
-        const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setAllLeaveApplications(list);
-      });
-    }
-
-    return () => {
-      unsubLeaves();
-      unsubAllLeaves();
+      if (isAdmin || user.account_type === 'super_admin') {
+        let query = supabase.from('leave_applications').select('*').order('created_at', { ascending: false });
+        if (uids.length > 0) {
+          query = query.in('user_id', uids);
+        } else {
+          query = query.eq('user_id', '00000000-0000-0000-0000-000000000000');
+        }
+        const { data: allLeaves } = await query;
+        setAllLeaveApplications(allLeaves || []);
+      }
     };
-  }, [user, isAdmin]);
+    fetchLeaves();
+    const ch = supabase.channel('hr-leaves')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_applications' }, fetchLeaves)
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [user, isAdmin, usersList]);
 
   // Synchronize submitted/approved payroll sheet for selected month
   useEffect(() => {
     if (!payrollMonth) return;
-    const q = query(
-      collection(db, 'salary_payroll_approvals'),
-      where('month', '==', payrollMonth)
-    );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (!snapshot.empty) {
-        const docData = snapshot.docs[0].data();
+    const fetchPayroll = async () => {
+      const { data } = await supabase.from('salary_payroll_approvals').select('*').eq('month', payrollMonth);
+      if (data && data.length > 0) {
+        const docData = data[0];
         setSubmittedPayrollStatus(docData.status);
-        if (docData.payrollRows) {
-          const rows = docData.payrollRows.map(row => ({
+        if (docData.payroll_rows || docData.payrollRows) {
+          const rows = (docData.payroll_rows || docData.payrollRows).map(row => ({
             ...row,
-            baseSalary: row.baseSalary || row.grossSalary || 0,
-            salesIncentive: row.salesIncentive || row.commission || 0,
-            totalDeduction: row.totalDeduction || row.deductions || 0
+            baseSalary: row.base_salary || row.baseSalary || row.grossSalary || 0,
+            salesIncentive: row.sales_incentive || row.salesIncentive || row.commission || 0,
+            totalDeduction: row.total_deduction || row.totalDeduction || row.deductions || 0
           }));
           setPayrollSheet(rows);
           setIsPayrollGenerated(true);
@@ -380,8 +358,8 @@ const HROperations = () => {
       } else {
         setSubmittedPayrollStatus(null);
       }
-    });
-    return () => unsubscribe();
+    };
+    fetchPayroll();
   }, [payrollMonth]);
 
   // Geolocation Handler
@@ -495,11 +473,21 @@ const HROperations = () => {
     };
 
     try {
-      await setDoc(doc(db, 'attendance', docId), newLog);
-      showToast("Checked in successfully!", "success");
+      await supabase.from('attendance').upsert({
+        id: docId,
+        ...newLog,
+        user_id: newLog.userId,
+        user_name: newLog.userName,
+        user_email: newLog.userEmail,
+        check_in: newLog.checkIn,
+        check_out: newLog.checkOut,
+        late_minutes: newLog.lateMinutes,
+        ot_minutes: newLog.otMinutes
+      });
+      showToast('Checked in successfully!', 'success');
     } catch (error) {
-      console.error("Check-in error:", error);
-      showToast("Failed to check in.", "error");
+      console.error('Check-in error:', error);
+      showToast('Failed to check in.', 'error');
     }
   };
 
@@ -522,15 +510,15 @@ const HROperations = () => {
     const docId = `${user.uid}_${dateStr}`;
 
     try {
-      await updateDoc(doc(db, 'attendance', docId), {
-        checkOut: now.toISOString(),
-        otMinutes,
-        notes: (userTodayAttendance.notes || '') + ' | Checked Out via App'
-      });
-      showToast("Checked out successfully!", "success");
+      await supabase.from('attendance').update({
+        check_out: now.toISOString(),
+        ot_minutes: otMinutes,
+        notes: ((userTodayAttendance.notes || userTodayAttendance.note) || '') + ' | Checked Out via App'
+      }).eq('id', docId);
+      showToast('Checked out successfully!', 'success');
     } catch (error) {
-      console.error("Check-out error:", error);
-      showToast("Failed to check out.", "error");
+      console.error('Check-out error:', error);
+      showToast('Failed to check out.', 'error');
     }
   };
 
@@ -559,20 +547,20 @@ const HROperations = () => {
     }
 
     try {
-      await addDoc(collection(db, 'leave_applications'), {
-        userId: user.uid,
-        userName: currentUserData?.fullName || user.displayName || 'Employee',
-        userEmail: user.email,
-        leaveType: newLeaveApplication.leaveType,
-        startDate: newLeaveApplication.startDate,
-        endDate: newLeaveApplication.endDate,
+      await supabase.from('leave_applications').insert({
+        user_id: user.uid,
+        user_name: currentUserData?.full_name || currentUserData?.fullName || user.email || 'Employee',
+        user_email: user.email,
+        leave_type: newLeaveApplication.leaveType,
+        start_date: newLeaveApplication.startDate,
+        end_date: newLeaveApplication.endDate,
         days: diffDays,
         reason: newLeaveApplication.reason,
         status: 'Pending',
-        createdAt: new Date().toISOString()
+        created_at: new Date().toISOString()
       });
 
-      showToast("Leave application submitted!", "success");
+      showToast('Leave application submitted!', 'success');
       setIsLeaveModalOpen(false);
       setNewLeaveApplication({
         leaveType: 'Casual',
@@ -581,34 +569,30 @@ const HROperations = () => {
         reason: ''
       });
     } catch (error) {
-      console.error("Apply Leave error:", error);
-      showToast("Failed to apply for leave.", "error");
+      console.error('Apply Leave error:', error);
+      showToast('Failed to apply for leave.', 'error');
     }
   };
 
   // Leave Approval actions
   const handleLeaveApproval = async (applicationId, status) => {
     try {
-      const appRef = doc(db, 'leave_applications', applicationId);
-      await updateDoc(appRef, { status });
-      showToast(`Leave application ${status.toLowerCase()}!`, "success");
+      await supabase.from('leave_applications').update({ status }).eq('id', applicationId);
+      showToast(`Leave application ${status.toLowerCase()}!`, 'success');
     } catch (error) {
-      console.error("Leave approval error:", error);
-      showToast("Failed to update leave application.", "error");
+      console.error('Leave approval error:', error);
+      showToast('Failed to update leave application.', 'error');
     }
   };
 
   // Save base salary in Employee Master
   const handleSaveSalary = async (employeeId, salary) => {
     try {
-      const userRef = doc(db, 'users', employeeId);
-      await updateDoc(userRef, {
-        baseSalary: parseFloat(salary) || 0
-      });
-      showToast("Base salary updated successfully!", "success");
+      await supabase.from('users').update({ base_salary: parseFloat(salary) || 0 }).eq('id', employeeId);
+      showToast('Base salary updated successfully!', 'success');
     } catch (error) {
-      console.error("Save salary error:", error);
-      showToast("Failed to update salary.", "error");
+      console.error('Save salary error:', error);
+      showToast('Failed to update salary.', 'error');
     }
   };
 
@@ -744,43 +728,37 @@ const HROperations = () => {
     };
 
     try {
-      const userRef = doc(db, 'users', selectedEmployeeForEdit.id);
-      
-      const payload = {
+      const salaryHistory = selectedEmployeeForEdit.salary_history || selectedEmployeeForEdit.salaryHistory || [];
+      const newHistory = [...salaryHistory, historyEntry];
+
+      await supabase.from('users').update({
         role: editEmployeeData.role,
-        baseSalary: breakdown.basicSalary,
-        salaryStructure: {
-          effectiveFrom: editEmployeeData.effectiveFrom || new Date().toISOString().split('T')[0],
-          basicSalary: breakdown.basicSalary,
-          houseRent: breakdown.houseRent,
+        base_salary: breakdown.basicSalary,
+        salary_structure: {
+          effective_from: editEmployeeData.effectiveFrom || new Date().toISOString().split('T')[0],
+          basic_salary: breakdown.basicSalary,
+          house_rent: breakdown.houseRent,
           medical: breakdown.medical,
           transport: breakdown.transport,
-          otherAllowance: breakdown.otherAllowance,
-          grossSalary: breakdown.grossSalary,
-          festiveBonuses: parseFloat(editEmployeeData.festiveBonuses) || 0,
-          salesIncentiveRate: parseFloat(editEmployeeData.salesIncentiveRate) || 0,
-          providentFund: breakdown.providentFund,
-          taxCategory: editEmployeeData.taxCategory,
-          incomeTax: breakdown.incomeTax,
+          other_allowance: breakdown.otherAllowance,
+          gross_salary: breakdown.grossSalary,
+          festive_bonuses: parseFloat(editEmployeeData.festiveBonuses) || 0,
+          sales_incentive_rate: parseFloat(editEmployeeData.salesIncentiveRate) || 0,
+          provident_fund: breakdown.providentFund,
+          tax_category: editEmployeeData.taxCategory,
+          income_tax: breakdown.incomeTax,
           loan: breakdown.loan,
-          otherDeductions: breakdown.otherDeductions,
-          totalDeductions: breakdown.totalDeductions,
-          netSalary: breakdown.netSalary
-        }
-      };
-
-      if (selectedEmployeeForEdit.salaryHistory) {
-        payload.salaryHistory = arrayUnion(historyEntry);
-      } else {
-        payload.salaryHistory = [historyEntry];
-      }
-
-      await updateDoc(userRef, payload);
-      showToast("Employee profile and salary structure updated!", "success");
+          other_deductions: breakdown.otherDeductions,
+          total_deductions: breakdown.totalDeductions,
+          net_salary: breakdown.netSalary
+        },
+        salary_history: newHistory
+      }).eq('id', selectedEmployeeForEdit.id);
+      showToast('Employee profile and salary structure updated!', 'success');
       setIsEmployeeModalOpen(false);
     } catch (err) {
       console.error(err);
-      showToast("Failed to update employee profile.", "error");
+      showToast('Failed to update employee profile.', 'error');
     }
   };
 
@@ -798,24 +776,14 @@ const HROperations = () => {
       const totalDays = monthEnd.getDate();
 
       // Retrieve all attendance logs in month
-      const attendanceRef = collection(db, 'attendance');
       const startStr = `${year}-${String(month).padStart(2, '0')}-01`;
       const endStr = `${year}-${String(month).padStart(2, '0')}-${totalDays}`;
 
-      const q = query(
-        attendanceRef,
-        where('date', '>=', startStr),
-        where('date', '<=', endStr)
-      );
-      const attSnapshot = await getDocs(q);
-      const allAttRecords = attSnapshot.docs.map(doc => doc.data());
+      const { data: attData } = await supabase.from('attendance').select('*').gte('date', startStr).lte('date', endStr);
+      const allAttRecords = attData || [];
 
-      // Retrieve all deals and leads to calculate incentives
-      const dealsSnapshot = await getDocs(collection(db, 'deals'));
-      const allDeals = dealsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-      const leadsSnapshot = await getDocs(collection(db, 'leads'));
-      const allLeads = leadsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const { data: allDeals } = await supabase.from('deals').select('*');
+      const { data: allLeads } = await supabase.from('leads').select('*');
 
       // Loop through all active employees to build row
       const payrollRows = usersList.map(emp => {
@@ -949,22 +917,17 @@ const HROperations = () => {
   const handleSubmitPayrollToAccounts = async () => {
     if (!payrollMonth || payrollSheet.length === 0) return;
     try {
-      // Check if already submitted
-      const q = query(
-        collection(db, 'salary_payroll_approvals'),
-        where('month', '==', payrollMonth)
-      );
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        showToast(`Payroll for ${payrollMonth} has already been submitted to Accounts!`, "warning");
+      const totalPayable = payrollSheet.reduce((acc, row) => acc + (parseFloat(row.netPayable) || 0), 0);
+
+      const { data: existing } = await supabase.from('salary_payroll_approvals').select('id').eq('month', payrollMonth);
+      if (existing && existing.length > 0) {
+        showToast(`Payroll for ${payrollMonth} has already been submitted to Accounts!`, 'warning');
         return;
       }
 
-      const totalPayable = payrollSheet.reduce((acc, row) => acc + (parseFloat(row.netPayable) || 0), 0);
-
-      await addDoc(collection(db, 'salary_payroll_approvals'), {
+      await supabase.from('salary_payroll_approvals').insert({
         month: payrollMonth,
-        payrollRows: payrollSheet.map(row => ({
+        payroll_rows: payrollSheet.map(row => ({
           employeeId: row.employeeId || '',
           employeeName: row.employeeName || '',
           employeeEmail: row.employeeEmail || '',
@@ -1070,16 +1033,17 @@ const HROperations = () => {
     }
 
     try {
-      await setDoc(doc(db, 'attendance', docId), {
-        userId: newManualLog.userId,
-        userName: selectedEmp?.name || 'Employee',
-        userEmail: selectedEmp?.email || '',
+      await supabase.from('attendance').upsert({
+        id: docId,
+        user_id: newManualLog.userId,
+        user_name: selectedEmp?.name || 'Employee',
+        user_email: selectedEmp?.email || '',
         date: dateStr,
-        checkIn: checkInDateTime.toISOString(),
-        checkOut: checkOutDateTime.toISOString(),
+        check_in: checkInDateTime.toISOString(),
+        check_out: checkOutDateTime.toISOString(),
         status,
-        lateMinutes,
-        otMinutes,
+        late_minutes: lateMinutes,
+        ot_minutes: otMinutes,
         type: 'manual',
         notes: newManualLog.notes || 'Manually logged by Admin'
       });
@@ -1141,8 +1105,8 @@ const HROperations = () => {
   const handleSaveHrSettings = async () => {
     setIsSavingSettings(true);
     try {
-      await setDoc(doc(db, 'hr_settings', 'config'), hrSettings);
-      showToast("Configuration saved successfully!", "success");
+      await supabase.from('hr_settings').upsert({ id: 'config', ...hrSettings });
+      showToast('Configuration saved successfully!', 'success');
     } catch (e) {
       console.error(e);
       showToast("Failed to save settings.", "error");
@@ -2334,7 +2298,7 @@ const HROperations = () => {
                 {hrSettings.orgLogo && (
                   <img src={hrSettings.orgLogo} alt="Logo" style={{ height: '60px', objectFit: 'contain', marginBottom: '10px' }} />
                 )}
-                <h2>{hrSettings.orgName || 'Faham Estate Ltd.'}</h2>
+                <h2>{hrSettings.orgName || 'Nest CRM'}</h2>
                 <p>{hrSettings.orgAddress || 'House 12, Road 5, Banani, Dhaka, Bangladesh'}</p>
                 {(hrSettings.orgPhone || hrSettings.orgEmail) && (
                   <p style={{ fontSize: '0.8rem', marginTop: '-4px' }}>

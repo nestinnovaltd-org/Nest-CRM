@@ -17,21 +17,9 @@ import {
 } from 'lucide-react';
 import useThemeStore from '../store/useThemeStore';
 import BottomNavbar from '../components/BottomNavbar';
-import { db } from '../lib/firebase';
-import { 
-  collection, 
-  query, 
-  where, 
-  onSnapshot, 
-  orderBy, 
-  limit, 
-  doc, 
-  updateDoc, 
-  writeBatch,
-  serverTimestamp,
-  getDocs
-} from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { sendVisitReminderEmail } from '../lib/emailService';
+import SuperAdminLayout from '../pages/superadmin/SuperAdminLayout';
 import './DashboardLayout.css';
 
 const DashboardLayout = ({ children }) => {
@@ -42,6 +30,10 @@ const DashboardLayout = ({ children }) => {
   const { isDarkMode, toggleDarkMode } = useThemeStore();
   const { user, logout } = useAuth();
   const [isScrolled, setIsScrolled] = useState(false);
+
+  if (user?.account_type === 'super_admin') {
+    return <SuperAdminLayout>{children}</SuperAdminLayout>;
+  }
 
   const [liveNotifications, setLiveNotifications] = useState([]);
   const unreadCount = liveNotifications.filter(n => !n.isRead).length;
@@ -60,22 +52,21 @@ const DashboardLayout = ({ children }) => {
   useEffect(() => {
     if (!user) return;
 
-    const q = query(
-      collection(db, 'notifications'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc'),
-      limit(20)
-    );
+    const fetchNotifications = async () => {
+      const { data } = await supabase.from('notifications')
+        .select('*')
+        .eq('user_id', user.uid)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      setLiveNotifications((data || []).map(n => ({ ...n, isRead: n.is_read })));
+    };
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const notifs = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setLiveNotifications(notifs);
-    });
+    fetchNotifications();
+    const ch = supabase.channel('dashboard-notifications')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.uid}` }, fetchNotifications)
+      .subscribe();
 
-    return () => unsubscribe();
+    return () => supabase.removeChannel(ch);
   }, [user]);
 
   // Background check for upcoming site visit reminders (1 day before)
@@ -84,66 +75,46 @@ const DashboardLayout = ({ children }) => {
 
     const checkVisitReminders = async () => {
       try {
-        // Calculate tomorrow's date string (YYYY-MM-DD)
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
         const tomorrowStr = tomorrow.toISOString().split('T')[0];
 
-        // Query leads assigned to this user with a visit scheduled for tomorrow
-        const leadsRef = collection(db, 'leads');
-        const q = query(
-          leadsRef,
-          where('assignedTo', '==', user.uid),
-          where('visitDate', '==', tomorrowStr)
-        );
+        const { data: leadsWithVisit } = await supabase.from('leads').select('*')
+          .eq('assigned_to', user.uid)
+          .eq('visit_date', tomorrowStr);
 
-        const querySnapshot = await getDocs(q);
-        
-        for (const docSnap of querySnapshot.docs) {
-          const leadData = docSnap.data();
-          const leadId = docSnap.id;
+        for (const leadData of (leadsWithVisit || [])) {
+          if (leadData.visit_reminder_sent_date === tomorrowStr) continue;
 
-          // Check if reminder was already sent for this visit date
-          if (leadData.visitReminderSentDate === tomorrowStr) {
-            continue;
-          }
-
-          // Fetch the latest follow-up note from the lead's history
           let lastFollowUp = 'No previous follow-up notes.';
           if (leadData.history && leadData.history.length > 0) {
             lastFollowUp = leadData.history[leadData.history.length - 1].note;
           }
 
-          console.log(`Sending upcoming visit reminder email to ${user.email} for client ${leadData.name || leadData.fullName}`);
-
           const response = await sendVisitReminderEmail(
             user.email,
-            user.fullName || user.name || 'Team Member',
-            leadData.fullName || leadData.name || 'Client',
+            user.full_name || user.fullName || user.name || 'Team Member',
+            leadData.full_name || leadData.fullName || leadData.name || 'Client',
             leadData.phone || '',
             leadData.email || '',
             lastFollowUp,
-            leadData.visitDate,
-            leadData.visitTime || '10:00 AM',
-            leadData.visitLocation || 'Not Specified',
-            leadData.visitNote || 'No specific notes',
+            leadData.visit_date || leadData.visitDate,
+            leadData.visit_time || leadData.visitTime || '10:00 AM',
+            leadData.visit_location || leadData.visitLocation || 'Not Specified',
+            leadData.visit_note || leadData.visitNote || 'No specific notes',
             leadData.designation || '',
             leadData.company || ''
           );
 
           if (response.success) {
-            // Update Firestore so we don't send reminder again for this visit date
-            await updateDoc(doc(db, 'leads', leadId), {
-              visitReminderSentDate: tomorrowStr
-            });
+            await supabase.from('leads').update({ visit_reminder_sent_date: tomorrowStr }).eq('id', leadData.id);
           }
         }
       } catch (error) {
-        console.error("Error checking visit reminders:", error);
+        console.error('Error checking visit reminders:', error);
       }
     };
 
-    // Run check once on login/mount, and then every 4 hours if the app stays open
     checkVisitReminders();
     const interval = setInterval(checkVisitReminders, 4 * 60 * 60 * 1000);
 
@@ -172,23 +143,20 @@ const DashboardLayout = ({ children }) => {
   const markAllAsRead = async () => {
     if (!user || unreadCount === 0) return;
     try {
-      const batch = writeBatch(db);
-      liveNotifications.forEach(n => {
-        if (!n.isRead) {
-          batch.update(doc(db, 'notifications', n.id), { isRead: true });
-        }
-      });
-      await batch.commit();
+      await supabase.from('notifications')
+        .update({ is_read: true })
+        .eq('user_id', user.uid)
+        .eq('is_read', false);
     } catch (error) {
-      console.error("Error marking all as read:", error);
+      console.error('Error marking all as read:', error);
     }
   };
 
   const markAsRead = async (id) => {
     try {
-      await updateDoc(doc(db, 'notifications', id), { isRead: true });
+      await supabase.from('notifications').update({ is_read: true }).eq('id', id);
     } catch (error) {
-      console.error("Error marking notification as read:", error);
+      console.error('Error marking notification as read:', error);
     }
   };
 

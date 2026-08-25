@@ -1,6 +1,5 @@
 import { create } from 'zustand';
-import { auth } from '../lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
+import { supabase } from '../lib/supabase';
 
 const useAuthStore = create((set) => ({
   user: null,
@@ -14,13 +13,9 @@ const useAuthStore = create((set) => ({
   setError: (error) => set({ error }),
 
   init: () => {
-    onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        // In a real app, fetch role from Firestore here
-        // const userDoc = await getDoc(doc(db, 'users', user.uid));
-        // const role = userDoc.data()?.role || 'team_member';
-        
-        set({ user, role: 'md', loading: false }); // Mocking MD role for now
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        set({ user: session.user, role: 'md', loading: false });
       } else {
         set({ user: null, role: null, loading: false });
       }
@@ -28,7 +23,7 @@ const useAuthStore = create((set) => ({
   },
 
   signOut: async () => {
-    await auth.signOut();
+    await supabase.auth.signOut();
     set({ user: null, role: null });
   }
 }));

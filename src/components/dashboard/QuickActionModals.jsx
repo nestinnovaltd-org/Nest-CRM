@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import Modal from '../ui/Modal';
 import Button from '../ui/Button';
-import { db } from '../../lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { User, Phone, MapPin, Calendar, CreditCard, MessageSquare } from 'lucide-react';
 
@@ -20,18 +19,18 @@ export const QuickLeadModal = ({ isOpen, onClose }) => {
     e.preventDefault();
     setLoading(true);
     try {
-      await addDoc(collection(db, 'leads'), {
+      await supabase.from('leads').insert({
         ...formData,
         status: 'Fresh Lead',
         priority: 'Medium',
-        assignedTo: user.uid,
-        createdBy: user.name || user.fullName,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        assigned_to: user.uid,
+        created_by: user.name || user.full_name || user.fullName,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       });
       onClose();
     } catch (error) {
-      console.error("Error adding lead:", error);
+      console.error('Error adding lead:', error);
     } finally {
       setLoading(false);
     }

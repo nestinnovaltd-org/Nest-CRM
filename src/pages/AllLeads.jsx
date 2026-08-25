@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
-import { collection, onSnapshot, query, where, orderBy } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../layouts/DashboardLayout';
 import LeadTabs from '../components/LeadTabs';
@@ -96,28 +95,41 @@ const AllLeads = () => {
   useEffect(() => {
     if (!currentUser) return;
 
-    // Fetch users and leads
-    const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const allUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      const isAdmin = currentUser.role === 'Admin' || currentUser.role === 'MD' || currentUser.role === 'System Admin';
-      
+    const isAdmin = currentUser.role === 'Admin' || currentUser.role === 'MD' || currentUser.role === 'System Admin';
+
+    // Fetch users
+    const fetchUsers = async () => {
+      const { data: allUsers } = await supabase.from('users').select('*');
+      if (!allUsers) return;
       if (isAdmin) {
         setUsers(allUsers);
       } else {
-        // Filter users to only include those in current user's hierarchy
         const allowedUids = getSubordinateUids(allUsers, currentUser.uid);
         setUsers(allUsers.filter(u => allowedUids.includes(u.id)));
       }
-    });
+    };
 
-    const unsubscribeLeads = onSnapshot(collection(db, 'leads'), (snapshot) => {
-      setLeads(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    // Fetch leads
+    const fetchLeads = async () => {
+      const { data } = await supabase.from('leads').select('*');
+      setLeads(data || []);
       setIsLoading(false);
-    });
+    };
+
+    fetchUsers();
+    fetchLeads();
+
+    // Real-time subscriptions
+    const usersChannel = supabase.channel('all-leads-users')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, fetchUsers)
+      .subscribe();
+    const leadsChannel = supabase.channel('all-leads-leads')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, fetchLeads)
+      .subscribe();
 
     return () => {
-      unsubscribeUsers();
-      unsubscribeLeads();
+      supabase.removeChannel(usersChannel);
+      supabase.removeChannel(leadsChannel);
     };
   }, [currentUser]);
 

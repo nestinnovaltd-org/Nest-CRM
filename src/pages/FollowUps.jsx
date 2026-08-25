@@ -1,9 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
-import {
-  collection, onSnapshot, query, where, doc,
-  updateDoc, arrayUnion, serverTimestamp, getDocs, orderBy
-} from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../layouts/DashboardLayout';
@@ -106,60 +102,50 @@ const FollowUps = () => {
   /* ── realtime listener ── */
   useEffect(() => {
     if (!user) return;
-    const unsubUsers = onSnapshot(collection(db, 'users'), snap => {
-      const allUsers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const isAdmin  = ['Admin','MD','System Admin'].includes(user.role);
-      let q, allowedUids = [];
 
-      if (isAdmin) {
-        q = query(collection(db, 'leads'));
-      } else {
-        allowedUids = getSubUids(allUsers, user.uid);
-        q = allowedUids.length <= 30
-          ? query(collection(db, 'leads'), where('assignedTo', 'in', allowedUids))
-          : query(collection(db, 'leads'));
+    const fetchLeads = async () => {
+      const { data: allUsers } = await supabase.from('users').select('*');
+      const isAdmin = ['Admin', 'MD', 'System Admin'].includes(user.role);
+      let allowedUids = [];
+
+      if (!isAdmin) {
+        allowedUids = getSubUids(allUsers || [], user.uid);
       }
 
-      const unsubLeads = onSnapshot(q, snap => {
-        let leads = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        if (!isAdmin && allowedUids.length > 30)
-          leads = leads.filter(l => allowedUids.includes(l.assignedTo));
+      let query = supabase.from('leads').select('*').not('next_follow_up_date', 'is', null);
+      if (!isAdmin && allowedUids.length > 0) {
+        query = query.in('assigned_to', allowedUids);
+      }
 
-        const todayStr = new Date().toISOString().split('T')[0];
-        const processed = leads
-          .filter(l => l.nextFollowUpDate)
-          .map(l => {
-            const nd = l.nextFollowUpDate;
-            const type = nd === todayStr ? 'today' : nd < todayStr ? 'missed' : 'upcoming';
-            return {
-              ...l,
-              name:     l.fullName || l.name || 'Unknown',
-              company:  l.projectName || l.company || '',
-              nextDate: nd,
-              nextTime: l.nextFollowUpTime || '09:00',
-              lastNote: l.history?.slice(-1)[0]?.note || null,
-              type,
-              priority: l.priority || 'Normal'
-            };
-          });
-        setFollowUps(processed);
-        setIsLoading(false);
-      }, () => setIsLoading(false));
+      const { data: leads, error } = await query;
+      if (error) { console.error('Error fetching followups:', error); setIsLoading(false); return; }
 
-      return () => unsubLeads();
-    });
-    return () => unsubUsers();
+      const todayStr = new Date().toISOString().split('T')[0];
+      const processed = (leads || []).map(l => {
+        const nd = l.next_follow_up_date || l.nextFollowUpDate;
+        const type = nd === todayStr ? 'today' : nd < todayStr ? 'missed' : 'upcoming';
+        return { ...l, name: l.full_name || l.fullName || l.name || 'Unknown', company: l.project_name || l.projectName || l.company || '', nextDate: nd, nextTime: l.next_follow_up_time || l.nextFollowUpTime || '09:00', lastNote: l.history?.slice(-1)[0]?.note || null, type, priority: l.priority || 'Normal' };
+      });
+      setFollowUps(processed);
+      setIsLoading(false);
+    };
+
+    fetchLeads();
+    const ch = supabase.channel('followups-leads')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, fetchLeads)
+      .subscribe();
+
+    return () => supabase.removeChannel(ch);
   }, [user]);
 
   useEffect(() => {
-    const unsubTeams = onSnapshot(collection(db, 'teams'), (snapshot) => {
-      setTeams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-
-    getDocs(query(collection(db, 'projects'), orderBy('projectName','asc')))
-      .then(s => setRawProjects(s.docs.map(d => ({ id: d.id, ...d.data() }))));
-
-    return () => unsubTeams();
+    const fetchFilters = async () => {
+      const { data: teamsData } = await supabase.from('teams').select('*');
+      setTeams(teamsData || []);
+      const { data: projectsData } = await supabase.from('projects').select('*').order('project_name', { ascending: true });
+      setRawProjects(projectsData || []);
+    };
+    fetchFilters();
   }, []);
 
   const allProjects = React.useMemo(() => {

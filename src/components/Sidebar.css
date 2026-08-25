@@ -104,23 +104,23 @@
 }
 
 .nav-item:hover {
-  background: rgba(38, 226, 100, 0.04) !important;
+  background: var(--primary-soft) !important;
   color: var(--primary) !important;
-  border-color: rgba(38, 226, 100, 0.15) !important;
+  border-color: var(--primary-border) !important;
 }
 
 [data-theme='dark'] .nav-item:hover {
   background: linear-gradient(rgba(13, 16, 21, 0.95), rgba(13, 16, 21, 0.95)) padding-box,
-              linear-gradient(135deg, rgba(38, 226, 100, 0.05) 0%, rgba(0, 240, 255, 0.03) 100%) padding-box,
-              linear-gradient(135deg, #26E264 0%, #00F0FF 100%) border-box !important;
-  color: #00F0FF !important;
+              linear-gradient(135deg, var(--primary-soft) 0%, transparent 100%) padding-box,
+              var(--gradient-primary) border-box !important;
+  color: var(--primary-hover) !important;
   border-color: transparent !important;
 }
 
 [data-theme='light'] .nav-item:hover {
   background: linear-gradient(#ffffff, #ffffff) padding-box,
               linear-gradient(135deg, rgba(37, 99, 235, 0.05) 0%, rgba(96, 165, 250, 0.03) 100%) padding-box,
-              linear-gradient(135deg, #60A5FA 0%, #2563EB 50%, #1E40AF 100%) border-box !important;
+              linear-gradient(135deg, var(--primary-hover) 0%, var(--primary) 50%, var(--primary-dark) 100%) border-box !important;
   color: var(--primary) !important;
   border-color: transparent !important;
 }
@@ -129,7 +129,7 @@
 .nav-group.has-active > .group-trigger {
   background: linear-gradient(#ffffff, #ffffff) padding-box,
               linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0%, rgba(96, 165, 250, 0.04) 100%) padding-box,
-              linear-gradient(135deg, #60A5FA 0%, #2563EB 50%, #1E40AF 100%) border-box !important;
+              linear-gradient(135deg, var(--primary-hover) 0%, var(--primary) 50%, var(--primary-dark) 100%) border-box !important;
   color: var(--primary) !important;
   border-color: transparent !important;
   box-shadow: 0 0 12px rgba(37, 99, 235, 0.08) !important;
@@ -138,11 +138,11 @@
 [data-theme='dark'] .nav-item.active,
 [data-theme='dark'] .nav-group.has-active > .group-trigger {
   background: linear-gradient(rgba(13, 16, 21, 0.95), rgba(13, 16, 21, 0.95)) padding-box,
-              linear-gradient(135deg, rgba(38, 226, 100, 0.12) 0%, rgba(0, 240, 255, 0.06) 100%) padding-box,
-              linear-gradient(135deg, #26E264 0%, #00F0FF 100%) border-box !important;
-  color: #00F0FF !important;
+              linear-gradient(135deg, var(--primary-soft) 0%, transparent 100%) padding-box,
+              var(--gradient-primary) border-box !important;
+  color: var(--primary-hover) !important;
   border-color: transparent !important;
-  box-shadow: 0 0 12px rgba(0, 240, 255, 0.12) !important;
+  box-shadow: 0 0 12px var(--primary-glow) !important;
 }
 
 .nav-item.active .nav-icon,
@@ -153,7 +153,7 @@
 
 [data-theme='dark'] .nav-item.active .nav-icon,
 [data-theme='dark'] .nav-group.has-active > .group-trigger .nav-icon {
-  color: #00F0FF !important;
+  color: var(--primary-hover) !important;
 }
 
 .nav-icon {
@@ -213,7 +213,7 @@
 }
 
 .sub-nav-item:hover {
-  background: rgba(38, 226, 100, 0.03) !important;
+  background: var(--primary-soft) !important;
   color: var(--text-primary) !important;
 }
 
@@ -226,15 +226,15 @@
   color: var(--primary) !important;
   background: linear-gradient(#ffffff, #ffffff) padding-box,
               linear-gradient(135deg, rgba(37, 99, 235, 0.06) 0%, rgba(96, 165, 250, 0.03) 100%) padding-box,
-              linear-gradient(135deg, #60A5FA 0%, #2563EB 50%, #1E40AF 100%) border-box !important;
+              linear-gradient(135deg, var(--primary-hover) 0%, var(--primary) 50%, var(--primary-dark) 100%) border-box !important;
   border-color: transparent !important;
 }
 
 [data-theme='dark'] .sub-nav-item.active {
-  color: #00F0FF !important;
+  color: var(--primary-hover) !important;
   background: linear-gradient(rgba(13, 16, 21, 0.95), rgba(13, 16, 21, 0.95)) padding-box,
-              linear-gradient(135deg, rgba(38, 226, 100, 0.08) 0%, rgba(0, 240, 255, 0.04) 100%) padding-box,
-              linear-gradient(135deg, #26E264 0%, #00F0FF 100%) border-box !important;
+              linear-gradient(135deg, var(--primary-soft) 0%, transparent 100%) padding-box,
+              var(--gradient-primary) border-box !important;
   border-color: transparent !important;
 }
 
