@@ -1,0 +1,65 @@
+.lead-navigation-tabs-container {
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.lead-navigation-tabs {
+  display: flex;
+  gap: 20px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.lead-navigation-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.lead-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 2px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+}
+
+.lead-tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.lead-tab-btn::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--primary) !important;
+  transform: scaleX(0);
+  transition: transform 0.3s ease;
+  border-radius: 2px;
+}
+
+[data-theme='dark'] .lead-tab-btn::after {
+  background: #00F0FF !important;
+}
+
+.lead-tab-btn.active {
+  color: var(--primary) !important;
+}
+
+[data-theme='dark'] .lead-tab-btn.active {
+  color: #00F0FF !important;
+}
+
+.lead-tab-btn.active::after {
+  transform: scaleX(1);
+}

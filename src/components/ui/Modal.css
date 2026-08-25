@@ -1,0 +1,177 @@
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.70) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  transform: translateZ(0);
+  will-change: backdrop-filter;
+  z-index: 2000;
+}
+
+[data-theme='dark'] .modal-overlay {
+  background: rgba(0, 0, 0, 0.70) !important;
+}
+
+[data-theme='light'] .modal-overlay {
+  background: rgba(15, 23, 42, 0.40) !important;
+}
+
+.modal-wrapper {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2001;
+  padding: 24px;
+  pointer-events: none;
+}
+
+.modal-container {
+  pointer-events: auto;
+  position: relative;
+  width: 100%;
+  max-width: 650px;
+  background: var(--surface) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45) !important;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border) !important;
+  transition: all 0.3s ease;
+}
+
+[data-theme='light'] .modal-container {
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.08) !important;
+}
+
+/* Glass Modal Variant */
+.modal-container.glass-modal {
+  background: var(--glass-bg) !important;
+  backdrop-filter: var(--glass-blur) !important;
+  -webkit-backdrop-filter: var(--glass-blur) !important;
+  border: var(--glass-border) !important;
+  box-shadow: var(--glass-shadow) !important;
+}
+
+[data-theme='dark'] .modal-container.glass-modal {
+  background: #0c0e12 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme='light'] .modal-container.glass-modal {
+  background: #FFFFFF !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid #E2E8F0 !important;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.12) !important;
+}
+
+.modal-container.glass-modal .modal-header {
+  border-bottom: 1px solid var(--border);
+  background: transparent !important;
+}
+
+[data-theme='light'] .modal-container.glass-modal .modal-header {
+  border-bottom: 1px solid #EEF2F7 !important;
+  background: #F8FAFC !important;
+}
+
+.modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--background-secondary);
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.modal-header .close-btn {
+  color: var(--text-muted);
+  transition: all 0.2s;
+  padding: 6px;
+  border-radius: 8px;
+}
+
+.modal-header .close-btn:hover {
+  color: var(--text-primary);
+  background: var(--border-subtle);
+}
+
+.modal-content {
+  padding: 20px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 640px) {
+  .modal-wrapper {
+    padding: 0;
+    align-items: flex-end;
+  }
+
+  .modal-container {
+    max-width: 100%;
+    border-radius: 18px 18px 0 0 !important;
+    max-height: 92vh;
+    border-left: none !important;
+    border-right: none !important;
+    border-bottom: none !important;
+  }
+
+  .modal-content {
+    padding: 20px 16px 40px;
+  }
+}
+
+/* Light Mode Overrides inside Modal */
+[data-theme='light'] .modal-content .form-label {
+  color: #1E293B !important;
+  font-weight: 600 !important;
+}
+
+[data-theme='light'] .modal-content .custom-input-field,
+[data-theme='light'] .modal-content .custom-select-field,
+[data-theme='light'] .modal-content .custom-textarea {
+  background: #FFFFFF !important;
+  border: 1px solid #CBD5E1 !important;
+  color: #0F172A !important;
+}
+
+[data-theme='light'] .modal-content .custom-input-field:focus,
+[data-theme='light'] .modal-content .custom-select-field:focus,
+[data-theme='light'] .modal-content .custom-textarea:focus {
+  border-color: #2563EB !important;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1) !important;
+}
+
+[data-theme='light'] .interest-checkbox-card {
+  background: #F8FAFC !important;
+  border: 1px solid #E2E8F0 !important;
+}
+
+[data-theme='light'] .interest-checkbox-card:hover {
+  background: #F1F5F9 !important;
+}
+
+.interest-checkbox-card.selected {
+  background: var(--primary-soft) !important;
+  border-color: var(--primary) !important;
+}
+
+[data-theme='light'] .interest-checkbox-card.selected span {
+  color: #1E40AF !important; /* Premium dark blue text for selected items */
+}

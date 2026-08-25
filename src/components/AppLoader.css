@@ -1,0 +1,85 @@
+/* ── App Loader Overlay ── */
+.app-loader-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0a0f1a;
+}
+
+.app-loader-card {
+  --bg-color: #111318;
+  background-color: var(--bg-color);
+  padding: 1.5rem 2.5rem;
+  border-radius: 1.5rem;
+  border: 1px solid rgba(38, 226, 100, 0.15);
+  box-shadow: 0 0 60px rgba(38, 226, 100, 0.08), 0 24px 80px rgba(0,0,0,0.5);
+}
+
+.app-loader-inner {
+  color: rgb(130, 130, 140);
+  font-family: 'Poppins', 'Inter', sans-serif;
+  font-weight: 500;
+  font-size: 1.45rem;
+  box-sizing: content-box;
+  height: 44px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  border-radius: 8px;
+}
+
+.app-loader-label {
+  margin: 0;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.app-loader-words {
+  overflow: hidden;
+  position: relative;
+  height: 44px;
+  margin-left: 10px;
+}
+
+.app-loader-words::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    var(--bg-color) 10%,
+    transparent 30%,
+    transparent 70%,
+    var(--bg-color) 90%
+  );
+  z-index: 20;
+}
+
+.app-loader-word {
+  display: block;
+  height: 100%;
+  padding-left: 8px;
+  line-height: 44px;
+  font-weight: 700;
+  font-size: 1.3rem;
+  letter-spacing: 0.08em;
+  background: linear-gradient(90deg, #26e264, #06d6a0, #38bdf8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: app-loader-spin 4.5s infinite;
+}
+
+@keyframes app-loader-spin {
+  10%  { transform: translateY(-102%); }
+  25%  { transform: translateY(-100%); }
+  35%  { transform: translateY(-202%); }
+  50%  { transform: translateY(-200%); }
+  60%  { transform: translateY(-302%); }
+  75%  { transform: translateY(-300%); }
+  85%  { transform: translateY(-402%); }
+  100% { transform: translateY(-400%); }
+}
