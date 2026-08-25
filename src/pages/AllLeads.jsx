@@ -95,16 +95,28 @@ const AllLeads = () => {
   useEffect(() => {
     if (!currentUser) return;
 
-    const isAdmin = currentUser.role === 'Admin' || currentUser.role === 'MD' || currentUser.role === 'System Admin';
+    const isAdmin = currentUser.role === 'Admin' || currentUser.role === 'MD' || 
+                    currentUser.role === 'System Admin' || currentUser.account_type === 'org_admin';
 
-    // Fetch users
+    // Fetch users — scope to current user's org, exclude super admins
     const fetchUsers = async () => {
-      const { data: allUsers } = await supabase.from('users').select('*');
-      if (!allUsers) return;
+      let query = supabase.from('users').select('*')
+        .neq('account_type', 'super_admin')
+        .neq('role', 'Super Admin');
+
+      // Scope by org
+      if (currentUser.org_id) {
+        query = query.eq('org_id', currentUser.org_id);
+      } else if (currentUser.account_type === 'super_admin' && currentUser.org_id) {
+        query = query.eq('org_id', currentUser.org_id);
+      }
+
+      const { data: allUsers, error } = await query;
+      if (!allUsers || error) return;
       if (isAdmin) {
         setUsers(allUsers);
       } else {
-        const allowedUids = getSubordinateUids(allUsers, currentUser.uid);
+        const allowedUids = getSubordinateUids(allUsers, currentUser.uid || currentUser.id);
         setUsers(allUsers.filter(u => allowedUids.includes(u.id)));
       }
     };
@@ -135,7 +147,9 @@ const AllLeads = () => {
 
   // Build hierarchy and calculate stats
   const buildHierarchy = (parentId = null) => {
-    const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'MD' || currentUser?.role === 'System Admin';
+    const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'MD' || 
+                    currentUser?.role === 'System Admin' || currentUser?.account_type === 'org_admin';
+
     
     const relevantUsers = users.filter(u => {
       if (!parentId) {

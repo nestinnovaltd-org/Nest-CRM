@@ -25,7 +25,9 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import toast from 'react-hot-toast';
 import './AddUser.css';
+
 
 const AddUserPage = () => {
   const navigate = useNavigate();
@@ -152,16 +154,26 @@ const AddUserPage = () => {
 
   const handleSubmit = async (e, addAnother = false) => {
     e?.preventDefault();
+    if (!formData.fullName || !formData.email) {
+      toast.error('Please fill in the Name and Email fields.');
+      setCurrentStep(1);
+      return;
+    }
     if (!password) {
-      alert('Please generate or enter a password for the user.');
+      toast.error('Please generate or enter a password for the user.');
       setCurrentStep(2);
+      return;
+    }
+    if (!formData.role) {
+      toast.error('Please select a role for the user.');
+      setCurrentStep(3);
       return;
     }
 
     try {
       setIsSubmitting(true);
 
-      // Create user in Supabase Auth
+      // 1. Create user in Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: password,
@@ -175,23 +187,28 @@ const AddUserPage = () => {
 
       if (authError) throw authError;
       const newUserId = authData.user?.id;
+      if (!newUserId) throw new Error('User creation failed — no user ID returned.');
 
+      // 2. Determine account_type
       let accountType = 'org_employee';
-      if (formData.role === 'Super Admin') {
-        accountType = 'super_admin';
-      } else if (formData.role === 'Admin') {
-        accountType = 'org_admin';
-      }
+      if (formData.role === 'Super Admin') accountType = 'super_admin';
+      else if (formData.role === 'Admin') accountType = 'org_admin';
 
-      // Determine org_id:
-      //  - Super Admin provides it via the org picker (formData.orgId)
-      //  - Org Admin/Employee inherits the creator's org automatically
+      // 3. Determine org_id
+      //    - Super Admin picks via org picker (formData.orgId)
+      //    - Org Admin/Employee automatically inherits the creator's org
       const resolvedOrgId = user?.account_type === 'super_admin'
         ? (formData.orgId || null)
         : (user?.org_id || user?.org?.id || null);
 
-      // Store user profile in users table
-      await supabase.from('users').upsert({
+      // 4. Build permissions — use selected overrides OR role defaults
+      let resolvedPermissions = [];
+      if (formData.permissions && Object.keys(formData.permissions).length > 0) {
+        resolvedPermissions = [formData.permissions];
+      }
+
+      // 5. Upsert user profile in users table
+      const { error: upsertError } = await supabase.from('users').upsert({
         id: newUserId,
         full_name: formData.fullName,
         email: formData.email,
@@ -201,7 +218,7 @@ const AddUserPage = () => {
         reports_to: formData.reportsTo,
         send_email: formData.sendEmail,
         status: formData.status,
-        permissions: formData.permissions ? [ formData.permissions ] : [],
+        permissions: resolvedPermissions,
         uid: newUserId,
         account_type: accountType,
         org_id: resolvedOrgId,
@@ -209,9 +226,10 @@ const AddUserPage = () => {
         updated_at: new Date().toISOString(),
       });
 
-      alert(`✅ User ${formData.fullName} created successfully!`);
+      if (upsertError) throw upsertError;
 
       if (addAnother) {
+        toast.success(`${formData.fullName} created! Add another user.`);
         setFormData({
           fullName: '',
           email: '',
@@ -221,23 +239,28 @@ const AddUserPage = () => {
           reportsTo: '',
           sendEmail: true,
           status: 'Active',
-          permissions: null
+          permissions: null,
+          orgId: ''
         });
         setPassword('');
         setCurrentStep(1);
       } else {
-        navigate('/users/all');
+        toast.success(`✅ User "${formData.fullName}" created successfully!`);
+        setTimeout(() => navigate('/users/all'), 1200);
       }
     } catch (error) {
       console.error('Error creating user:', error);
       let message = 'Failed to create user.';
-      if (error.message?.includes('already registered') || error.message?.includes('already been registered')) message = 'This email is already registered.';
-      if (error.message?.includes('weak') || error.message?.includes('short')) message = 'The password is too weak (min 6 characters).';
-      alert(`❌ Error: ${message}\n${error.message}`);
+      if (error.message?.includes('already registered') || error.message?.includes('already been registered'))
+        message = 'This email is already registered.';
+      if (error.message?.includes('weak') || error.message?.includes('short'))
+        message = 'Password is too weak (min 6 characters).';
+      toast.error(`❌ ${message}`);
     } finally {
       setIsSubmitting(false);
     }
   };
+
 
   const steps = [
     { id: 1, label: 'Profile', icon: User },
@@ -298,17 +321,19 @@ const AddUserPage = () => {
                     disabled={isSubmitting}
                     onClick={(e) => handleSubmit(e, true)}
                   >
-                    Save & Add Another
+                    Save &amp; Add Another
                   </button>
                   <Button 
                     variant="primary" 
-                    type="submit" 
+                    type="button"
                     icon={Save} 
                     isLoading={isSubmitting}
+                    onClick={(e) => handleSubmit(e, false)}
                   >
                     Create User
                   </Button>
                 </>
+
               )}
             </div>
           </div>

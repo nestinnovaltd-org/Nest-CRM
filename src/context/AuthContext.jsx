@@ -12,12 +12,13 @@ export const getIndividualModules = (pkg) => {
 };
 
 export const getOrgModules = (pkg) => {
-  const starter = ['Lead Management', 'Calendar & Schedule', 'Payments', 'Notifications', 'Settings', 'User Management'];
-  const professional = [...starter, 'Project Management', 'Team Management', 'Reports & Analytics', 'HR Operations'];
-  const enterprise = [...professional, 'Custom Domain'];
+  const starter = ['Dashboard', 'Lead Management', 'Calendar & Schedule', 'Payments', 'Notifications', 'Settings', 'User Management', 'Team Management', 'HR Operations', 'Reports & Analytics', 'Project Management'];
+  const professional = [...new Set([...starter, 'Custom Integrations'])];
+  const enterprise = [...new Set([...professional, 'Custom Domain'])];
   if (pkg === 'enterprise') return enterprise;
   if (pkg === 'professional') return professional;
   return starter;
+
 };
 
 export const BILLING_PACKAGES = {

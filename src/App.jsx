@@ -1,4 +1,5 @@
 import React from "react"
+import { Toaster } from 'react-hot-toast'
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom"
 import { AuthProvider, useAuth } from "./context/AuthContext"
 import Overview from "./pages/Overview"
@@ -126,6 +127,26 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
+      <Toaster
+        position="bottom-right"
+        toastOptions={{
+          duration: 4000,
+          style: {
+            background: 'var(--surface-elevated, #13161c)',
+            color: 'var(--text-primary, #f3f4f6)',
+            border: '1px solid var(--border-strong, rgba(255,255,255,0.08))',
+            borderRadius: '12px',
+            fontSize: '14px',
+            padding: '12px 16px',
+          },
+          success: {
+            iconTheme: { primary: '#26E264', secondary: '#040504' },
+          },
+          error: {
+            iconTheme: { primary: '#EF4444', secondary: '#fff' },
+          },
+        }}
+      />
     </AuthProvider>
   )
 }

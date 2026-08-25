@@ -451,9 +451,11 @@
 
 @media (max-width: 820px) {
   .content-area {
-    padding: 70px 0 76px 0; /* Extra bottom padding for BottomNavbar */
+    /* Top: floating top-bar (52px) + gap (10px) + buffer (8px) */
+    padding: 70px 0 88px 0; /* Bottom: navbar (72px) + extra buffer (16px) */
   }
 }
+
 
 @keyframes slideDown {
   from { opacity: 0; transform: translateY(-10px); }
