@@ -30,7 +30,7 @@ import useThemeStore from '../store/useThemeStore';
 import './LoginPage.css';
 
 
-const logo = '/logo.png';
+const logo = '/Nest%20CRM%20Logo%20without%20background.png';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');

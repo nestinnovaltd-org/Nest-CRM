@@ -25,7 +25,12 @@ import {
   Sparkles,
   Play,
   Sun,
-  Moon
+  Moon,
+  Building2,
+  DollarSign,
+  LayoutDashboard,
+  Mail,
+  Phone
 } from 'lucide-react';
 import useThemeStore from '../store/useThemeStore';
 import './LandingPage.css';
@@ -34,6 +39,40 @@ const LandingPage = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { scrollY } = useScroll();
+  // Live Interactive Portal Sandbox States
+  const [activeSandboxTab, setActiveSandboxTab] = useState('dashboard');
+  const [mockLeads, setMockLeads] = useState([
+    { id: 1, name: 'Zayan Rahman', company: 'Prime Estates Ltd', email: 'zayan@prime.com', status: 'Hot', phone: '+8801712345678' },
+    { id: 2, name: 'Nabil Karim', company: 'Innova Towers', email: 'nabil@innova.com', status: 'Warm', phone: '+8801812345679' },
+    { id: 3, name: 'Suhana Chowdhury', company: 'Green Valley Properties', email: 'suhana@greenvalley.com', status: 'Cold', phone: '+8801912345680' }
+  ]);
+  const [newLeadName, setNewLeadName] = useState('');
+  const [newLeadCompany, setNewLeadCompany] = useState('');
+  const [newLeadEmail, setNewLeadEmail] = useState('');
+  const [newLeadStatus, setNewLeadStatus] = useState('Hot');
+  const [selectedSandboxDate, setSelectedSandboxDate] = useState(12); // Day 12 selected
+
+  const handleAddMockLead = (e) => {
+    e.preventDefault();
+    if (!newLeadName.trim() || !newLeadEmail.trim()) return;
+    const newLead = {
+      id: Date.now(),
+      name: newLeadName,
+      company: newLeadCompany || 'Individual Client',
+      email: newLeadEmail,
+      status: newLeadStatus,
+      phone: '+88017XXXXXXXX'
+    };
+    setMockLeads([newLead, ...mockLeads]);
+    setNewLeadName('');
+    setNewLeadCompany('');
+    setNewLeadEmail('');
+  };
+
+  const handleRemoveMockLead = (id) => {
+    setMockLeads(mockLeads.filter(lead => lead.id !== id));
+  };
+
   const { isDarkMode, toggleDarkMode } = useThemeStore();
 
   useEffect(() => {
@@ -82,8 +121,8 @@ const LandingPage = () => {
       <nav className={`lp-nav ${isScrolled ? 'scrolled' : ''}`}>
         <div className="lp-container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', height: '100%' }}>
           <div className="lp-logo">
-            <img src="/logo.png" alt="Logo" className="lp-logo-img" />
-            <span className="lp-brand-text">REAL ESTATE CRM</span>
+            <img src="/Nest%20CRM%20Logo%20without%20background.png" alt="Logo" className="lp-logo-img" />
+            <span className="lp-brand-text">Nest CRM</span>
           </div>
           <div className={`lp-nav-links ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
             <a href="#about" onClick={() => setIsMobileMenuOpen(false)}>About</a>
@@ -188,7 +227,7 @@ const LandingPage = () => {
       </section>
 
       {/* 3. Core Value Proposition */}
-      <section className="value-props">
+      <section id="about" className="value-props">
         <div className="lp-container">
           <motion.div 
             className="props-grid"
@@ -201,6 +240,365 @@ const LandingPage = () => {
             <ValuePropItem icon={<TrendingUp />} title="Lead-to-Conversion" desc="Optimized sales pipeline tracking." />
             <ValuePropItem icon={<Calendar />} title="Smart Scheduling" desc="Automated follow-up reminders." />
             <ValuePropItem icon={<Shield />} title="Hierarchy Control" desc="Granular role-based permissions." />
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Live Interactive Sandbox Section */}
+      <section className="sandbox-section">
+        <div className="lp-container">
+          <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+            <motion.h2 variants={fadeIn} initial="initial" whileInView="whileInView" className="lp-section-title has-subtitle">
+              Experience the Live Sandbox
+            </motion.h2>
+            <motion.p variants={fadeIn} initial="initial" whileInView="whileInView" className="lp-section-subtitle">
+              Explore a fully simulated version of the Nest CRM portal right here. Click tabs to navigate.
+            </motion.p>
+          </div>
+
+          <motion.div 
+            className="sandbox-window"
+            variants={fadeIn}
+            initial="initial"
+            whileInView="whileInView"
+          >
+            {/* Mock Browser Titlebar */}
+            <div className="sandbox-titlebar">
+              <div className="titlebar-dots">
+                <span className="dot red"></span>
+                <span className="dot yellow"></span>
+                <span className="dot green"></span>
+              </div>
+              <div className="titlebar-url">
+                <span>https://app.nestcrm.com/{activeSandboxTab}</span>
+              </div>
+            </div>
+
+            <div className="sandbox-body">
+              {/* Mock Sidebar */}
+              <div className="sandbox-sidebar">
+                <div className="sandbox-sb-brand">
+                  <div className="sandbox-sb-logo">N</div>
+                  <span className="sandbox-sb-title">Nest CRM</span>
+                </div>
+                
+                <div className="sandbox-sb-menu">
+                  {[
+                    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+                    { id: 'leads', label: 'Leads', icon: Users },
+                    { id: 'projects', label: 'Projects', icon: Layers },
+                    { id: 'hr', label: 'HR Operations', icon: Layout },
+                    { id: 'payments', label: 'Payments', icon: BarChart3 },
+                    { id: 'calendar', label: 'Calendar', icon: Calendar }
+                  ].map(tab => (
+                    <button 
+                      key={tab.id}
+                      onClick={() => setActiveSandboxTab(tab.id)}
+                      className={`sandbox-sb-item ${activeSandboxTab === tab.id ? 'active' : ''}`}
+                    >
+                      <tab.icon size={16} />
+                      <span>{tab.label}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="sandbox-sb-footer">
+                  <div className="sandbox-sb-avatar">MS</div>
+                  <div className="sandbox-sb-userinfo">
+                    <strong>Mohammad Sajjad</strong>
+                    <span>Admin</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Mock Workspace Content Panel */}
+              <div className="sandbox-content-panel">
+                {activeSandboxTab === 'dashboard' && (
+                  <div className="sandbox-tab-content">
+                    <div className="sandbox-tab-header">
+                      <h3>Super Admin Dashboard</h3>
+                      <p>Full platform overview — Nest CRM control center</p>
+                    </div>
+
+                    <div className="sandbox-stats-grid">
+                      <div className="sandbox-stat-card">
+                        <div className="stat-icon purple"><Building2 size={16} /></div>
+                        <div>
+                          <div className="stat-value">{mockLeads.length + 12}</div>
+                          <div className="stat-label">Total Organizations</div>
+                        </div>
+                      </div>
+                      <div className="sandbox-stat-card">
+                        <div className="stat-icon yellow"><Clock size={16} /></div>
+                        <div>
+                          <div className="stat-value">3</div>
+                          <div className="stat-label">Pending Approvals</div>
+                        </div>
+                      </div>
+                      <div className="sandbox-stat-card">
+                        <div className="stat-icon green"><Users size={16} /></div>
+                        <div>
+                          <div className="stat-value">{mockLeads.length + 8}</div>
+                          <div className="stat-label">Active Agents</div>
+                        </div>
+                      </div>
+                      <div className="sandbox-stat-card">
+                        <div className="stat-icon blue"><DollarSign size={16} /></div>
+                        <div>
+                          <div className="stat-value">$18,450</div>
+                          <div className="stat-label">Monthly Revenue</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="sandbox-chart-section">
+                      <h4>Platform Activity Analytics</h4>
+                      <div className="sandbox-mock-chart">
+                        <div className="chart-bar" style={{ height: '70%' }}><span>Jan</span></div>
+                        <div className="chart-bar" style={{ height: '85%' }}><span>Feb</span></div>
+                        <div className="chart-bar active" style={{ height: '95%' }}><span>Mar</span></div>
+                        <div className="chart-bar" style={{ height: '60%' }}><span>Apr</span></div>
+                        <div className="chart-bar" style={{ height: '80%' }}><span>May</span></div>
+                        <div className="chart-bar" style={{ height: '90%' }}><span>Jun</span></div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {activeSandboxTab === 'leads' && (
+                  <div className="sandbox-tab-content">
+                    <div className="sandbox-tab-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <h3>Lead Management</h3>
+                        <p>Track customer lifecycle and engagement status</p>
+                      </div>
+                      <span className="sandbox-badge-count">{mockLeads.length} Leads</span>
+                    </div>
+
+                    {/* Add Lead Inline Form */}
+                    <form onSubmit={handleAddMockLead} className="sandbox-inline-form">
+                      <input 
+                        type="text" 
+                        placeholder="Client Name" 
+                        value={newLeadName}
+                        onChange={e => setNewLeadName(e.target.value)}
+                        required
+                      />
+                      <input 
+                        type="text" 
+                        placeholder="Company" 
+                        value={newLeadCompany}
+                        onChange={e => setNewLeadCompany(e.target.value)}
+                      />
+                      <input 
+                        type="email" 
+                        placeholder="Email" 
+                        value={newLeadEmail}
+                        onChange={e => setNewLeadEmail(e.target.value)}
+                        required
+                      />
+                      <select value={newLeadStatus} onChange={e => setNewLeadStatus(e.target.value)}>
+                        <option value="Hot">🔥 Hot</option>
+                        <option value="Warm">⚡ Warm</option>
+                        <option value="Cold">❄️ Cold</option>
+                      </select>
+                      <button type="submit">Add Lead</button>
+                    </form>
+
+                    <div className="sandbox-table-wrapper">
+                      <table className="sandbox-table">
+                        <thead>
+                          <tr>
+                            <th>Name</th>
+                            <th>Company</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {mockLeads.map(lead => (
+                            <tr key={lead.id}>
+                              <td>
+                                <strong style={{ color: 'var(--lp-text-white)' }}>{lead.name}</strong>
+                                <div style={{ fontSize: '11px', color: 'var(--lp-text-dim)' }}>{lead.email}</div>
+                              </td>
+                              <td>{lead.company}</td>
+                              <td>
+                                <span className={`sandbox-status-badge ${lead.status.toLowerCase()}`}>
+                                  {lead.status}
+                                </span>
+                              </td>
+                              <td>
+                                <button onClick={() => handleRemoveMockLead(lead.id)} className="sandbox-row-action">Delete</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {activeSandboxTab === 'projects' && (
+                  <div className="sandbox-tab-content">
+                    <div className="sandbox-tab-header">
+                      <h3>Project Directory</h3>
+                      <p>Property portfolio and construction status tracking</p>
+                    </div>
+
+                    <div className="sandbox-projects-list">
+                      {[
+                        { name: 'Nest Green Villa', loc: 'Uttara Sector 12, Dhaka', sales: 85, status: 'Completed' },
+                        { name: 'Innova Commercial Space', loc: 'Banani Road 11, Dhaka', sales: 40, status: 'Ongoing' },
+                        { name: 'Urban Skyline Residencia', loc: 'Dhanmondi, Dhaka', sales: 95, status: 'Sold Out' }
+                      ].map((p, i) => (
+                        <div key={i} className="sandbox-project-card">
+                          <div className="p-card-header">
+                            <h4>{p.name}</h4>
+                            <span className={`p-card-status ${p.status.toLowerCase().replace(' ', '-')}`}>{p.status}</span>
+                          </div>
+                          <p className="p-card-loc"><MapPin size={12} /> {p.loc}</p>
+                          <div className="p-progress-container">
+                            <span className="progress-label">Sales Conversion</span>
+                            <div className="p-progress-bar-bg">
+                              <div className="p-progress-bar-fill" style={{ width: `${p.sales}%` }}></div>
+                            </div>
+                            <span className="progress-percentage">{p.sales}%</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {activeSandboxTab === 'hr' && (
+                  <div className="sandbox-tab-content">
+                    <div className="sandbox-tab-header">
+                      <h3>HR & Team Roster</h3>
+                      <p>Active agents, system permissions, and logs</p>
+                    </div>
+
+                    <div className="sandbox-hr-grid">
+                      {[
+                        { name: 'Sufi Ahmed Faham', role: 'Product Director', status: 'Active', color: '#26E264' },
+                        { name: 'Mohammad Sajjad Khan', role: 'System Admin', status: 'Active', color: '#00F0FF' }
+                      ].map((item, i) => (
+                        <div key={i} className="sandbox-hr-card">
+                          <div className="hr-card-avatar" style={{ border: `2px solid ${item.color}` }}>
+                            {item.name.charAt(0)}
+                          </div>
+                          <div className="hr-card-info">
+                            <h4>{item.name}</h4>
+                            <p>{item.role}</p>
+                            <span className="hr-card-status"><span className="status-dot"></span>{item.status}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {activeSandboxTab === 'payments' && (
+                  <div className="sandbox-tab-content">
+                    <div className="sandbox-tab-header">
+                      <h3>Installment Payments</h3>
+                      <p>Monitor transactions and installment dues</p>
+                    </div>
+
+                    <div className="sandbox-table-wrapper">
+                      <table className="sandbox-table">
+                        <thead>
+                          <tr>
+                            <th>Transaction</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                            <th>Date</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[
+                            { name: 'Installment #3 - Nest Green Villa', amt: '$12,500', status: 'Paid', date: '25 Aug' },
+                            { name: 'Down Payment - Innova Space', amt: '$45,000', status: 'Pending', date: '21 Aug' },
+                            { name: 'Installment #1 - Urban Skyline', amt: '$8,000', status: 'Paid', date: '18 Aug' }
+                          ].map((item, i) => (
+                            <tr key={i}>
+                              <td><strong>{item.name}</strong></td>
+                              <td style={{ color: 'var(--lp-text-white)', fontWeight: 600 }}>{item.amt}</td>
+                              <td>
+                                <span className={`sandbox-status-badge ${item.status.toLowerCase()}`}>
+                                  {item.status}
+                                </span>
+                              </td>
+                              <td>{item.date}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {activeSandboxTab === 'calendar' && (
+                  <div className="sandbox-tab-content">
+                    <div className="sandbox-tab-header">
+                      <h3>Calendar & Schedule</h3>
+                      <p>Click day to view schedules and visit reminders</p>
+                    </div>
+
+                    <div className="sandbox-calendar-container">
+                      <div className="sandbox-calendar-grid">
+                        {Array.from({ length: 28 }).map((_, i) => {
+                          const day = i + 1;
+                          const hasEvent = day === 12 || day === 15 || day === 22;
+                          return (
+                            <button 
+                              key={i} 
+                              type="button"
+                              onClick={() => setSelectedSandboxDate(day)}
+                              className={`calendar-day-btn ${selectedSandboxDate === day ? 'selected' : ''} ${hasEvent ? 'has-event' : ''}`}
+                            >
+                              <span>{day}</span>
+                              {hasEvent && <span className="event-dot"></span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <div className="sandbox-calendar-agenda">
+                        <h4>Agenda - Day {selectedSandboxDate}</h4>
+                        {selectedSandboxDate === 12 ? (
+                          <div className="agenda-item">
+                            <span className="agenda-time">10:00 AM</span>
+                            <div className="agenda-details">
+                              <strong>Site Visit with Client</strong>
+                              <p>Nest Green Villa, Uttara Sector 12</p>
+                            </div>
+                          </div>
+                        ) : selectedSandboxDate === 15 ? (
+                          <div className="agenda-item">
+                            <span className="agenda-time">02:30 PM</span>
+                            <div className="agenda-details">
+                              <strong>Payment Follow-up</strong>
+                              <p>Installment #2 due collection</p>
+                            </div>
+                          </div>
+                        ) : selectedSandboxDate === 22 ? (
+                          <div className="agenda-item">
+                            <span className="agenda-time">11:00 AM</span>
+                            <div className="agenda-details">
+                              <strong>Agreement Signing</strong>
+                              <p>Prime Estates contract closure</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <p style={{ fontSize: '12px', color: 'var(--lp-text-dim)' }}>No events scheduled for this day.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </motion.div>
         </div>
       </section>
@@ -380,6 +778,73 @@ const LandingPage = () => {
       </section>
 
 
+      {/* 9. Pricing Section */}
+      <section id="pricing" className="pricing-section">
+        <div className="lp-container">
+          <div style={{ textAlign: 'center', marginBottom: '48px' }}>
+            <motion.h2 variants={fadeIn} initial="initial" whileInView="whileInView" className="lp-section-title has-subtitle">
+              SaaS Subscription Packages
+            </motion.h2>
+            <motion.p variants={fadeIn} initial="initial" whileInView="whileInView" className="lp-section-subtitle">
+              Flexible pricing options engineered to scale with your real estate organization.
+            </motion.p>
+          </div>
+
+          <div className="pricing-grid">
+            <PriceCard 
+              plan="Free Trial" 
+              price="$0" 
+              features={[
+                "1 Month Trial Access",
+                "1 User Seat Limit",
+                "Lead Management basics",
+                "Timeline Logging History",
+                "Missed Task Alerts",
+                "Standard Web Portal"
+              ]} 
+            />
+            <PriceCard 
+              plan="Starter Space" 
+              price="$49" 
+              features={[
+                "Up to 10 Team Members",
+                "Lead Lifecycle Manager",
+                "Property Inventory logs",
+                "Basic Follow-Up Reminders",
+                "Secure Supabase DB Backend",
+                "Email Support SLA"
+              ]} 
+            />
+            <PriceCard 
+              plan="Professional Organization" 
+              price="$99" 
+              popular={true} 
+              features={[
+                "Up to 25 Team Members",
+                "All CRM Workspaces included",
+                "Payments & Installments Log",
+                "Smart Roster & Hierarchy",
+                "Advanced Sales Pipeline",
+                "Priority Support SLA"
+              ]} 
+            />
+            <PriceCard 
+              plan="Custom Enterprise" 
+              price="Custom" 
+              features={[
+                "Unlimited Team Members",
+                "Custom Domain Branding",
+                "Active Directory Integration",
+                "Dedicated Account Manager",
+                "99.9% Uptime Guarantee",
+                "API & Custom Integrations"
+              ]} 
+            />
+          </div>
+        </div>
+      </section>
+
+
       {/* 11. Testimonials */}
       <section className="testimonials-section" style={{ padding: '120px 0', textAlign: 'center' }}>
         <div className="lp-container">
@@ -414,33 +879,71 @@ const LandingPage = () => {
       </section>
 
       {/* Footer */}
-      <footer className="lp-footer">
+      <footer id="contact" className="lp-footer">
         <div className="lp-container">
           <div className="footer-grid">
             <div className="footer-brand">
               <div className="lp-logo">
-                <img src="/logo.png" alt="Logo" className="lp-logo-img" style={{ height: '50px', width: '50px' }} />
-                <span className="lp-brand-text" style={{ fontSize: '0.7rem' }}>REAL ESTATE CRM</span>
+                <img src="/Nest%20CRM%20Logo%20without%20background.png" alt="Logo" className="lp-logo-img" style={{ height: '50px', width: '50px' }} />
+                <span className="lp-brand-text" style={{ fontSize: '0.7rem' }}>Nest CRM</span>
               </div>
-              <p style={{ marginTop: '20px', color: 'var(--lp-text-dim)' }}>
+              <p style={{ marginTop: '20px', color: 'var(--lp-text-dim)', fontSize: '0.9rem', lineHeight: '1.6' }}>
                 The premium choice for real estate intelligence and team management.
               </p>
-            </div>
-            <div className="footer-links-wrapper">
-              <div>
-                <h4 style={{ marginBottom: '24px' }}>Product</h4>
-                <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <li><a href="#features" style={{ color: 'var(--lp-text-dim)', textDecoration: 'none' }}>Features</a></li>
-                  <li><a href="#workflow" style={{ color: 'var(--lp-text-dim)', textDecoration: 'none' }}>Workflow</a></li>
-                </ul>
+              
+              <div style={{ marginTop: '32px' }}>
+                <h4 style={{ fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#fff', marginBottom: '12px' }}>Stay Updated</h4>
+                <form className="lp-newsletter-form" onSubmit={(e) => e.preventDefault()}>
+                  <input type="email" placeholder="Enter your email..." required />
+                  <button type="submit">Subscribe</button>
+                </form>
               </div>
-              <div>
-                <h4 style={{ marginBottom: '24px' }}>Company</h4>
-                <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <li><a href="#" style={{ color: 'var(--lp-text-dim)', textDecoration: 'none' }}>About</a></li>
-                  <li><a href="#" style={{ color: 'var(--lp-text-dim)', textDecoration: 'none' }}>Contact</a></li>
-                  <li><a href="#" style={{ color: 'var(--lp-text-dim)', textDecoration: 'none' }}>Privacy</a></li>
-                </ul>
+            </div>
+
+            <div>
+              <h4 style={{ marginBottom: '24px', fontSize: '1rem', color: '#fff' }}>Quick Links</h4>
+              <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <li><a href="#features" style={{ color: 'var(--lp-text-dim)', textDecoration: 'none', fontSize: '0.9rem' }}>Features</a></li>
+                <li><a href="#sandbox" style={{ color: 'var(--lp-text-dim)', textDecoration: 'none', fontSize: '0.9rem' }}>Live Sandbox</a></li>
+                <li><a href="#pricing" style={{ color: 'var(--lp-text-dim)', textDecoration: 'none', fontSize: '0.9rem' }}>Pricing Plans</a></li>
+                <li><Link to="/login" style={{ color: 'var(--lp-text-dim)', textDecoration: 'none', fontSize: '0.9rem' }}>Agent Portal</Link></li>
+                <li><Link to="/login" style={{ color: 'var(--lp-text-dim)', textDecoration: 'none', fontSize: '0.9rem' }}>Start Free Trial</Link></li>
+              </ul>
+            </div>
+
+            <div>
+              <h4 style={{ marginBottom: '24px', fontSize: '1rem', color: '#fff' }}>Contact Us</h4>
+              <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <li style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', fontSize: '0.9rem', color: 'var(--lp-text-dim)' }}>
+                  <MapPin size={16} style={{ color: 'var(--lp-gold)', flexShrink: 0, marginTop: '2px' }} />
+                  <span>Road: 08, Sector: 07,<br />Uttara, Dhaka-1230.</span>
+                </li>
+                <li style={{ display: 'flex', gap: '10px', alignItems: 'center', fontSize: '0.9rem', color: 'var(--lp-text-dim)' }}>
+                  <Mail size={16} style={{ color: 'var(--lp-gold)', flexShrink: 0 }} />
+                  <a href="mailto:nestcrm@nestinnova.com" style={{ color: 'inherit', textDecoration: 'none' }}>nestcrm@nestinnova.com</a>
+                </li>
+                <li style={{ display: 'flex', gap: '10px', alignItems: 'center', fontSize: '0.9rem', color: 'var(--lp-text-dim)' }}>
+                  <Phone size={16} style={{ color: 'var(--lp-gold)', flexShrink: 0 }} />
+                  <a href="tel:+8801972372395" style={{ color: 'inherit', textDecoration: 'none' }}>+8801972372395</a>
+                </li>
+                <li style={{ borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '12px' }}>
+                  <a href="#about" style={{ color: '#fff', textDecoration: 'none', fontSize: '0.9rem', fontWeight: 500 }}>About Us &rarr;</a>
+                </li>
+              </ul>
+            </div>
+
+            <div className="footer-map-col">
+              <h4 style={{ marginBottom: '24px', fontSize: '1rem', color: '#fff' }}>Find Us</h4>
+              <div className="lp-footer-map">
+                <iframe 
+                  src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3648.432654316049!2d90.3853177!3d23.8742881!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3757c5ef2a39b33b%3A0xe54e6e66e2c340df!2sUttara%20Sector%2012%20Park!5e0!3m2!1sen!2sbd!4v1700000000000!5m2!1sen!2sbd" 
+                  width="100%" 
+                  height="130" 
+                  style={{ border: 0, opacity: 0.8 }} 
+                  allowFullScreen="" 
+                  loading="lazy"
+                  title="Nest Innova Location"
+                ></iframe>
               </div>
             </div>
           </div>
@@ -449,11 +952,11 @@ const LandingPage = () => {
               <p>
                 Product visionary <strong>Sufi Nazib Ahmed Faham</strong> &nbsp; | &nbsp; 
                 Designed and developed by <strong>Mohammad Sajjad Khan</strong> &nbsp; | &nbsp; 
-                A product of <strong>NestInnova</strong>
+                A product of <a href="https://www.nestinnova.com/" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--lp-gold)', textDecoration: 'none', fontWeight: 600 }}>Nest Innova Tech</a>
               </p>
             </div>
             <div className="footer-legal">
-              <p>© 2026 Real Estate CRM. All rights reserved.</p>
+              <p>© 2026 Nest CRM. All rights reserved.</p>
               <div className="legal-links">
                 <a href="#">Privacy Policy</a>
                 <a href="#">Terms of Service</a>
@@ -491,17 +994,22 @@ const WorkflowCard = ({ num, title, brief }) => (
 );
 
 const PriceCard = ({ plan, price, popular, features }) => (
-  <div className={`price-card ${popular ? 'popular' : ''}`}>
+  <div className={`price-card ${popular ? 'popular' : ''}`} style={{ display: 'flex', flexDirection: 'column', position: 'relative' }}>
+    {popular && <div className="popular-pill">Most Popular</div>}
     <h4>{plan}</h4>
-    <div className="amount">{price}{price !== 'Custom' && <span>/mo</span>}</div>
-    <ul style={{ listStyle: 'none', padding: 0, margin: '40px 0', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div className="amount">
+      {price !== 'Custom' && <span className="currency">$</span>}
+      {price.replace('$', '')}
+      {price !== 'Custom' && <span className="period">/mo</span>}
+    </div>
+    <ul className="price-features" style={{ listStyle: 'none', padding: 0, margin: '20px 0 40px 0', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '16px' }}>
       {features.map((f, i) => (
-        <li key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '0.9rem', color: 'var(--lp-text-muted)' }}>
+        <li key={i} className="price-feature-item" style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '0.9rem', color: 'var(--lp-text-muted)', transition: 'all 0.2s' }}>
           <CheckCircle2 size={16} className="lp-gold" /> {f}
         </li>
       ))}
     </ul>
-    <Link to="/login" className={`lp-btn ${popular ? 'lp-btn-primary' : 'lp-btn-outline'}`} style={{ width: '100%', justifyContent: 'center' }}>
+    <Link to="/login" className={`lp-btn ${popular ? 'lp-btn-primary' : 'lp-btn-outline'}`} style={{ width: '100%', justifyContent: 'center', marginTop: 'auto' }}>
       Get Started
     </Link>
   </div>

@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import './Sidebar.css';
 
-const logo = '/logo.png';
+const logo = '/Nest%20CRM%20Logo%20without%20background.png';
 
 const NavGroup = ({ item, isOpen, toggleGroup, onClose }) => {
   const location = useLocation();

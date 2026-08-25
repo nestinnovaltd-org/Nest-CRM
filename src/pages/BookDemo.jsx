@@ -45,7 +45,7 @@ export default function BookDemo() {
       {/* Header */}
       <nav className="bd-nav">
         <Link to="/" className="bd-logo">
-          <img src="/logo.png" alt="Nest CRM" className="bd-logo-img" />
+          <img src="/Nest%20CRM%20Logo%20without%20background.png" alt="Nest CRM" className="bd-logo-img" />
           <span className="bd-logo-text">Nest CRM</span>
         </Link>
         <div className="bd-nav-links">
