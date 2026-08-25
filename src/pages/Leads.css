@@ -45,9 +45,12 @@
 
 .leads-page-header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
 }
+
 
 .header-info h1 {
   font-size: 1.5rem;
@@ -314,17 +317,19 @@
 
   .header-title-row {
     display: flex;
-    flex-direction: column !important;
-    align-items: flex-start !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
     width: 100%;
-    gap: 10px !important;
+    gap: 12px !important;
   }
 
   .header-actions {
-    width: 100% !important;
-    justify-content: flex-start !important;
-    gap: 8px !important;
+    width: auto !important;
+    justify-content: flex-end !important;
+    gap: 6px !important;
   }
+
 
   .header-title-row h1 {
     font-size: 1.25rem !important;

@@ -1682,3 +1682,20 @@
     font-size: 0.875rem;
   }
 }
+
+/* ── Mobile/Desktop Welcome Header Toggle ── */
+.dashboard-mobile-welcome-container {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .dashboard-mobile-welcome-container {
+    display: block;
+    margin-bottom: 20px;
+    padding: 0 4px;
+  }
+  .dashboard-desktop-welcome-container {
+    display: none;
+  }
+}
+
