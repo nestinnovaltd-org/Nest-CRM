@@ -38,7 +38,7 @@ import BookDemoLeads from "./pages/superadmin/BookDemoLeads"
 import UserApprovals from "./pages/superadmin/UserApprovals"
 import MyOrganization from "./pages/MyOrganization"
 
-const ProtectedRoute = ({ children, module, action = "view" }) => {
+const ProtectedRoute = ({ children, module, action = "read" }) => {
   const { user, loading, hasPermission } = useAuth()
   if (loading) return <AppLoader />
   if (!user) return <Navigate to="/login" replace />
@@ -84,7 +84,7 @@ function App() {
           <Route path="/dashboard/my-performance" element={<ProtectedRoute><Overview /></ProtectedRoute>} />
 
           <Route path="/leads/all" element={<ProtectedRoute module="Lead Management"><AllLeads /></ProtectedRoute>} />
-          <Route path="/leads/add" element={<ProtectedRoute module="Lead Management" action="add"><AddLeadPage /></ProtectedRoute>} />
+          <Route path="/leads/add" element={<ProtectedRoute module="Lead Management" action="create"><AddLeadPage /></ProtectedRoute>} />
           <Route path="/leads/mine" element={<ProtectedRoute module="Lead Management"><MyLeads /></ProtectedRoute>} />
           <Route path="/leads/user/:userId" element={<ProtectedRoute module="Lead Management"><MyLeads /></ProtectedRoute>} />
           <Route path="/leads/:id" element={<ProtectedRoute module="Lead Management"><LeadDetails /></ProtectedRoute>} />
@@ -99,17 +99,17 @@ function App() {
           <Route path="/hr/operations" element={<ProtectedRoute module="HR Operations"><HROperations /></ProtectedRoute>} />
 
           <Route path="/projects" element={<ProtectedRoute module="Project Management"><ProjectsPage /></ProtectedRoute>} />
-          <Route path="/projects/add" element={<ProtectedRoute module="Project Management" action="add"><AddProjectPage /></ProtectedRoute>} />
-          <Route path="/projects/edit/:id" element={<ProtectedRoute module="Project Management" action="edit"><EditProjectPage /></ProtectedRoute>} />
+          <Route path="/projects/add" element={<ProtectedRoute module="Project Management" action="create"><AddProjectPage /></ProtectedRoute>} />
+          <Route path="/projects/edit/:id" element={<ProtectedRoute module="Project Management" action="update"><EditProjectPage /></ProtectedRoute>} />
 
           <Route path="/calendar/view" element={<ProtectedRoute module="Calendar & Schedule"><CalendarPage /></ProtectedRoute>} />
 
           <Route path="/users/all" element={<ProtectedRoute module="User Management"><UsersPage /></ProtectedRoute>} />
           <Route path="/users/teams" element={<ProtectedRoute module="Team Management"><TeamsPage /></ProtectedRoute>} />
-          <Route path="/users/teams/add" element={<ProtectedRoute module="Team Management" action="add"><AddTeamPage /></ProtectedRoute>} />
-          <Route path="/users/teams/edit/:id" element={<ProtectedRoute module="Team Management" action="edit"><AddTeamPage /></ProtectedRoute>} />
+          <Route path="/users/teams/add" element={<ProtectedRoute module="Team Management" action="create"><AddTeamPage /></ProtectedRoute>} />
+          <Route path="/users/teams/edit/:id" element={<ProtectedRoute module="Team Management" action="update"><AddTeamPage /></ProtectedRoute>} />
           <Route path="/users/teams/:id" element={<ProtectedRoute module="Team Management"><TeamDetailsPage /></ProtectedRoute>} />
-          <Route path="/users/add" element={<ProtectedRoute module="User Management" action="add"><AddUserPage /></ProtectedRoute>} />
+          <Route path="/users/add" element={<ProtectedRoute module="User Management" action="create"><AddUserPage /></ProtectedRoute>} />
           <Route path="/users/:userId" element={<ProtectedRoute module="User Management"><UserDetails /></ProtectedRoute>} />
           <Route path="/users/roles" element={<ProtectedRoute module="User Management"><RolesPage /></ProtectedRoute>} />
 

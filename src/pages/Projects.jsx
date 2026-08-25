@@ -34,7 +34,7 @@ import './Projects.css';
 
 const ProjectsPage = () => {
   const navigate = useNavigate();
-  const { user, currentTenant } = useAuth();
+  const { user, currentTenant, hasPermission } = useAuth();
   const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'table'
   const [searchTerm, setSearchTerm] = useState('');
   const [rawProjects, setRawProjects] = useState([]);
@@ -181,7 +181,9 @@ const ProjectsPage = () => {
             <h1>Project Management</h1>
             <p>Manage and track all real estate development projects.</p>
           </div>
-          <Button variant="primary" icon={Plus} onClick={() => navigate('/projects/add')} className="add-project-btn-fab">Add New Project</Button>
+          {hasPermission('Project Management', 'create') && (
+            <Button variant="primary" icon={Plus} onClick={() => navigate('/projects/add')} className="add-project-btn-fab">Add New Project</Button>
+          )}
         </div>
 
         {/* Stats */}
@@ -343,8 +345,12 @@ const ProjectsPage = () => {
                     </td>
                     <td className="text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="project-actions">
-                        <button className="action-circle-btn" onClick={(e) => handleEditClick(e, project.id)}><Edit size={16} /></button>
-                        <button className="action-circle-btn delete" onClick={(e) => handleDeleteProject(e, project.id)}><Trash2 size={16} /></button>
+                        {hasPermission('Project Management', 'update') && (
+                          <button className="action-circle-btn" onClick={(e) => handleEditClick(e, project.id)}><Edit size={16} /></button>
+                        )}
+                        {hasPermission('Project Management', 'delete') && (
+                          <button className="action-circle-btn delete" onClick={(e) => handleDeleteProject(e, project.id)}><Trash2 size={16} /></button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -393,7 +399,9 @@ const ProjectsPage = () => {
                   <div className="card-footer">
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <Button variant="ghost" size="sm" icon={ExternalLink}>Details</Button>
-                      <button className="action-circle-btn" onClick={(e) => handleEditClick(e, project.id)}><Edit size={16} /></button>
+                      {hasPermission('Project Management', 'update') && (
+                        <button className="action-circle-btn" onClick={(e) => handleEditClick(e, project.id)}><Edit size={16} /></button>
+                      )}
                     </div>
                     <select 
                       className="status-select-sm" 

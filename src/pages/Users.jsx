@@ -21,10 +21,12 @@ import {
   Target,
   ChevronRight
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import './Users.css';
 
 const UsersPage = () => {
   const navigate = useNavigate();
+  const { hasPermission } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [showEditDrawer, setShowEditDrawer] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -55,7 +57,8 @@ const UsersPage = () => {
         .from('users').select('*').order('created_at', { ascending: false });
       if (error) { console.error('Error fetching users:', error); setIsError(true); }
       else {
-        setUsers((usersList || []).map(u => ({ ...u, name: u.full_name || u.name || 'Unnamed User' })));
+        const filteredList = (usersList || []).filter(u => u.role !== 'Super Admin' && u.account_type !== 'super_admin');
+        setUsers(filteredList.map(u => ({ ...u, name: u.full_name || u.name || 'Unnamed User' })));
       }
       setIsLoading(false);
 
@@ -162,7 +165,9 @@ const UsersPage = () => {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            <Button variant="primary" icon={UserPlus} onClick={() => navigate('/users/add')}>Add User</Button>
+            {hasPermission('User Management', 'create') && (
+              <Button variant="primary" icon={UserPlus} onClick={() => navigate('/users/add')}>Add User</Button>
+            )}
           </div>
         </div>
 
@@ -239,14 +244,20 @@ const UsersPage = () => {
                         </td>
                         <td data-label="Actions" className="text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="user-actions">
-                            <button className="action-circle-btn target icon-target" title="Set Target" onClick={(e) => openTargetModal(e, u)}>
-                              <Target size={16} />
-                            </button>
-                            <button className="action-circle-btn icon-edit" title="Edit User" onClick={() => openEdit(u)}><Edit3 size={16} /></button>
+                            {hasPermission('User Management', 'update') && (
+                              <button className="action-circle-btn target icon-target" title="Set Target" onClick={(e) => openTargetModal(e, u)}>
+                                <Target size={16} />
+                              </button>
+                            )}
+                            {hasPermission('User Management', 'update') && (
+                              <button className="action-circle-btn icon-edit" title="Edit User" onClick={() => openEdit(u)}><Edit3 size={16} /></button>
+                            )}
                             <button className="action-circle-btn view icon-view" title="View Details" onClick={() => navigate(`/users/${u.id}`)}>
                               <ChevronRight size={16} />
                             </button>
-                            <button className="action-circle-btn delete icon-delete" title="Delete User"><Trash2 size={16} /></button>
+                            {hasPermission('User Management', 'delete') && (
+                              <button className="action-circle-btn delete icon-delete" title="Delete User"><Trash2 size={16} /></button>
+                            )}
                           </div>
                         </td>
                       </tr>

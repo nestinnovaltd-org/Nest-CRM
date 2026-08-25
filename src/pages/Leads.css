@@ -314,18 +314,22 @@
 
   .header-title-row {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
+    flex-direction: column !important;
+    align-items: flex-start !important;
     width: 100%;
-    gap: 12px;
+    gap: 10px !important;
+  }
+
+  .header-actions {
+    width: 100% !important;
+    justify-content: flex-start !important;
+    gap: 8px !important;
   }
 
   .header-title-row h1 {
-    font-size: 1.15rem !important;
+    font-size: 1.25rem !important;
     margin: 0 !important;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal !important;
   }
 
   .header-desc {
@@ -462,25 +466,25 @@
 
 @media (max-width: 768px) {
   .leads-toolbar {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 8px 8px;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+    padding: 10px !important;
   }
   
   .toolbar-left {
-    flex-direction: row;
-    align-items: center;
-    gap: 6px;
-    flex: 1;
-    min-width: 0;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    width: 100% !important;
+    flex: none !important;
   }
   
   .search-box {
-    max-width: none;
-    flex: 1.5;
-    min-width: 0;
+    max-width: none !important;
+    width: 100% !important;
+    flex: none !important;
+    min-width: 0 !important;
   }
 
   .search-box input {
@@ -496,25 +500,31 @@
   }
 
   .fu-filter-select-wrapper {
-    flex: 1;
+    width: 100% !important;
+    flex: none !important;
     min-width: 0;
   }
 
   .fu-filter-select {
-    width: 100%;
+    width: 100% !important;
     height: 36px;
-    padding: 0 20px 0 6px;
-    font-size: 0.75rem;
-    background-position: right 6px center;
+    padding: 0 24px 0 10px;
+    font-size: 0.8rem;
+    background-position: right 10px center;
   }
 
   .toolbar-right {
-    flex-shrink: 0;
+    width: 100% !important;
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 4px;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
   }
 
   .view-toggle button {
-    width: 32px;
-    height: 32px;
+    width: 34px;
+    height: 34px;
   }
 }
 
@@ -2568,6 +2578,18 @@ input::-webkit-calendar-picker-indicator {
 
 /* Mobile Responsive Card Enhancements */
 @media (max-width: 768px) {
+  .status-pill-btn {
+    padding: 4px 8px !important;
+    font-size: 0.72rem !important;
+    border-radius: 14px !important;
+    gap: 4px !important;
+  }
+  .status-pill-btn .count-badge {
+    font-size: 0.65rem !important;
+    padding: 1px 4px !important;
+    border-radius: 6px !important;
+  }
+
   .detailed-lead-card {
     padding: 16px !important;
     border-radius: 18px !important;

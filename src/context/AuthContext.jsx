@@ -74,7 +74,7 @@ export const AuthProvider = ({ children }) => {
       }
 
       const accountType = profile.account_type ||
-        (supabaseUser.id === SUPER_ADMIN_UID ? 'super_admin' : 'individual');
+        (supabaseUser.id === SUPER_ADMIN_UID ? 'super_admin' : 'org_employee');
 
       // Super Admin: Auto-provision 'Nest CRM' organization
       if (accountType === 'super_admin') {
@@ -104,8 +104,10 @@ export const AuthProvider = ({ children }) => {
           nestOrg = newOrg;
 
           // Update user profile with org_id
-          await supabase.from('users').update({ org_id: newOrg.id }).eq('id', supabaseUser.id);
-          profile.org_id = newOrg.id;
+          if (newOrg) {
+            await supabase.from('users').update({ org_id: newOrg.id }).eq('id', supabaseUser.id);
+            profile.org_id = newOrg.id;
+          }
         }
 
         // Set default tenant to Nest CRM Org
@@ -124,24 +126,17 @@ export const AuthProvider = ({ children }) => {
         orgData = org || null;
       }
 
-      // Set default tenant for Org members & Individuals if not already set
+      // Set default tenant for Org members if not already set
       if (!currentTenant) {
         if (['org_admin', 'org_employee'].includes(accountType) && orgData) {
           setCurrentTenant({ type: 'org', id: orgData.id, name: orgData.name, theme_color: orgData.theme_color });
-        } else if (accountType === 'individual') {
-          setCurrentTenant({ type: 'individual', id: supabaseUser.id, name: profile.full_name || profile.name || 'Personal Account' });
         }
       }
 
-      let trialExpired = false;
-      let subscriptionStatus = profile.subscription_status || 'trial';
-      if (accountType === 'individual') {
-        const createdAt = new Date(profile.created_at || supabaseUser.created_at);
-        const trialEnd = new Date(createdAt.getTime() + 30 * 24 * 60 * 60 * 1000);
-        trialExpired = new Date() > trialEnd && subscriptionStatus === 'trial';
-      }
+      const trialExpired = false;
+      const subscriptionStatus = profile.subscription_status || 'active';
 
-      if (profile.role && !['Super Admin', 'Admin', 'System Admin'].includes(profile.role)) {
+      if (profile.role && profile.role !== 'Super Admin') {
         const roleId = profile.role.toLowerCase().replace(/\s+/g, '_');
         const { data: roleData } = await supabase
           .from('roles').select('permissions').eq('id', roleId).single();
@@ -167,7 +162,7 @@ export const AuthProvider = ({ children }) => {
         id: supabaseUser.id,
         email: supabaseUser.email,
         role: isSA ? 'Super Admin' : 'Team Member',
-        account_type: isSA ? 'super_admin' : 'individual',
+        account_type: isSA ? 'super_admin' : 'org_employee',
         permissions: isSA ? ['All'] : [],
       });
     }
@@ -243,6 +238,22 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
+      // Check approval status first
+      const { data: dbUser } = await supabase
+        .from('users')
+        .select('approval_status')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (dbUser && dbUser.approval_status !== 'approved') {
+        return { 
+          success: false, 
+          message: dbUser.approval_status === 'rejected'
+            ? 'Your registration has been rejected by the Super Admin.'
+            : 'Your registration is pending Super Admin approval.'
+        };
+      }
+
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       return { success: true };
@@ -259,36 +270,74 @@ export const AuthProvider = ({ children }) => {
   const isSuperAdmin = () => user?.account_type === 'super_admin' || user?.id === SUPER_ADMIN_UID;
   const isOrgAdmin = () => user?.account_type === 'org_admin';
   const isOrgEmployee = () => user?.account_type === 'org_employee';
-  const isIndividual = () => user?.account_type === 'individual';
+  // Individual account type is disabled — always returns false
+  const isIndividual = () => false;
   const isOrganizationMember = () => ['org_admin', 'org_employee'].includes(user?.account_type);
 
-  const hasPermission = (module, action = 'read') => {
+  const hasPermission = (module, action = 'read', subModule = null) => {
     if (!user) return false;
     if (isSuperAdmin()) return true;
     if (Array.isArray(user.permissions) && user.permissions.includes('All')) return true;
     if (user.trialExpired) return module === 'Lead Management' && action === 'read';
 
+    // 1. First, check organization-level module authorization limits
     if (isIndividual()) {
       const allowed = getIndividualModules(user.subscription_package || 'free_trial');
       if (!allowed.includes(module)) return false;
-      return true;
+    } else if (isOrgAdmin() || isOrgEmployee()) {
+      const org = user.org;
+      const hasCustomModules = org && Array.isArray(org.tags) && org.tags.some(t => t.startsWith('module:'));
+      if (hasCustomModules) {
+        const prefix = `module:${module}:`;
+        const moduleTags = org.tags.filter(t => t.startsWith(prefix));
+        if (moduleTags.length === 0) return false;
+        const actionMap = { view:'read', read:'read', add:'create', create:'create', edit:'update', update:'update', delete:'delete' };
+        const dbAction = actionMap[action] || action;
+        if (['create', 'update', 'delete'].includes(dbAction)) {
+          if (!moduleTags.includes(`${prefix}write`)) return false;
+        }
+      } else {
+        const allowed = getOrgModules(user.org?.billing_package || 'starter');
+        if (!allowed.includes(module)) return false;
+      }
     }
-    if (isOrgAdmin()) {
-      const allowed = getOrgModules(user.org?.billing_package || 'starter');
-      return allowed.includes(module);
+
+    // 2. Next, check user-specific custom permission overrides in user.permissions array
+    if (Array.isArray(user.permissions) && user.permissions.length > 0 && typeof user.permissions[0] === 'object' && user.permissions[0] !== null) {
+      const userOverrides = user.permissions[0];
+      if (userOverrides[module]) {
+        const modulePerms = userOverrides[module];
+        const actionMap = { view:'read', read:'read', add:'create', create:'create', edit:'update', update:'update', delete:'delete' };
+        const dbAction = actionMap[action] || action;
+        
+        // Org employees cannot delete by default
+        if (isOrgEmployee() && dbAction === 'delete') return false;
+        
+        if (subModule && modulePerms[subModule]) {
+          return modulePerms[subModule][dbAction] === true;
+        }
+        return Object.values(modulePerms).some(p => p[dbAction] === true);
+      }
     }
-    if (isOrgEmployee()) {
-      const allowed = getOrgModules(user.org?.billing_package || 'starter');
-      if (!allowed.includes(module)) return false;
-      if (action === 'delete') return false;
-      return true;
-    }
+
+    // 3. Fallback: check role permissions
     if (user.rolePermissions && user.rolePermissions[module]) {
       const modulePerms = user.rolePermissions[module];
       const actionMap = { view:'read', read:'read', add:'create', create:'create', edit:'update', update:'update', delete:'delete' };
       const dbAction = actionMap[action] || action;
+      
+      // Org employees cannot delete by default
+      if (isOrgEmployee() && dbAction === 'delete') return false;
+      
+      if (subModule && modulePerms[subModule]) {
+        return modulePerms[subModule][dbAction] === true;
+      }
       return Object.values(modulePerms).some(p => p[dbAction] === true);
     }
+
+    // Org Admins have access to all modules allowed for their organization by default if no override exists
+    if (isOrgAdmin()) return true;
+
     return false;
   };
 

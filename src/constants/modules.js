@@ -65,6 +65,6 @@ export const SYSTEM_MODULES = [
   { 
     name: 'Settings', 
     icon: Settings,
-    subModules: ['Profile Settings'] 
+    subModules: ['Profile Settings', 'Organization Settings'] 
   },
 ];

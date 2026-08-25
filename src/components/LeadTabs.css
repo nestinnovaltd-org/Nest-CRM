@@ -63,3 +63,19 @@
 .lead-tab-btn.active::after {
   transform: scaleX(1);
 }
+
+@media (max-width: 768px) {
+  .lead-navigation-tabs {
+    gap: 10px !important;
+    padding-bottom: 2px !important;
+  }
+  .lead-tab-btn {
+    font-size: 0.76rem !important;
+    padding: 8px 2px !important;
+    gap: 4px !important;
+  }
+  .lead-tab-btn svg {
+    width: 12px !important;
+    height: 12px !important;
+  }
+}

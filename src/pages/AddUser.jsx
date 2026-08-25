@@ -24,10 +24,12 @@ import {
   Users,
   ChevronDown
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import './AddUser.css';
 
 const AddUserPage = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const stepParam = parseInt(searchParams.get('step')) || 1;
   const [currentStep, setCurrentStep] = useState(stepParam);
@@ -40,6 +42,7 @@ const AddUserPage = () => {
   // Dynamic Data States
   const [roles, setRoles] = useState([]);
   const [users, setUsers] = useState([]);
+  const [organizations, setOrganizations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   
   // Form State
@@ -52,7 +55,8 @@ const AddUserPage = () => {
     reportsTo: '',
     sendEmail: true,
     status: 'Active',
-    permissions: null // User-specific overrides
+    permissions: null, // User-specific overrides
+    orgId: '' // Organization (Super Admin picker)
   });
 
   // Sync step with URL
@@ -60,18 +64,25 @@ const AddUserPage = () => {
     setSearchParams({ step: currentStep }, { replace: true });
   }, [currentStep]);
 
-  // Load Roles & Potential Managers
+  // Load Roles, Potential Managers, and (for Super Admin) Organizations
   useEffect(() => {
     const fetchData = async () => {
-      const { data: rolesData } = await supabase.from('roles').select('*').order('level', { ascending: false });
+      const { data: rolesData } = await supabase.from('roles').select('*').order('created_at', { ascending: true });
       setRoles(rolesData || []);
 
       const { data: usersData } = await supabase.from('users').select('*').order('full_name', { ascending: true });
       setUsers(usersData || []);
+
+      // Super Admin can pick which org the new user belongs to
+      if (user?.account_type === 'super_admin') {
+        const { data: orgsData } = await supabase.from('organizations').select('id, name').order('name', { ascending: true });
+        setOrganizations(orgsData || []);
+      }
+
       setIsLoading(false);
     };
     fetchData();
-  }, []);
+  }, [user]);
 
   // When role changes, sync permissions preview
   useEffect(() => {
@@ -165,6 +176,20 @@ const AddUserPage = () => {
       if (authError) throw authError;
       const newUserId = authData.user?.id;
 
+      let accountType = 'org_employee';
+      if (formData.role === 'Super Admin') {
+        accountType = 'super_admin';
+      } else if (formData.role === 'Admin') {
+        accountType = 'org_admin';
+      }
+
+      // Determine org_id:
+      //  - Super Admin provides it via the org picker (formData.orgId)
+      //  - Org Admin/Employee inherits the creator's org automatically
+      const resolvedOrgId = user?.account_type === 'super_admin'
+        ? (formData.orgId || null)
+        : (user?.org_id || user?.org?.id || null);
+
       // Store user profile in users table
       await supabase.from('users').upsert({
         id: newUserId,
@@ -176,8 +201,10 @@ const AddUserPage = () => {
         reports_to: formData.reportsTo,
         send_email: formData.sendEmail,
         status: formData.status,
-        permissions: formData.permissions,
+        permissions: formData.permissions ? [ formData.permissions ] : [],
         uid: newUserId,
+        account_type: accountType,
+        org_id: resolvedOrgId,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
@@ -345,6 +372,27 @@ const AddUserPage = () => {
                       />
                     </div>
                   </div>
+
+                  {/* Super Admin: Organization Selector */}
+                  {user?.account_type === 'super_admin' && (
+                    <div className="form-group-v3 full-width">
+                      <label>Organization <span>*</span></label>
+                      <div className="select-wrapper">
+                        <select
+                          value={formData.orgId}
+                          onChange={(e) => setFormData({ ...formData, orgId: e.target.value })}
+                          required
+                        >
+                          <option value="">— Select Organization —</option>
+                          {organizations.map(org => (
+                            <option key={org.id} value={org.id}>{org.name}</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={16} className="select-chevron" />
+                      </div>
+                    </div>
+                  )}
+
                 </div>
               </div>
             </div>

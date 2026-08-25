@@ -573,7 +573,55 @@
     font-size: 1.25rem;
   }
 
+
   .section-body {
     padding: 1.5rem;
   }
 }
+
+/* Organization Select Wrapper */
+.select-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.select-wrapper select {
+  padding: 0.875rem 2.5rem 0.875rem 1.25rem;
+  background: var(--background);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  width: 100%;
+  appearance: none;
+  cursor: pointer;
+}
+
+[data-theme='dark'] .select-wrapper select {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+[data-theme='dark'] .select-wrapper select option {
+  background: #1e1e2e;
+  color: #ffffff;
+}
+
+.select-wrapper select:focus {
+  border-color: var(--primary);
+  background: var(--surface);
+  outline: none;
+  box-shadow: 0 0 0 4px var(--primary-light);
+}
+
+.select-chevron {
+  position: absolute;
+  right: 1rem;
+  pointer-events: none;
+  color: var(--text-secondary);
+}
+

@@ -47,7 +47,7 @@ const LoginPage = () => {
   const [forgotError, setForgotError] = useState('');
 
   // Sign Up states
-  const [signUpType, setSignUpType] = useState('select'); // 'select', 'individual', 'org', 'custom'
+  const [signUpType, setSignUpType] = useState('select'); // 'select', 'org', 'custom'
   const [signUpName, setSignUpName] = useState('');
   const [signUpEmail, setSignUpEmail] = useState('');
   const [signUpPassword, setSignUpPassword] = useState('');
@@ -156,31 +156,7 @@ const LoginPage = () => {
 
       const userId = authData.user.id;
 
-      if (signUpType === 'individual') {
-        // Create individual user profile
-        const profileData = {
-          id: userId,
-          full_name: signUpName,
-          email: signUpEmail,
-          phone: signUpPhone || null,
-          account_type: 'individual',
-          role: 'Admin',
-          permissions: ['Lead Management', 'Calendar & Schedule', 'Notifications', 'Settings'],
-          subscription_package: 'free_trial',
-          subscription_status: 'trial',
-          status: 'Active',
-          approval_status: 'approved',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-
-        const { error: profileError } = await supabase
-          .from('users')
-          .insert(profileData);
-
-        if (profileError) throw profileError;
-
-      } else if (signUpType === 'org') {
+      if (signUpType === 'org') {
         if (!signUpOrgName) {
           throw new Error('Organization name is required.');
         }
@@ -197,14 +173,13 @@ const LoginPage = () => {
         const orgInsert = {
           name: signUpOrgName,
           slug: slug || 'org-' + Math.floor(Math.random() * 100000),
-          status: 'approved',
+          status: 'pending',
           billing_package: signUpOrgPackage,
           billing_status: 'active',
           owner_id: userId,
           max_users: maxUsers,
           current_users: 1,
           created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
         };
 
         const { data: orgData, error: orgError } = await supabase
@@ -225,8 +200,8 @@ const LoginPage = () => {
           account_type: 'org_admin',
           role: 'Admin',
           permissions: ['All'],
-          status: 'Active',
-          approval_status: 'approved',
+          status: 'Pending',
+          approval_status: 'pending',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
@@ -427,17 +402,6 @@ const LoginPage = () => {
                   <div className="signup-type-grid">
                     <div 
                       className="signup-type-card"
-                      onClick={() => { setSignUpType('individual'); setSignUpError(''); }}
-                    >
-                      <div className="stc-icon"><User size={20} /></div>
-                      <div className="stc-content">
-                        <h3>Individual User</h3>
-                        <p>Free Trial (1 mo, 1 user, Lead Management only)</p>
-                      </div>
-                    </div>
-
-                    <div 
-                      className="signup-type-card"
                       onClick={() => { setSignUpType('org'); setSignUpError(''); }}
                     >
                       <div className="stc-icon"><Building2 size={20} /></div>
@@ -458,104 +422,6 @@ const LoginPage = () => {
                       </div>
                     </div>
                   </div>
-                </>
-              ) : signUpType === 'individual' ? (
-                <>
-                  <div className="login-header">
-                    <button 
-                      type="button" 
-                      className="signup-back-link" 
-                      onClick={() => setSignUpType('select')}
-                    >
-                      <ChevronLeft size={16} /> Back
-                    </button>
-                    <h1>Individual Signup</h1>
-                    <p className="header-brand-text">PERSONAL WORKSPACE</p>
-                    <p className="header-subtitle">Create your personal real estate lead space</p>
-                  </div>
-
-                  {signUpError && (
-                    <div className="login-error-msg">
-                      <AlertCircle size={18} />
-                      <span>{signUpError}</span>
-                    </div>
-                  )}
-
-                  {signUpSuccess && (
-                    <div className="login-success-msg">
-                      <CheckCircle2 size={18} />
-                      <span>{signUpSuccess}</span>
-                    </div>
-                  )}
-
-                  <form className="login-form" onSubmit={handleSignUp}>
-                    <div className="form-group-v2">
-                      <label>Full Name</label>
-                      <div className="input-with-icon">
-                        <User size={18} />
-                        <input 
-                          type="text" 
-                          placeholder="Your Name" 
-                          value={signUpName}
-                          onChange={(e) => setSignUpName(e.target.value)}
-                          required 
-                        />
-                      </div>
-                    </div>
-
-                    <div className="form-group-v2">
-                      <label>Email Address</label>
-                      <div className="input-with-icon">
-                        <Mail size={18} />
-                        <input 
-                          type="email" 
-                          placeholder="name@company.com" 
-                          value={signUpEmail}
-                          onChange={(e) => setSignUpEmail(e.target.value)}
-                          required 
-                        />
-                      </div>
-                    </div>
-
-                    <div className="form-group-v2">
-                      <label>Phone Number</label>
-                      <div className="input-with-icon">
-                        <Smartphone size={18} />
-                        <input 
-                          type="tel" 
-                          placeholder="+88017XXXXXXXX" 
-                          value={signUpPhone}
-                          onChange={(e) => setSignUpPhone(e.target.value)}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="form-group-v2">
-                      <label>Password</label>
-                      <div className="input-with-icon">
-                        <Lock size={18} />
-                        <input 
-                          type={showPassword ? "text" : "password"} 
-                          placeholder="•••••••• (Min 6 chars)" 
-                          value={signUpPassword}
-                          onChange={(e) => setSignUpPassword(e.target.value)}
-                          required 
-                        />
-                        <button 
-                          type="button" 
-                          className="password-toggle"
-                          onClick={() => setShowPassword(!showPassword)}
-                        >
-                          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                        </button>
-                      </div>
-                    </div>
-
-                    <button type="submit" className="login-submit-btn" disabled={signUpLoading}>
-                      {signUpLoading ? "Creating personal space..." : "Create Free Account"}
-                      {!signUpLoading && <ArrowRight size={20} />}
-                    </button>
-                  </form>
                 </>
               ) : signUpType === 'org' ? (
                 <>

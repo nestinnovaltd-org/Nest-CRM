@@ -76,6 +76,20 @@ body {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+[data-theme='dark'] .card,
+[data-theme='dark'] .premium-card,
+[data-theme='dark'] .sa-card,
+[data-theme='dark'] .sa-table-wrap,
+[data-theme='dark'] .list-view-container,
+[data-theme='dark'] .leads-status-filter-bar,
+[data-theme='dark'] .leads-toolbar {
+  background: radial-gradient(circle at top left, var(--primary-soft) 0%, transparent 60%), rgba(12, 14, 18, 0.72) !important;
+  border: 1px solid var(--primary-border) !important;
+  backdrop-filter: blur(24px) !important;
+  -webkit-backdrop-filter: blur(24px) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
 .premium-card:hover {
   transform: translateY(-2px);
   border-color: rgba(38, 226, 100, 0.25) !important;
@@ -318,6 +332,45 @@ body {
     font-size: 0.8125rem;
     white-space: nowrap;
     flex: 0 0 auto;
+  }
+
+  /* Global Portal Mobile Space Removal & Sizing Shrink */
+  .container {
+    padding: 0 var(--spacing-2) !important;
+  }
+  .card-body, .premium-card {
+    padding: 10px !important;
+  }
+  .card-header {
+    padding: 8px 12px !important;
+  }
+  .card-title {
+    font-size: 0.85rem !important;
+  }
+  h1 {
+    font-size: 1.25rem !important;
+  }
+  h2 {
+    font-size: 1.1rem !important;
+  }
+  h3 {
+    font-size: 0.95rem !important;
+  }
+  input, select, textarea, .form-control {
+    padding: 6px 10px !important;
+    font-size: 0.8rem !important;
+    height: 36px !important;
+    border-radius: var(--radius-sm) !important;
+  }
+  .btn, button, .btn-primary, .btn-secondary, button.action-btn {
+    padding: 6px 12px !important;
+    font-size: 0.78rem !important;
+    height: 34px !important;
+    border-radius: var(--radius-sm) !important;
+  }
+  th, td, .table th, .table td {
+    padding: 8px 10px !important;
+    font-size: 0.78rem !important;
   }
 }
 

@@ -1574,7 +1574,7 @@ const InterestsModal = ({ isOpen, onClose, lead, onConfirm, projects }) => {
 
 
 const MyLeads = () => {
-  const { user, currentTenant } = useAuth();
+  const { user, currentTenant, hasPermission } = useAuth();
   const { userId } = useParams();
   const [leads, setLeads] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -2018,9 +2018,11 @@ const MyLeads = () => {
             <div className="header-actions">
               <Button variant="secondary" icon={Download} onClick={handleExport}>Export</Button>
               <Button variant="secondary" icon={Upload} onClick={() => setIsBulkUploadModalOpen(true)}>Bulk Upload</Button>
-              <Link to="/leads/add">
-                <Button variant="primary" icon={Plus}>Add New Lead</Button>
-              </Link>
+              {hasPermission('Lead Management', 'create') && (
+                <Link to="/leads/add">
+                  <Button variant="primary" icon={Plus}>Add New Lead</Button>
+                </Link>
+              )}
             </div>
           </div>
           <p className="header-desc">

@@ -22,7 +22,7 @@ export default function UserApprovals() {
 
   useEffect(() => { load(); }, []);
 
-  const handleDecision = async (userId, decision, orgId) => {
+  const handleDecision = async (userId, decision, orgId, accountType) => {
     setProcessing(userId);
     await supabase.from('users').update({
       approval_status: decision,
@@ -31,6 +31,10 @@ export default function UserApprovals() {
     }).eq('id', userId);
 
     if (decision === 'approved' && orgId) {
+      if (accountType === 'org_admin') {
+        await supabase.from('organizations').update({ status: 'approved' }).eq('id', orgId);
+      }
+      
       // Increment org user count
       const { data: org } = await supabase.from('organizations').select('current_users').eq('id', orgId).single();
       if (org) {
@@ -117,7 +121,7 @@ export default function UserApprovals() {
                       <button
                         className="sa-btn sa-btn-success"
                         style={{ padding: '6px 14px', fontSize: 12 }}
-                        onClick={() => handleDecision(u.id, 'approved', u.org_id)}
+                        onClick={() => handleDecision(u.id, 'approved', u.org_id, u.account_type)}
                         disabled={processing === u.id}
                       >
                         <CheckCircle size={13} /> Approve
@@ -125,7 +129,7 @@ export default function UserApprovals() {
                       <button
                         className="sa-btn sa-btn-danger"
                         style={{ padding: '6px 14px', fontSize: 12 }}
-                        onClick={() => handleDecision(u.id, 'rejected', u.org_id)}
+                        onClick={() => handleDecision(u.id, 'rejected', u.org_id, u.account_type)}
                         disabled={processing === u.id}
                       >
                         <XCircle size={13} /> Reject

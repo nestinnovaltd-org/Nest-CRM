@@ -357,7 +357,7 @@ const LeadUpdateModal = ({ isOpen, onClose, lead, newStatus, onConfirm }) => {
 const LeadDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, hasPermission } = useAuth();
   const [activeTab, setActiveTab] = useState('follow-ups');
 
   const [lead, setLead] = useState(null);
@@ -935,7 +935,9 @@ const LeadDetails = () => {
           </button>
           <div className="lead-details-header-actions">
             <Button variant="secondary" icon={ExternalLink}>Export Profile</Button>
-            <Button variant="primary" icon={Edit} onClick={() => setIsEditModalOpen(true)}>Edit Details</Button>
+            {hasPermission('Lead Management', 'update') && (
+              <Button variant="primary" icon={Edit} onClick={() => setIsEditModalOpen(true)}>Edit Details</Button>
+            )}
           </div>
         </div>
 
@@ -943,6 +945,7 @@ const LeadDetails = () => {
           {/* Left Column: Profile Info & Sales Person */}
           <div className="profile-sidebar">
             <Card className="profile-main-card" style={{ position: 'relative' }}>
+              {hasPermission('Lead Management', 'update') && (
               <button 
                 className="profile-edit-btn-inline" 
                 onClick={() => setIsEditModalOpen(true)}
@@ -975,6 +978,7 @@ const LeadDetails = () => {
               >
                 <Edit size={14} />
               </button>
+              )}
               <div className="profile-header-info">
                 <div className="profile-avatar-wrapper">
                   <div className="profile-avatar">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, getOrgModules } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import DashboardLayout from '../layouts/DashboardLayout';
 import Card from '../components/ui/Card';
@@ -23,6 +23,34 @@ export default function MyOrganization() {
   const [orgUsers, setOrgUsers] = useState([]);
   const [allOrgs, setAllOrgs] = useState([]);
   const [message, setMessage] = useState({ text: '', type: 'success' });
+
+  const [modulesConfig, setModulesConfig] = useState({
+    'Dashboard': { read: true, write: true },
+    'Project Management': { read: true, write: true },
+    'Lead Management': { read: true, write: true },
+    'User Management': { read: true, write: true },
+    'Team Management': { read: true, write: true },
+    'HR Operations': { read: true, write: true },
+    'Calendar & Schedule': { read: true, write: true },
+    'Payments': { read: true, write: true },
+    'Reports & Analytics': { read: true, write: true },
+    'Notifications': { read: true, write: true },
+    'Settings': { read: true, write: true }
+  });
+
+  const handleModuleConfigChange = (moduleName, type, checked) => {
+    setModulesConfig(prev => {
+      const next = { ...prev };
+      next[moduleName] = { ...next[moduleName], [type]: checked };
+      if (type === 'write' && checked) {
+        next[moduleName].read = true;
+      }
+      if (type === 'read' && !checked) {
+        next[moduleName].write = false;
+      }
+      return next;
+    });
+  };
 
   // Address structures
   const [billing, setBilling] = useState({ street: '', city: '', state: '', zip: '', country: 'Bangladesh' });
@@ -55,7 +83,7 @@ export default function MyOrganization() {
       if (error) throw error;
       setOrg(orgData);
 
-      // Populate form
+      // Populate form (filtering out internal module configuration tags)
       setForm({
         name: orgData.name || '',
         org_type: orgData.org_type || 'Client',
@@ -73,7 +101,7 @@ export default function MyOrganization() {
         currency: orgData.currency || 'BDT',
         account_owner_id: orgData.account_owner_id || '',
         onboarding_date: orgData.onboarding_date ? orgData.onboarding_date.split('T')[0] : '',
-        tags: Array.isArray(orgData.tags) ? orgData.tags.join(', ') : '',
+        tags: Array.isArray(orgData.tags) ? orgData.tags.filter(t => !t.startsWith('module:')).join(', ') : '',
         primary_contact_id: orgData.primary_contact_id || '',
         parent_org_id: orgData.parent_org_id || '',
         theme_color: orgData.theme_color || '#8B5CF6'
@@ -82,6 +110,59 @@ export default function MyOrganization() {
       if (orgData.billing_address) setBilling({ ...billing, ...orgData.billing_address });
       if (orgData.shipping_address) setShipping({ ...shipping, ...orgData.shipping_address });
       setSameAddress(orgData.same_address || false);
+
+      // Populate custom workspace modules permissions
+      const hasCustomModules = Array.isArray(orgData.tags) && orgData.tags.some(t => t.startsWith('module:'));
+      if (hasCustomModules) {
+        const initialConfig = {
+          'Dashboard': { read: false, write: false },
+          'Project Management': { read: false, write: false },
+          'Lead Management': { read: false, write: false },
+          'User Management': { read: false, write: false },
+          'Team Management': { read: false, write: false },
+          'HR Operations': { read: false, write: false },
+          'Calendar & Schedule': { read: false, write: false },
+          'Payments': { read: false, write: false },
+          'Reports & Analytics': { read: false, write: false },
+          'Notifications': { read: false, write: false },
+          'Settings': { read: false, write: false }
+        };
+        orgData.tags.forEach(tag => {
+          if (tag.startsWith('module:')) {
+            const parts = tag.split(':');
+            if (parts.length >= 3) {
+              const mName = parts[1];
+              const perm = parts[2];
+              if (initialConfig[mName]) {
+                initialConfig[mName][perm] = true;
+              }
+            }
+          }
+        });
+        setModulesConfig(initialConfig);
+      } else {
+        const allowedModules = getOrgModules(orgData.billing_package || 'starter');
+        const initialConfig = {
+          'Dashboard': { read: true, write: true },
+          'Project Management': { read: false, write: false },
+          'Lead Management': { read: false, write: false },
+          'User Management': { read: false, write: false },
+          'Team Management': { read: false, write: false },
+          'HR Operations': { read: false, write: false },
+          'Calendar & Schedule': { read: false, write: false },
+          'Payments': { read: false, write: false },
+          'Reports & Analytics': { read: false, write: false },
+          'Notifications': { read: false, write: false },
+          'Settings': { read: false, write: false }
+        };
+        Object.keys(initialConfig).forEach(mName => {
+          if (allowedModules.includes(mName) || mName === 'Dashboard') {
+            initialConfig[mName].read = true;
+            initialConfig[mName].write = true;
+          }
+        });
+        setModulesConfig(initialConfig);
+      }
 
       // 2. Fetch users in org
       const { data: users } = await supabase.from('users').select('id, full_name, name').eq('org_id', orgId);
@@ -116,7 +197,16 @@ export default function MyOrganization() {
 
     try {
       const finalShipping = sameAddress ? billing : shipping;
-      const tagList = form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [];
+      const userTags = form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [];
+      
+      const moduleTags = [];
+      Object.keys(modulesConfig).forEach(mName => {
+        const conf = modulesConfig[mName];
+        if (conf.read) moduleTags.push(`module:${mName}:read`);
+        if (conf.write) moduleTags.push(`module:${mName}:write`);
+      });
+
+      const tagList = [...userTags, ...moduleTags];
 
       const payload = {
         name: form.name,
@@ -288,6 +378,47 @@ export default function MyOrganization() {
                       ))}
                     </select>
                   </label>
+                </div>
+              </Card>
+
+              {/* Section 8: Workspace Module Permissions */}
+              <Card title="Workspace Module Permissions" icon={Shield} className="org-card">
+                <p style={{ fontSize: '11.5px', color: 'var(--text-secondary)', margin: '0 0 14px' }}>
+                  Configure active modules and specify Read / Write access for your organization's workspace.
+                </p>
+                <div className="modules-permissions-table-wrap">
+                  <table className="modules-permissions-table">
+                    <thead>
+                      <tr>
+                        <th>Module Name</th>
+                        <th style={{ textAlign: 'center', width: '80px' }}>Read</th>
+                        <th style={{ textAlign: 'center', width: '80px' }}>Write</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.keys(modulesConfig).map(mName => (
+                        <tr key={mName}>
+                          <td>
+                            <div style={{ fontWeight: 500, color: '#E5E7EB', fontSize: '13px' }}>{mName}</div>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={modulesConfig[mName].read} 
+                              onChange={(e) => handleModuleConfigChange(mName, 'read', e.target.checked)}
+                            />
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={modulesConfig[mName].write} 
+                              onChange={(e) => handleModuleConfigChange(mName, 'write', e.target.checked)}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </Card>
             </div>

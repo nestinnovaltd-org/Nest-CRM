@@ -17,12 +17,16 @@ const navItems = [
   { label: 'All Users', path: '/super-admin/users', icon: Users, section: 'MANAGEMENT' },
   
   // CRM Workspace Modules
+  { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, section: 'CRM WORKSPACE' },
   { label: 'Leads', path: '/leads/mine', icon: Layers, section: 'CRM WORKSPACE' },
   { label: 'Projects', path: '/projects', icon: GitMerge, section: 'CRM WORKSPACE' },
   { label: 'HR Operations', path: '/hr/operations', icon: Briefcase, section: 'CRM WORKSPACE' },
   { label: 'Payments', path: '/payments/all', icon: FileSpreadsheet, section: 'CRM WORKSPACE' },
   { label: 'Calendar', path: '/calendar/view', icon: CalendarDays, section: 'CRM WORKSPACE' },
   { label: 'My Organization', path: '/settings/organization', icon: Building2, section: 'CRM WORKSPACE' },
+  { label: 'All Users', path: '/users/all', icon: Users, section: 'CRM WORKSPACE' },
+  { label: 'Add New User', path: '/users/add', icon: Users, section: 'CRM WORKSPACE' },
+  { label: 'User Role and Access', path: '/users/roles', icon: Shield, section: 'CRM WORKSPACE' },
 
   { label: 'Billing & Packages', path: '/super-admin/billing', icon: CreditCard, section: 'SYSTEM' },
   { label: 'Settings', path: '/super-admin/settings', icon: Settings, section: 'SYSTEM' },
@@ -40,10 +44,10 @@ export default function SuperAdminLayout({ children }) {
 
   const fetchTenants = async () => {
     try {
-      const [orgsRes, usersRes] = await Promise.all([
-        supabase.from('organizations').select('id, name, theme_color').eq('status', 'approved'),
-        supabase.from('users').select('id, full_name, name, email').eq('account_type', 'individual'),
-      ]);
+      const orgsRes = await supabase
+        .from('organizations')
+        .select('id, name, theme_color')
+        .eq('status', 'approved');
 
       const orgList = (orgsRes.data || []).map(org => ({
         id: org.id,
@@ -52,13 +56,7 @@ export default function SuperAdminLayout({ children }) {
         type: 'org'
       }));
 
-      const individualList = (usersRes.data || []).map(ind => ({
-        id: ind.id,
-        name: ind.full_name || ind.name || ind.email || 'Individual User',
-        type: 'individual'
-      }));
-
-      setTenants([...orgList, ...individualList]);
+      setTenants(orgList);
     } catch (error) {
       console.error('Error fetching tenants:', error);
     } finally {
@@ -165,11 +163,6 @@ export default function SuperAdminLayout({ children }) {
                   <optgroup label="Organizations">
                     {tenants.filter(t => t.type === 'org').map(t => (
                       <option key={t.id} value={t.id}>🏢 {t.name}</option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Individual Users">
-                    {tenants.filter(t => t.type === 'individual').map(t => (
-                      <option key={t.id} value={t.id}>👤 {t.name}</option>
                     ))}
                   </optgroup>
                 </>
