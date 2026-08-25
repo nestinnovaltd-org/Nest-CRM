@@ -50,7 +50,7 @@ export const SYSTEM_MODULES = [
   { 
     name: 'HR Operations', 
     icon: Briefcase,
-    subModules: ['Attendance', 'Leave Management', 'Payroll Processing', 'Organization Management'] 
+    subModules: ['Attendance Check', 'Leave Management', 'Employee Master', 'Payroll Processing', 'Organization Info'] 
   },
   { 
     name: 'Reports & Analytics', 
@@ -65,6 +65,7 @@ export const SYSTEM_MODULES = [
   { 
     name: 'Settings', 
     icon: Settings,
-    subModules: ['Profile Settings', 'Organization Settings'] 
+    subModules: ['Profile Settings', 'My Organization'] 
   },
 ];
+

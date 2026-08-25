@@ -193,7 +193,13 @@
   width: auto;
   margin-bottom: 8px;
   z-index: 2;
+  transition: all 0.3s ease;
 }
+
+[data-theme='dark'] .login-header-logo {
+  filter: drop-shadow(0 0 10px rgba(38, 226, 100, 0.6)) brightness(1.5) contrast(1.1);
+}
+
 
 .login-header h1 {
   font-size: 1.75rem;

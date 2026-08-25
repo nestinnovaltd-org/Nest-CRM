@@ -264,3 +264,27 @@ CREATE POLICY "Allow public access" ON public.organizations FOR ALL TO public US
 ALTER TABLE public.roles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow public access" ON public.roles;
 CREATE POLICY "Allow public access" ON public.roles FOR ALL TO public USING (true) WITH CHECK (true);
+
+-- ──────────────────────────────────────────────────────────────────────────────
+-- Password Reset Tokens Table
+-- Used by /api/forgot-password and /api/reset-password
+-- ──────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS public.password_resets (
+  id          uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  email       text NOT NULL,
+  token       text NOT NULL UNIQUE,
+  expires_at  timestamptz NOT NULL,
+  used        boolean DEFAULT false,
+  used_at     timestamptz,
+  created_at  timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_resets_token ON public.password_resets(token);
+CREATE INDEX IF NOT EXISTS idx_password_resets_email ON public.password_resets(email);
+
+-- RLS: Only service role can read/write (called from API backend only)
+ALTER TABLE public.password_resets ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Service role only" ON public.password_resets;
+CREATE POLICY "Service role only" ON public.password_resets
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+

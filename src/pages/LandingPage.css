@@ -125,11 +125,18 @@
 /* No extra capsule style on scroll to keep logo clean and crisp */
 
 .lp-logo-img {
-  height: 60px;
-  width: 60px;
+  height: 52px;
+  width: auto;
+  max-width: 160px;
   object-fit: contain;
-  margin-right: -10px;
+  transition: all 0.3s ease;
 }
+
+[data-theme='dark'] .lp-logo-img {
+  filter: drop-shadow(0 0 10px rgba(38, 226, 100, 0.6)) brightness(1.5) contrast(1.1);
+}
+
+
 
 .lp-brand-text {
   font-size: 0.75rem;
@@ -146,8 +153,9 @@
 .lp-nav-links {
   display: flex;
   align-items: center;
-  gap: 48px;
+  gap: 24px;
 }
+
 
 .lp-nav-links a {
   color: var(--lp-text-muted);

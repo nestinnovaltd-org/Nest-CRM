@@ -26,8 +26,9 @@ import {
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
-import Toast from '../components/ui/Toast';
+import toast from 'react-hot-toast';
 import './Profile.css';
+
 
 const ProfilePage = () => {
   const { user } = useAuth();
@@ -35,7 +36,6 @@ const ProfilePage = () => {
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [toastConfig, setToastConfig] = useState({ show: false, message: '', type: 'success' });
 
   // Password Update Modal State
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
@@ -128,7 +128,8 @@ const ProfilePage = () => {
   }, [user?.uid]);
 
   function showToast(message, type = 'success') {
-    setToastConfig({ show: true, message, type });
+    if (type === 'success') toast.success(message);
+    else toast.error(message);
   }
 
   const handleInputChange = (field, value) => {

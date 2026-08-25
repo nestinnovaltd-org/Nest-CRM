@@ -20,7 +20,9 @@ const logo = '/Nest%20CRM%20Logo%20without%20background.png';
 const ResetPasswordPage = () => {
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
+  const emailFromUrl = searchParams.get('email') || '';
   const navigate = useNavigate();
+
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -84,7 +86,8 @@ const ResetPasswordPage = () => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ token, newPassword: password }),
+        body: JSON.stringify({ token, email: emailFromUrl, newPassword: password }),
+
       });
 
       const data = await response.json();

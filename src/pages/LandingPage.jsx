@@ -33,10 +33,13 @@ import {
   Phone
 } from 'lucide-react';
 import useThemeStore from '../store/useThemeStore';
+import { useAuth } from '../context/AuthContext';
 import './LandingPage.css';
 
 const LandingPage = () => {
+  const { user } = useAuth();
   const [isScrolled, setIsScrolled] = useState(false);
+
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { scrollY } = useScroll();
   // Live Interactive Portal Sandbox States
@@ -122,8 +125,8 @@ const LandingPage = () => {
         <div className="lp-container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', height: '100%' }}>
           <div className="lp-logo">
             <img src="/Nest%20CRM%20Logo%20without%20background.png" alt="Logo" className="lp-logo-img" />
-            <span className="lp-brand-text">Nest CRM</span>
           </div>
+
           <div className={`lp-nav-links ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
             <a href="#about" onClick={() => setIsMobileMenuOpen(false)}>About</a>
             <a href="#features" onClick={() => setIsMobileMenuOpen(false)}>Features</a>
@@ -149,8 +152,15 @@ const LandingPage = () => {
             >
               {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
-            <Link to="/login" className="lp-btn lp-btn-outline mobile-full-width" style={{ padding: '12px 32px', fontSize: '1rem' }}>Login</Link>
-            <Link to="/login" className="lp-btn lp-btn-primary mobile-full-width" style={{ padding: '12px 32px', fontSize: '1rem' }}>Start Free Trial</Link>
+            {user ? (
+              <Link to="/dashboard" className="lp-btn lp-btn-primary mobile-full-width" style={{ padding: '12px 32px', fontSize: '1rem' }}>Dashboard &rarr;</Link>
+            ) : (
+              <>
+                <Link to="/login" className="lp-btn lp-btn-outline mobile-full-width" style={{ padding: '12px 32px', fontSize: '1rem' }}>Login</Link>
+                <Link to="/login" className="lp-btn lp-btn-primary mobile-full-width" style={{ padding: '12px 32px', fontSize: '1rem' }}>Start Free Trial</Link>
+              </>
+            )}
+
           </div>
           <button 
             className="lp-mobile-menu-btn" 
@@ -871,10 +881,11 @@ const LandingPage = () => {
             Join elite real estate professionals who are already scaling their organizations with our high-performance CRM.
           </motion.p>
           <motion.div variants={fadeIn} initial="initial" whileInView="whileInView">
-            <Link to="/login" className="lp-btn lp-btn-primary cta-btn">
-              Start Your Journey Now
+            <Link to={user ? "/dashboard" : "/login"} className="lp-btn lp-btn-primary cta-btn">
+              {user ? "Go to Dashboard" : "Start Your Journey Now"}
             </Link>
           </motion.div>
+
         </div>
       </section>
 
@@ -884,9 +895,9 @@ const LandingPage = () => {
           <div className="footer-grid">
             <div className="footer-brand">
               <div className="lp-logo">
-                <img src="/Nest%20CRM%20Logo%20without%20background.png" alt="Logo" className="lp-logo-img" style={{ height: '50px', width: '50px' }} />
-                <span className="lp-brand-text" style={{ fontSize: '0.7rem' }}>Nest CRM</span>
+                <img src="/Nest%20CRM%20Logo%20without%20background.png" alt="Logo" className="lp-logo-img" style={{ height: '42px', width: 'auto', maxWidth: '140px' }} />
               </div>
+
               <p style={{ marginTop: '20px', color: 'var(--lp-text-dim)', fontSize: '0.9rem', lineHeight: '1.6' }}>
                 The premium choice for real estate intelligence and team management.
               </p>

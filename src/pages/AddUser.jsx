@@ -164,14 +164,14 @@ const AddUserPage = () => {
       setCurrentStep(2);
       return;
     }
-    if (!formData.role) {
-      toast.error('Please select a role for the user.');
-      setCurrentStep(3);
-      return;
-    }
 
     try {
       setIsSubmitting(true);
+
+      // ── Save creator's session BEFORE signUp ─────────────────────────────
+      // supabase.auth.signUp() auto-logs-in the new user on the client,
+      // switching sessions. We save the current session and restore it after.
+      const { data: { session: creatorSession } } = await supabase.auth.getSession();
 
       // 1. Create user in Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -184,6 +184,14 @@ const AddUserPage = () => {
           }
         }
       });
+
+      // ── Immediately restore creator's session ────────────────────────────
+      if (creatorSession?.access_token && creatorSession?.refresh_token) {
+        await supabase.auth.setSession({
+          access_token: creatorSession.access_token,
+          refresh_token: creatorSession.refresh_token,
+        });
+      }
 
       if (authError) throw authError;
       const newUserId = authData.user?.id;
@@ -201,7 +209,8 @@ const AddUserPage = () => {
         ? (formData.orgId || null)
         : (user?.org_id || user?.org?.id || null);
 
-      // 4. Build permissions — use selected overrides OR role defaults
+      // 4. Build permissions — ONLY what was checked in Step 5
+      //    Empty permissions array means no custom overrides (role defaults apply)
       let resolvedPermissions = [];
       if (formData.permissions && Object.keys(formData.permissions).length > 0) {
         resolvedPermissions = [formData.permissions];
@@ -235,7 +244,7 @@ const AddUserPage = () => {
           email: '',
           phone: '',
           username: '',
-          role: roles.length > 0 ? roles[roles.length - 1].name : '',
+          role: '',
           reportsTo: '',
           sendEmail: true,
           status: 'Active',
@@ -248,6 +257,7 @@ const AddUserPage = () => {
         toast.success(`✅ User "${formData.fullName}" created successfully!`);
         setTimeout(() => navigate('/users/all'), 1200);
       }
+
     } catch (error) {
       console.error('Error creating user:', error);
       let message = 'Failed to create user.';
@@ -265,10 +275,11 @@ const AddUserPage = () => {
   const steps = [
     { id: 1, label: 'Profile', icon: User },
     { id: 2, label: 'Account', icon: Lock },
-    { id: 3, label: 'Role', icon: Shield },
+    { id: 3, label: 'Status', icon: Shield },
     { id: 4, label: 'Hierarchy', icon: Users },
     { id: 5, label: 'Permissions', icon: Check },
   ];
+
 
   return (
     <DashboardLayout>
@@ -398,6 +409,23 @@ const AddUserPage = () => {
                     </div>
                   </div>
 
+                  {/* Job Title / Role */}
+                  <div className="form-group-v3 full-width">
+                    <label>Job Title / Role</label>
+                    <div className="select-wrapper">
+                      <select
+                        value={formData.role}
+                        onChange={(e) => setFormData({...formData, role: e.target.value})}
+                      >
+                        <option value="">— Select Role —</option>
+                        {roles.map(role => (
+                          <option key={role.id} value={role.name}>{role.name}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={16} className="select-chevron" />
+                    </div>
+                  </div>
+
                   {/* Super Admin: Organization Selector */}
                   {user?.account_type === 'super_admin' && (
                     <div className="form-group-v3 full-width">
@@ -422,6 +450,7 @@ const AddUserPage = () => {
               </div>
             </div>
           )}
+
 
           {currentStep === 2 && (
             <div className="form-section-card">
@@ -473,24 +502,11 @@ const AddUserPage = () => {
             </div>
           )}
 
+          {/* Step 3 — Account Status only */}
           {currentStep === 3 && (
             <div className="form-section-card">
               <div className="section-body">
                 <div className="form-grid-v3">
-                  <div className="form-group-v3">
-                    <label>System Role</label>
-                    <select 
-                      className="select-v3"
-                      value={formData.role}
-                      onChange={(e) => setFormData({...formData, role: e.target.value})}
-                      required
-                    >
-                      <option value="" disabled>Select Role</option>
-                      {roles.map(role => (
-                        <option key={role.id} value={role.name}>{role.name}</option>
-                      ))}
-                    </select>
-                  </div>
                   <div className="form-group-v3">
                     <label>Account Status</label>
                     <div className="toggle-v3">
@@ -508,6 +524,7 @@ const AddUserPage = () => {
             </div>
           )}
 
+
           {currentStep === 4 && (
             <div className="form-section-card">
               <div className="section-body">
@@ -519,10 +536,21 @@ const AddUserPage = () => {
                       value={formData.reportsTo}
                       onChange={(e) => setFormData({...formData, reportsTo: e.target.value})}
                     >
-                      <option value="">Select Manager</option>
-                      {users.map(u => (
-                        <option key={u.id} value={u.fullName || u.name}>{u.fullName || u.name} ({u.role})</option>
-                      ))}
+                      <option value="">— Select Manager —</option>
+                      {users
+                        .filter(u => u.account_type !== 'super_admin')
+                        .map(u => {
+                          const displayName = u.full_name || u.fullName || u.name || '(No Name)';
+                          const displayEmail = u.email ? ` · ${u.email}` : '';
+                          const displayRole = u.role ? ` (${u.role})` : '';
+                          return (
+                            <option key={u.id} value={displayName}>
+                              {displayName}{displayEmail}{displayRole}
+                            </option>
+                          );
+                        })
+                      }
+
                     </select>
                   </div>
                 </div>

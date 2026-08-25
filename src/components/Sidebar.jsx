@@ -221,8 +221,8 @@ const Sidebar = ({ isOpen, onClose }) => {
         <div className="sidebar-header">
           <div className="logo">
             <img src={logo} alt="Nest CRM Logo" className="sb-logo-img" />
-            <span className="brand-text-sidebar">NEST CRM</span>
           </div>
+
           <button className="close-btn" onClick={onClose}>
             <X size={24} />
           </button>

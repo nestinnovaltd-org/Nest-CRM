@@ -281,7 +281,15 @@ export const AuthProvider = ({ children }) => {
     if (Array.isArray(user.permissions) && user.permissions.includes('All')) return true;
     if (user.trialExpired) return module === 'Lead Management' && action === 'read';
 
-    // 1. First, check organization-level module authorization limits
+    const actionMap = {
+      view: 'read', read: 'read',
+      add: 'create', create: 'create',
+      edit: 'update', update: 'update',
+      delete: 'delete'
+    };
+    const dbAction = actionMap[action] || action;
+
+    // ── Step 1: Org-level module gate ──────────────────────────────────────
     if (isIndividual()) {
       const allowed = getIndividualModules(user.subscription_package || 'free_trial');
       if (!allowed.includes(module)) return false;
@@ -292,8 +300,6 @@ export const AuthProvider = ({ children }) => {
         const prefix = `module:${module}:`;
         const moduleTags = org.tags.filter(t => t.startsWith(prefix));
         if (moduleTags.length === 0) return false;
-        const actionMap = { view:'read', read:'read', add:'create', create:'create', edit:'update', update:'update', delete:'delete' };
-        const dbAction = actionMap[action] || action;
         if (['create', 'update', 'delete'].includes(dbAction)) {
           if (!moduleTags.includes(`${prefix}write`)) return false;
         }
@@ -303,44 +309,52 @@ export const AuthProvider = ({ children }) => {
       }
     }
 
-    // 2. Next, check user-specific custom permission overrides in user.permissions array
-    if (Array.isArray(user.permissions) && user.permissions.length > 0 && typeof user.permissions[0] === 'object' && user.permissions[0] !== null) {
+    // ── Step 2: Explicit user-level permission overrides ──────────────────
+    // If the user has any custom permissions set, treat them as the STRICT
+    // source of truth — no fallback to role or org-admin defaults.
+    const hasExplicitPermissions =
+      Array.isArray(user.permissions) &&
+      user.permissions.length > 0 &&
+      typeof user.permissions[0] === 'object' &&
+      user.permissions[0] !== null &&
+      Object.keys(user.permissions[0]).length > 0;
+
+    if (hasExplicitPermissions) {
       const userOverrides = user.permissions[0];
-      if (userOverrides[module]) {
-        const modulePerms = userOverrides[module];
-        const actionMap = { view:'read', read:'read', add:'create', create:'create', edit:'update', update:'update', delete:'delete' };
-        const dbAction = actionMap[action] || action;
-        
-        // Org employees cannot delete by default
-        if (isOrgEmployee() && dbAction === 'delete') return false;
-        
-        if (subModule && modulePerms[subModule]) {
-          return modulePerms[subModule][dbAction] === true;
-        }
-        return Object.values(modulePerms).some(p => p[dbAction] === true);
+
+      // Module not listed in overrides → no access
+      if (!userOverrides[module]) return false;
+
+      const modulePerms = userOverrides[module];
+
+      // Org employees can never delete regardless of overrides
+      if (isOrgEmployee() && dbAction === 'delete') return false;
+
+      if (subModule) {
+        // Sub-module specific check
+        return modulePerms[subModule]?.[dbAction] === true;
       }
+      // Any sub-module grants the action
+      return Object.values(modulePerms).some(p => p?.[dbAction] === true);
     }
 
-    // 3. Fallback: check role permissions
+    // ── Step 3: Role-based permissions (no explicit override) ─────────────
     if (user.rolePermissions && user.rolePermissions[module]) {
       const modulePerms = user.rolePermissions[module];
-      const actionMap = { view:'read', read:'read', add:'create', create:'create', edit:'update', update:'update', delete:'delete' };
-      const dbAction = actionMap[action] || action;
-      
-      // Org employees cannot delete by default
       if (isOrgEmployee() && dbAction === 'delete') return false;
-      
-      if (subModule && modulePerms[subModule]) {
-        return modulePerms[subModule][dbAction] === true;
+      if (subModule) {
+        return modulePerms[subModule]?.[dbAction] === true;
       }
-      return Object.values(modulePerms).some(p => p[dbAction] === true);
+      return Object.values(modulePerms).some(p => p?.[dbAction] === true);
     }
 
-    // Org Admins have access to all modules allowed for their organization by default if no override exists
+
+    // ── Step 4: Org Admin default (only when NO custom permissions set) ───
     if (isOrgAdmin()) return true;
 
     return false;
   };
+
 
   return (
     <AuthContext.Provider value={{
