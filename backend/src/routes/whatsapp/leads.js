@@ -1,0 +1,128 @@
+import { Router } from 'express'
+import { supabase }   from '../../utils/supabase.js'
+import { logger }     from '../../utils/logger.js'
+import { withOrg }    from '../../middleware/orgScope.js'
+import { checkQueue } from '../../workers/checkWorker.js'
+import { normalizePhone } from '../../services/whatsapp/phoneNormalizer.js'
+
+const router = Router()
+
+// GET /api/whatsapp/leads — leads with their WA status
+router.get('/', async (req, res) => {
+  try {
+    const { status, page = 1, limit = 50 } = req.query
+    const offset = (Number(page) - 1) * Number(limit)
+
+    // Join leads with whatsapp_lead_status
+    let query = supabase
+      .from('leads')
+      .select(`
+        id, name, phone, second_phone, email, company, status, assigned_to,
+        whatsapp_lead_status ( whatsapp_status, normalized_phone, whatsapp_link, last_checked_at, opted_out )
+      `, { count: 'exact' })
+      .eq('org_id', req.user.org_id)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + Number(limit) - 1)
+
+    if (status) {
+      query = query.eq('whatsapp_lead_status.whatsapp_status', status)
+    }
+
+    const { data, count, error } = await query
+    if (error) throw error
+
+    res.json({ leads: data || [], total: count, page: Number(page), limit: Number(limit) })
+  } catch (err) {
+    logger.error({ err }, 'GET /leads error')
+    res.status(500).json({ error: 'Failed to fetch leads' })
+  }
+})
+
+// POST /api/whatsapp/leads/check — Enqueue WA availability checks
+router.post('/check', async (req, res) => {
+  try {
+    const { lead_ids, session_id } = req.body
+
+    if (!lead_ids?.length) return res.status(400).json({ error: 'lead_ids array required' })
+    if (!session_id)       return res.status(400).json({ error: 'session_id required' })
+
+    // Verify session belongs to org
+    const { data: session } = await supabase
+      .from('whatsapp_sessions')
+      .select('id, status')
+      .eq('id', session_id)
+      .eq('org_id', req.user.org_id)
+      .single()
+
+    if (!session) return res.status(404).json({ error: 'Session not found' })
+    if (session.status !== 'CONNECTED') return res.status(400).json({ error: 'Session is not connected' })
+
+    // Fetch lead phones
+    const { data: leads } = await supabase
+      .from('leads')
+      .select('id, phone, second_phone')
+      .eq('org_id', req.user.org_id)
+      .in('id', lead_ids)
+
+    if (!leads?.length) return res.status(404).json({ error: 'No leads found' })
+
+    // Enqueue check jobs
+    const jobs = leads.map(lead => ({
+      name: `check-${lead.id}`,
+      data: {
+        leadId:    lead.id,
+        phone:     lead.phone,
+        orgId:     req.user.org_id,
+        sessionId: session_id
+      }
+    }))
+
+    await checkQueue.addBulk(jobs)
+
+    logger.info({ count: jobs.length, sessionId: session_id, event: 'check_jobs_queued' }, 'Check jobs queued')
+    res.json({ message: `${jobs.length} leads queued for checking`, count: jobs.length })
+  } catch (err) {
+    logger.error({ err }, 'POST /leads/check error')
+    res.status(500).json({ error: 'Failed to queue checks' })
+  }
+})
+
+// GET /api/whatsapp/leads/:id/status
+router.get('/:id/status', async (req, res) => {
+  try {
+    const { data } = await supabase
+      .from('whatsapp_lead_status')
+      .select('*')
+      .eq('lead_id', req.params.id)
+      .eq('org_id', req.user.org_id)
+      .single()
+
+    res.json({ status: data || null })
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch status' })
+  }
+})
+
+// POST /api/whatsapp/leads/:id/opt-out (manual opt-out by sales team)
+router.post('/:id/opt-out', async (req, res) => {
+  try {
+    const { reason = 'Manual opt-out by staff' } = req.body
+
+    await supabase
+      .from('whatsapp_lead_status')
+      .upsert({
+        lead_id:          req.params.id,
+        org_id:           req.user.org_id,
+        opted_out:        true,
+        opted_out_at:     new Date().toISOString(),
+        opted_out_reason: reason,
+        updated_at:       new Date().toISOString()
+      }, { onConflict: 'lead_id' })
+
+    res.json({ message: 'Lead opted out successfully' })
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to opt out lead' })
+  }
+})
+
+export default router

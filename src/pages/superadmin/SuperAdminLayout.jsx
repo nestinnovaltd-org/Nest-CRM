@@ -5,7 +5,8 @@ import { supabase } from '../../lib/supabase';
 import {
   LayoutDashboard, Building2, BookOpen, Users, CheckSquare,
   CreditCard, LogOut, Menu, X, Bell, Settings, Shield,
-  Layers, GitMerge, FileSpreadsheet, Briefcase, CalendarDays
+  Layers, GitMerge, FileSpreadsheet, Briefcase, CalendarDays,
+  MessageSquare
 } from 'lucide-react';
 import './SuperAdminLayout.css';
 
@@ -18,6 +19,7 @@ const navItems = [
   
   // CRM Workspace Modules
   { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, section: 'CRM WORKSPACE' },
+  { label: 'WhatsApp', path: '/whatsapp/dashboard', icon: MessageSquare, section: 'CRM WORKSPACE' },
   { label: 'Leads', path: '/leads/mine', icon: Layers, section: 'CRM WORKSPACE' },
   { label: 'Projects', path: '/projects', icon: GitMerge, section: 'CRM WORKSPACE' },
   { label: 'HR Operations', path: '/hr/operations', icon: Briefcase, section: 'CRM WORKSPACE' },

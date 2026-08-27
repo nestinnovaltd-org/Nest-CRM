@@ -8,7 +8,8 @@ import {
   Bell, 
   Settings,
   Briefcase,
-  LayoutDashboard
+  LayoutDashboard,
+  MessageSquare
 } from 'lucide-react';
 
 export const SYSTEM_MODULES = [
@@ -16,6 +17,11 @@ export const SYSTEM_MODULES = [
     name: 'Dashboard', 
     icon: LayoutDashboard,
     subModules: ['Overview', 'My Performance', 'Team Performance'] 
+  },
+  {
+    name: 'WhatsApp',
+    icon: MessageSquare,
+    subModules: ['Dashboard', 'Sessions', 'Leads', 'Templates', 'Campaigns', 'Conversations', 'AI Settings', 'Logs']
   },
   { 
     name: 'Project Management', 

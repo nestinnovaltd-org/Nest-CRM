@@ -6,19 +6,18 @@ const AuthContext = createContext(null);
 export const SUPER_ADMIN_UID = '970690f1-d3d5-47fd-bd79-fe9c3a2be65c';
 
 export const getIndividualModules = (pkg) => {
-  const base = ['Lead Management', 'Calendar & Schedule', 'Notifications', 'Settings'];
+  const base = ['Lead Management', 'Calendar & Schedule', 'Notifications', 'Settings', 'WhatsApp'];
   if (pkg === 'individual_pro') return [...base, 'Visits', 'Payments'];
   return base;
 };
 
 export const getOrgModules = (pkg) => {
-  const starter = ['Dashboard', 'Lead Management', 'Calendar & Schedule', 'Payments', 'Notifications', 'Settings', 'User Management', 'Team Management', 'HR Operations', 'Reports & Analytics', 'Project Management'];
+  const starter = ['Dashboard', 'Lead Management', 'Calendar & Schedule', 'Payments', 'Notifications', 'Settings', 'User Management', 'Team Management', 'HR Operations', 'Reports & Analytics', 'Project Management', 'WhatsApp'];
   const professional = [...new Set([...starter, 'Custom Integrations'])];
   const enterprise = [...new Set([...professional, 'Custom Domain'])];
   if (pkg === 'enterprise') return enterprise;
   if (pkg === 'professional') return professional;
   return starter;
-
 };
 
 export const BILLING_PACKAGES = {

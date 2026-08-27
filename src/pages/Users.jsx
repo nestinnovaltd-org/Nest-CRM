@@ -22,6 +22,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { SYSTEM_MODULES as modules } from '../constants/modules';
 import './Users.css';
 
 const UsersPage = () => {
@@ -33,6 +34,7 @@ const UsersPage = () => {
   const [editName, setEditName] = useState('');
   const [editRole, setEditRole] = useState('');
   const [editReportsTo, setEditReportsTo] = useState('');
+  const [editPermissions, setEditPermissions] = useState({});
   const [showTargetModal, setShowTargetModal] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -79,8 +81,40 @@ const UsersPage = () => {
     setSelectedUser(user);
     setEditName(user.name || user.fullName || '');
     setEditRole(user.role || '');
-    setEditReportsTo(user.reportsTo || '');
+    setEditReportsTo(user.reportsTo || user.reports_to || '');
+    
+    // Load existing permissions override
+    const rawPerms = Array.isArray(user.permissions) && user.permissions.length > 0 ? user.permissions[0] : {};
+    setEditPermissions(rawPerms);
+    
     setShowEditDrawer(true);
+  };
+
+  const handlePermissionChange = (moduleName, subModule, action, value) => {
+    setEditPermissions(prev => {
+      const next = { ...prev };
+      if (!next[moduleName]) next[moduleName] = {};
+      if (!next[moduleName][subModule]) next[moduleName][subModule] = {};
+      next[moduleName][subModule][action] = value;
+      return next;
+    });
+  };
+
+  const handleSelectAllModule = (moduleName, value) => {
+    const module = modules.find(m => m.name === moduleName);
+    setEditPermissions(prev => {
+      const next = { ...prev };
+      if (!next[moduleName]) next[moduleName] = {};
+      module.subModules.forEach(sub => {
+        next[moduleName][sub] = {
+          create: value,
+          read: value,
+          update: value,
+          delete: value
+        };
+      });
+      return next;
+    });
   };
 
   const openTargetModal = (e, user) => {
@@ -121,12 +155,32 @@ const UsersPage = () => {
   const handleSaveUser = async () => {
     if (!selectedUser) return;
     try {
+      let resolvedPermissions = [];
+      if (editPermissions && Object.keys(editPermissions).length > 0) {
+        resolvedPermissions = [editPermissions];
+      }
+
       await supabase.from('users').update({
         full_name: editName,
         name: editName,
         role: editRole,
-        reports_to: editReportsTo
+        reports_to: editReportsTo,
+        permissions: resolvedPermissions
       }).eq('id', selectedUser.id);
+
+      setUsers(prev => prev.map(u => 
+        u.id === selectedUser.id 
+          ? { 
+              ...u, 
+              full_name: editName, 
+              name: editName, 
+              role: editRole, 
+              reports_to: editReportsTo, 
+              permissions: resolvedPermissions 
+            } 
+          : u
+      ));
+
       setShowEditDrawer(false);
     } catch (error) {
       console.error('Error saving user details:', error);
@@ -358,6 +412,45 @@ const UsersPage = () => {
                       ))
                     }
                   </select>
+                </div>
+                <div className="form-group-v3 mt-24">
+                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: 12 }}>Custom Permissions Overrides</label>
+                  <div style={{ maxHeight: '250px', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '12px', padding: '16px', background: 'var(--input-bg)' }}>
+                    {modules.map(module => (
+                      <div key={module.name} style={{ marginBottom: 16, borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                          <span style={{ fontWeight: 'bold', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <module.icon size={14} />
+                            {module.name}
+                          </span>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button type="button" style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.72rem', cursor: 'pointer' }} onClick={() => handleSelectAllModule(module.name, true)}>All</button>
+                            <span style={{ color: '#4b5563', fontSize: '0.72rem' }}>|</span>
+                            <button type="button" style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.72rem', cursor: 'pointer' }} onClick={() => handleSelectAllModule(module.name, false)}>None</button>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 12 }}>
+                          {module.subModules.map(sub => (
+                            <div key={sub} style={{ fontSize: '0.8rem' }}>
+                              <div style={{ color: 'var(--text-secondary)', marginBottom: 4 }}>{sub}</div>
+                              <div style={{ display: 'flex', gap: 14 }}>
+                                {['create', 'read', 'update', 'delete'].map(action => (
+                                  <label key={action} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: '0.75rem', textTransform: 'capitalize' }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={editPermissions?.[module.name]?.[sub]?.[action] || false}
+                                      onChange={(e) => handlePermissionChange(module.name, sub, action, e.target.checked)}
+                                    />
+                                    {action === 'create' ? 'Create' : action === 'read' ? 'Read' : action === 'update' ? 'Update' : 'Delete'}
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 <div className="drawer-danger-zone mt-24">
                   <h4 className="danger-zone-title">Security Actions</h4>

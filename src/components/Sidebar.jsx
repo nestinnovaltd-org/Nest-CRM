@@ -16,7 +16,8 @@ import {
   GitMerge,
   Bell,
   Activity,
-  Briefcase
+  Briefcase,
+  MessageSquare
 } from 'lucide-react';
 import './Sidebar.css';
 
@@ -197,6 +198,23 @@ const Sidebar = ({ isOpen, onClose }) => {
         { label: 'My Organization', path: '/settings/organization' },
       ]
     },
+    // ── WhatsApp Module (additive — do not move above) ──
+    {
+      id: 'whatsapp',
+      icon: MessageSquare,
+      label: 'WhatsApp',
+      moduleName: 'WhatsApp',
+      subItems: [
+        { label: 'Dashboard',     path: '/whatsapp/dashboard' },
+        { label: 'Sessions',      path: '/whatsapp/sessions' },
+        { label: 'Leads',         path: '/whatsapp/leads' },
+        { label: 'Templates',     path: '/whatsapp/templates' },
+        { label: 'Campaigns',     path: '/whatsapp/campaigns' },
+        { label: 'Conversations', path: '/whatsapp/conversations' },
+        { label: 'AI Settings',   path: '/whatsapp/ai-settings' },
+        { label: 'Logs',          path: '/whatsapp/logs' },
+      ]
+    },
   ];
 
   // Filter menu items based on permissions
@@ -236,7 +254,8 @@ const Sidebar = ({ isOpen, onClose }) => {
               { id: 'MANAGEMENT', label: 'Management' },
               { id: 'OPERATIONS', label: 'Operations' },
               { id: 'ANALYTICS', label: 'Analytics' },
-              { id: 'SYSTEM', label: 'System' }
+              { id: 'SYSTEM', label: 'System' },
+              { id: 'WHATSAPP', label: 'WhatsApp' }
             ];
             
             const itemCategories = {
@@ -250,7 +269,8 @@ const Sidebar = ({ isOpen, onClose }) => {
               payments: 'OPERATIONS',
               reports: 'ANALYTICS',
               notifications: 'SYSTEM',
-              settings: 'SYSTEM'
+              settings: 'SYSTEM',
+              whatsapp: 'WHATSAPP'
             };
 
             return categories.map(cat => {

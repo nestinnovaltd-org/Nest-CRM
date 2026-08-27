@@ -39,6 +39,16 @@ import BookDemoLeads from "./pages/superadmin/BookDemoLeads"
 import UserApprovals from "./pages/superadmin/UserApprovals"
 import MyOrganization from "./pages/MyOrganization"
 
+// ── WhatsApp Module Pages (lazy-loaded to keep initial bundle small) ──────────
+import WaDashboard     from "./pages/whatsapp/WaDashboard"
+import WaSessions      from "./pages/whatsapp/WaSessions"
+import WaLeads         from "./pages/whatsapp/WaLeads"
+import WaTemplates     from "./pages/whatsapp/WaTemplates"
+import WaCampaigns     from "./pages/whatsapp/WaCampaigns"
+import WaConversations from "./pages/whatsapp/WaConversations"
+import WaAiSettings    from "./pages/whatsapp/WaAiSettings"
+import WaLogs          from "./pages/whatsapp/WaLogs"
+
 const ProtectedRoute = ({ children, module, action = "read" }) => {
   const { user, loading, hasPermission } = useAuth()
   if (loading) return <AppLoader />
@@ -123,6 +133,17 @@ function App() {
           <Route path="/settings/profile" element={<ProtectedRoute module="Settings"><ProfilePage /></ProtectedRoute>} />
           <Route path="/settings/organization" element={<ProtectedRoute><MyOrganization /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
+
+          {/* ── WhatsApp Module Routes ─────────────────────────────────────── */}
+          <Route path="/whatsapp/dashboard"     element={<ProtectedRoute module="WhatsApp"><WaDashboard /></ProtectedRoute>} />
+          <Route path="/whatsapp/sessions"      element={<ProtectedRoute module="WhatsApp"><WaSessions /></ProtectedRoute>} />
+          <Route path="/whatsapp/leads"         element={<ProtectedRoute module="WhatsApp"><WaLeads /></ProtectedRoute>} />
+          <Route path="/whatsapp/templates"     element={<ProtectedRoute module="WhatsApp"><WaTemplates /></ProtectedRoute>} />
+          <Route path="/whatsapp/campaigns"     element={<ProtectedRoute module="WhatsApp"><WaCampaigns /></ProtectedRoute>} />
+          <Route path="/whatsapp/conversations" element={<ProtectedRoute module="WhatsApp"><WaConversations /></ProtectedRoute>} />
+          <Route path="/whatsapp/ai-settings"   element={<ProtectedRoute module="WhatsApp"><WaAiSettings /></ProtectedRoute>} />
+          <Route path="/whatsapp/logs"          element={<ProtectedRoute module="WhatsApp"><WaLogs /></ProtectedRoute>} />
+          <Route path="/whatsapp"               element={<Navigate to="/whatsapp/dashboard" replace />} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

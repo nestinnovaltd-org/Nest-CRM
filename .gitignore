@@ -25,3 +25,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# ── WhatsApp Backend (NEVER commit these) ────────────────────────────────────
+backend/.env
+backend/node_modules/
+whatsapp-sessions/
