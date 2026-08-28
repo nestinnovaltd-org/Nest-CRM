@@ -1,46 +1,117 @@
-# WhatsApp Backend — VPS Deployment Guide
+# WhatsApp Backend — Hostinger VPS & CloudPanel Deployment Guide
 
-## Prerequisites on VPS
+This guide describes how to deploy the WhatsApp automation & AI backend to your Hostinger VPS running Ubuntu 24.04.4 LTS, managed via CloudPanel.
+
+---
+
+## Environment Specifications
+
+* **Domain**: `https://api.hijibusy.com`
+* **Vercel Frontend**: `https://nest-crm-gamma.vercel.app`
+* **Node.js Site Directory**: `/home/hijibusy-api/htdocs/api.hijibusy.com`
+* **Site User**: `hijibusy-api`
+* **Internal Port**: `3001` (external HTTPS is proxied by Nginx to `127.0.0.1:3001`)
+* **Node.js Version**: `20.20.2`
+* **npm Version**: `10.8.2`
+* **Redis**: `7.0.15` (listening on `127.0.0.1:6379`)
+* **PM2 Version**: `7.0.4`
+
+---
+
+## Step 1 — Prepare System Directories & Permissions (Run as Root)
+
+Log into your VPS via SSH as **root** (or a user with `sudo` privileges) and create the required external directories for session persistence and logging. Transfer their ownership to the CloudPanel site user (`hijibusy-api`):
+
 ```bash
-node --version   # >= 20.0.0
-pm2 --version    # npm install -g pm2
-redis-cli ping   # should return PONG (install: apt install redis-server)
+# Create directories outside Git
+sudo mkdir -p /var/www/crm/whatsapp-sessions
+sudo mkdir -p /var/www/crm/logs
+
+# Assign ownership to the site user
+sudo chown -R hijibusy-api:hijibusy-api /var/www/crm
+sudo chmod -R 750 /var/www/crm
 ```
 
 ---
 
-## Step 1 — Copy backend files to VPS
+## Step 2 — Deploy Code to VPS Site Directory (Run as hijibusy-api)
 
+Switch to the site user. Since CloudPanel creates the directory `/home/hijibusy-api/htdocs/api.hijibusy.com` but it is not yet a Git repository, you need to initialize it or clone the repository:
+
+### Option A: Initialize Git in the existing folder (Recommended)
+Use this option to keep any default configurations CloudPanel might have created in the directory (e.g. `.user.ini`):
 ```bash
-# From local machine — copy backend directory
-rsync -avz --exclude node_modules ./backend/ user@your-vps:/var/www/crm/backend/
+# Switch to the site user (or SSH directly as hijibusy-api)
+sudo su - hijibusy-api
 
-# Or via git (recommended)
-git pull origin main
+# Navigate to the htdocs folder
+cd /home/hijibusy-api/htdocs/api.hijibusy.com
+
+# Initialize git and link it to your repository
+git init
+git remote add origin https://github.com/nestinnovaltd-org/Nest-CRM.git
+
+# Fetch and force checkout the main branch (overwriting default files if necessary)
+git fetch --all
+git checkout -f main
+```
+
+### Option B: Clone directly (Alternative)
+If the directory is empty, you can delete it and clone the repository directly:
+```bash
+# Switch to the site user
+sudo su - hijibusy-api
+
+# Go to the htdocs root
+cd /home/hijibusy-api/htdocs/
+
+# Delete the empty folder created by CloudPanel
+rm -rf api.hijibusy.com
+
+# Clone your repository directly
+git clone https://github.com/nestinnovaltd-org/Nest-CRM.git api.hijibusy.com
 ```
 
 ---
 
-## Step 2 — Create .env on VPS
+## Step 3 — Create Production `.env` File
+
+Navigate to the `backend` folder and copy the example file:
 
 ```bash
-cd /var/www/crm/backend
+cd /home/hijibusy-api/htdocs/api.hijibusy.com/backend
 cp .env.example .env
 nano .env
 ```
 
-Fill in all values — **never commit this file**:
-```
+Ensure the following variables are configured for production (**never commit the `.env` file to Git**):
+
+```ini
 NODE_ENV=production
 PORT=3001
-ALLOWED_ORIGIN=https://your-crm.vercel.app
+
+# CORS allowed frontend
+ALLOWED_ORIGIN=https://nest-crm-gamma.vercel.app
+
+# Supabase secrets (Service role is BACKEND-ONLY, do not expose to Vercel)
 SUPABASE_URL=https://dchwsumkpeyhvametngc.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=<your service role key from Supabase dashboard>
-OPENAI_API_KEY=sk-proj-...
+SUPABASE_SERVICE_ROLE_KEY=your_secret_supabase_service_role_key_here
+
+# OpenAI configuration
+OPENAI_API_KEY=your_secret_openai_api_key_here
 OPENAI_MODEL=gpt-4o-mini
+
+# Local Redis connection
 REDIS_URL=redis://127.0.0.1:6379
+
+# Persistent WhatsApp session files (must match chowned path in Step 1)
 WHATSAPP_SESSION_PATH=/var/www/crm/whatsapp-sessions
+
+# Logging configs
 LOG_LEVEL=info
+LOG_FILE=/var/www/crm/logs/whatsapp.log
+
+# Campaign safety throttling
 SAFETY_MIN_DELAY_SECONDS=8
 SAFETY_MAX_DAILY_LIMIT=500
 SAFETY_MAX_HOURLY=50
@@ -48,147 +119,122 @@ SAFETY_MAX_HOURLY=50
 
 ---
 
-## Step 3 — Install dependencies
+## Step 4 — Install Dependencies
+
+Install only the runtime dependencies (skip `devDependencies`):
 
 ```bash
-cd /var/www/crm/backend
+cd /home/hijibusy-api/htdocs/api.hijibusy.com/backend
 npm install --omit=dev
 ```
 
 ---
 
-## Step 4 — Create required directories
+## Step 5 — Apply Supabase SQL Schema & Functions
 
-```bash
-mkdir -p /var/www/crm/whatsapp-sessions
-mkdir -p /var/www/crm/logs
-chmod 750 /var/www/crm/whatsapp-sessions
-```
-
----
-
-## Step 5 — Apply Supabase schema
-
-Run the `whatsapp_schema.sql` file in the Supabase SQL Editor:
-1. Go to Supabase Dashboard → SQL Editor
-2. Paste the contents of `whatsapp_schema.sql`
-3. Click Run
-
-Also run this helper function (needed by campaign worker):
-```sql
-CREATE OR REPLACE FUNCTION increment_campaign_sent(campaign_id UUID)
-RETURNS VOID LANGUAGE SQL AS $$
-  UPDATE whatsapp_campaigns
-  SET sent_count = COALESCE(sent_count, 0) + 1,
-      updated_at = NOW()
-  WHERE id = campaign_id;
-$$;
-
-CREATE OR REPLACE FUNCTION increment_campaign_failed(campaign_id UUID)
-RETURNS VOID LANGUAGE SQL AS $$
-  UPDATE whatsapp_campaigns
-  SET failed_count = COALESCE(failed_count, 0) + 1,
-      updated_at = NOW()
-  WHERE id = campaign_id;
-$$;
-```
+1. Navigate to your **Supabase Dashboard** → **SQL Editor**.
+2. Run the `whatsapp_schema.sql` file located in the root of this project.
+3. This creates all `whatsapp_*` tables, indexes, and triggers.
+4. It also registers the campaign RPC functions:
+   * `increment_campaign_sent(campaign_id UUID)`
+   * `increment_campaign_failed(campaign_id UUID)`
 
 ---
 
-## Step 6 — Start with PM2
+## Step 6 — Start Services with PM2
+
+The application runs three persistent processes under PM2: the API server, the outbound message campaign worker, and the background number validation checker.
 
 ```bash
-cd /var/www/crm/backend
+cd /home/hijibusy-api/htdocs/api.hijibusy.com/backend
+
+# Start processes defined in the ecosystem config
 pm2 start ecosystem.config.cjs
+
+# Save PM2 state to restore on server reboot
 pm2 save
-pm2 startup   # follow the printed command to enable auto-start on boot
+
+# Setup PM2 daemon auto-start on boot
+pm2 startup
 ```
 
-Check all 3 processes are running:
-```bash
-pm2 list
-pm2 logs whatsapp-api --lines 50
-```
+> **Note**: Follow any instructions printed to the screen by `pm2 startup` (which may require running a command as root to save the systemd unit file).
 
 ---
 
-## Step 7 — Configure Nginx reverse proxy
+## Step 7 — Configure CloudPanel Site & SSL
 
-Add to your Nginx site config (`/etc/nginx/sites-available/crm`):
+Since CloudPanel already manages the reverse proxy, you do not need to configure Nginx manually.
 
-```nginx
-# WhatsApp Backend API
-location /api/whatsapp/ {
-    proxy_pass         http://127.0.0.1:3001;
-    proxy_http_version 1.1;
-    proxy_set_header   Host $host;
-    proxy_set_header   X-Real-IP $remote_addr;
-    proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header   Upgrade $http_upgrade;
-    proxy_set_header   Connection 'upgrade';
-    proxy_cache_bypass $http_upgrade;
-    proxy_read_timeout 300s;
-
-    # CORS is handled by Express — do NOT add CORS headers here
-}
-```
-
-Then reload Nginx:
-```bash
-nginx -t && systemctl reload nginx
-```
+1. Log into your **CloudPanel** admin interface.
+2. Ensure your site `api.hijibusy.com` is configured as a **Node.js** app listening internally on port **`3001`**.
+3. Under the **SSL/TLS** tab, request a free **Let's Encrypt** SSL certificate.
+4. Ensure the Nginx reverse proxy configuration is proxying traffic to port 3001:
+   ```nginx
+   proxy_pass http://127.0.0.1:3001/;
+   ```
 
 ---
 
-## Step 8 — Update Vercel frontend env
+## Step 8 — Update Vercel Frontend Environment
 
-In Vercel Dashboard → Project Settings → Environment Variables:
-
-| Variable | Value |
-|---|---|
-| `VITE_WA_BACKEND_URL` | `https://your-vps-domain.com` |
-
-Redeploy the frontend after adding this variable.
+In your Vercel Dashboard for the frontend project:
+1. Go to **Project Settings** → **Environment Variables**.
+2. Add/update the following key:
+   * **Key**: `VITE_WA_BACKEND_URL`
+   * **Value**: `https://api.hijibusy.com`
+3. Redeploy the Vercel frontend.
+4. The frontend will now call `https://api.hijibusy.com/api/whatsapp/...` securely through Nginx, which proxies locally to the Node.js API on port `3001`.
 
 ---
 
-## Step 9 — Add WhatsApp permission to user roles
+## Step 9 — User Role Permissions
 
-In Supabase SQL Editor:
+To ensure users have the WhatsApp module visible in the CRM dashboard, grant read/write access. You can do this through the CRM's Team Management page or directly in Supabase SQL editor:
+
 ```sql
--- Grant WhatsApp module access to Admin and MD roles
--- (adjust based on your existing permissions setup)
 UPDATE users
 SET permissions = permissions || '{"WhatsApp": {"read": true, "write": true}}'::jsonb
 WHERE role IN ('Admin', 'MD', 'System Admin');
 ```
 
-Or do it via your existing Roles page in the CRM.
-
 ---
 
-## Day-to-Day Operations
+## Day-to-Day Operations & Monitoring
 
-### Check health
+### Service Health Checks
+Check if the API, Supabase connection, and Redis connections are healthy:
 ```bash
-curl https://your-vps.com/api/whatsapp/health
+curl https://api.hijibusy.com/api/whatsapp/health
 ```
 
-### View logs
+### Viewing Logs
+To check the logs of your PM2 processes:
 ```bash
-pm2 logs whatsapp-api        # API server logs
-pm2 logs whatsapp-message-worker  # Campaign worker
-pm2 logs whatsapp-check-worker    # WA number checker
+# Main API logs (Express + Baileys socket logs)
+pm2 logs whatsapp-api --lines 50
+
+# Outbound message worker logs
+pm2 logs whatsapp-message-worker --lines 50
+
+# Target check worker logs
+pm2 logs whatsapp-check-worker --lines 50
+
+# Combined files logs
 tail -f /var/www/crm/logs/whatsapp.log
 ```
 
-### Restart a service
+### Restarting Services
 ```bash
-pm2 restart whatsapp-api
+# Restart everything
+pm2 restart all
+
+# Restart specific process
 pm2 restart whatsapp-message-worker
 ```
 
-### Monitor Redis queue depth
+### Monitoring Queue Depth
+Verify BullMQ queues inside Redis:
 ```bash
 redis-cli llen bull:whatsapp-outbound:wait
 redis-cli llen bull:whatsapp-check:wait
@@ -196,26 +242,27 @@ redis-cli llen bull:whatsapp-check:wait
 
 ---
 
-## Security Checklist
+## Troubleshooting
 
-- [ ] `backend/.env` is NOT in git (verified in .gitignore)
-- [ ] `SUPABASE_SERVICE_ROLE_KEY` is only in VPS `.env`, nowhere else
-- [ ] `OPENAI_API_KEY` is only in VPS `.env`
-- [ ] Nginx is configured with SSL (Let's Encrypt recommended)
-- [ ] Redis is bound to `127.0.0.1` only (not exposed externally)
-- [ ] Supabase RLS is enabled on all `whatsapp_*` tables
-- [ ] WhatsApp session files are in `/var/www/crm/whatsapp-sessions` (not in git)
-- [ ] PM2 auto-start is configured (`pm2 startup && pm2 save`)
+### `EACCES` Permission Denied on Sessions or Logs
+If PM2 logs show a write failure, ensure the site user `hijibusy-api` has complete write access:
+```bash
+# Run as root
+sudo chown -R hijibusy-api:hijibusy-api /var/www/crm
+```
 
----
+### Redis Connection Failures
+If you see BullMQ error logs, check if Redis is running locally:
+```bash
+sudo systemctl status redis-server
+# To start it
+sudo systemctl start redis-server
+```
 
-## WhatsApp Usage Best Practices
-
-> **These rules are enforced by the backend — but follow them manually too.**
-
-1. **Never send more than 200–300 messages per day per number** (stay well under the 500 limit)
-2. **Minimum 8–15 seconds between messages** (random delay is automatically applied)
-3. **Only message people who consented** — use the consent checkbox on every campaign
-4. **Monitor disconnections** — the app sends in-app notifications when a session drops
-5. **Rotate sessions** — if a number gets banned, create a new session with a different number
-6. **Check opt-outs** — always respect when leads reply "Stop" or similar keywords
+### Port Conflicts
+If port `3001` is already in use:
+```bash
+# Check what is using port 3001
+lsof -i :3001
+```
+Ensure you do not have redundant Node.js processes running outside PM2.

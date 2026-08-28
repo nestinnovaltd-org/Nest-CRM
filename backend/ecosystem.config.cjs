@@ -6,7 +6,7 @@ module.exports = {
     {
       name:        'whatsapp-api',
       script:      './src/index.js',
-      cwd:         '/var/www/crm/backend',
+      cwd:         '/home/hijibusy-api/htdocs/api.hijibusy.com',
       instances:   1,
       exec_mode:   'fork',
       node_args:   '--experimental-vm-modules',
@@ -20,36 +20,36 @@ module.exports = {
       restart_delay:   5000,
       min_uptime:      '10s',
       // Logging
-      log_file:        '/var/www/crm/logs/whatsapp-combined.log',
-      out_file:        '/var/www/crm/logs/whatsapp-out.log',
-      error_file:      '/var/www/crm/logs/whatsapp-err.log',
+      log_file:        '/home/hijibusy-api/htdocs/api.hijibusy.com/logs/whatsapp-combined.log',
+      out_file:        '/home/hijibusy-api/htdocs/api.hijibusy.com/logs/whatsapp-out.log',
+      error_file:      '/home/hijibusy-api/htdocs/api.hijibusy.com/logs/whatsapp-err.log',
       merge_logs:      true,
       log_date_format: 'YYYY-MM-DD HH:mm:ss'
     },
     {
       name:    'whatsapp-message-worker',
       script:  './src/workers/messageWorker.js',
-      cwd:     '/var/www/crm/backend',
+      cwd:     '/home/hijibusy-api/htdocs/api.hijibusy.com',
       instances: 1,
       exec_mode: 'fork',
       env: { NODE_ENV: 'production' },
       max_restarts:    10,
       restart_delay:   5000,
-      out_file:   '/var/www/crm/logs/msg-worker-out.log',
-      error_file: '/var/www/crm/logs/msg-worker-err.log',
+      out_file:   '/home/hijibusy-api/htdocs/api.hijibusy.com/logs/msg-worker-out.log',
+      error_file: '/home/hijibusy-api/htdocs/api.hijibusy.com/logs/msg-worker-err.log',
       merge_logs: true
     },
     {
       name:    'whatsapp-check-worker',
       script:  './src/workers/checkWorker.js',
-      cwd:     '/var/www/crm/backend',
+      cwd:     '/home/hijibusy-api/htdocs/api.hijibusy.com',
       instances: 1,
       exec_mode: 'fork',
       env: { NODE_ENV: 'production' },
       max_restarts:    10,
       restart_delay:   5000,
-      out_file:   '/var/www/crm/logs/check-worker-out.log',
-      error_file: '/var/www/crm/logs/check-worker-err.log',
+      out_file:   '/home/hijibusy-api/htdocs/api.hijibusy.com/logs/check-worker-out.log',
+      error_file: '/home/hijibusy-api/htdocs/api.hijibusy.com/logs/check-worker-err.log',
       merge_logs: true
     }
   ]

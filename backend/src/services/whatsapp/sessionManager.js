@@ -18,6 +18,20 @@ const MAX_RECONNECT_ATTEMPTS = 5
 // In-memory session store: sessionId → { socket, qrDataUri, status, reconnectCount }
 const sessions = new Map()
 
+// Helper to ensure session directory is writable
+function ensureDirectoryWritable(dir) {
+  try {
+    fs.mkdirSync(dir, { recursive: true })
+    const testFile = path.join(dir, `.write_test_${Date.now()}`)
+    fs.writeFileSync(testFile, 'test')
+    fs.unlinkSync(testFile)
+  } catch (err) {
+    const errMsg = `CRITICAL: WhatsApp session directory '${dir}' is not writable. Please check permissions for site user 'hijibusy-api'. Error: ${err.message}`
+    logger.error({ err, path: dir }, errMsg)
+    throw new Error(errMsg)
+  }
+}
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 export const sessionManager = {
@@ -32,6 +46,8 @@ export const sessionManager = {
     }
 
     logger.info({ sessionId, orgId, event: 'session_start' }, 'Starting WhatsApp session')
+
+    ensureDirectoryWritable(SESSION_BASE)
 
     const sessionPath = path.join(SESSION_BASE, sessionId)
     fs.mkdirSync(sessionPath, { recursive: true })
@@ -199,6 +215,14 @@ export const sessionManager = {
     if (!activeSessions?.length) return
 
     logger.info({ count: activeSessions.length }, 'Restoring WhatsApp sessions on boot')
+
+    try {
+      ensureDirectoryWritable(SESSION_BASE)
+    } catch (err) {
+      logger.error({ err, path: SESSION_BASE }, 'Failed to restore WhatsApp sessions: session base directory is not writable')
+      return
+    }
+
     for (const sess of activeSessions) {
       await sessionManager.startSession(sess.id, sess.org_id).catch(err =>
         logger.error({ err, sessionId: sess.id }, 'Failed to restore session')
