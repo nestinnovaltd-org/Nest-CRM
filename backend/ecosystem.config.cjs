@@ -6,7 +6,7 @@ module.exports = {
     {
       name:        'whatsapp-api',
       script:      './src/index.js',
-      cwd:         '/home/hijibusy-api/htdocs/api.hijibusy.com',
+      cwd:         '/home/hijibusy-api/htdocs/api.hijibusy.com/backend',
       instances:   1,
       exec_mode:   'fork',
       node_args:   '--experimental-vm-modules',
@@ -29,7 +29,7 @@ module.exports = {
     {
       name:    'whatsapp-message-worker',
       script:  './src/workers/messageWorker.js',
-      cwd:     '/home/hijibusy-api/htdocs/api.hijibusy.com',
+      cwd:     '/home/hijibusy-api/htdocs/api.hijibusy.com/backend',
       instances: 1,
       exec_mode: 'fork',
       env: { NODE_ENV: 'production' },
@@ -42,7 +42,7 @@ module.exports = {
     {
       name:    'whatsapp-check-worker',
       script:  './src/workers/checkWorker.js',
-      cwd:     '/home/hijibusy-api/htdocs/api.hijibusy.com',
+      cwd:     '/home/hijibusy-api/htdocs/api.hijibusy.com/backend',
       instances: 1,
       exec_mode: 'fork',
       env: { NODE_ENV: 'production' },
