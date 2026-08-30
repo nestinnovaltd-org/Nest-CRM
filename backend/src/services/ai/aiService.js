@@ -13,7 +13,7 @@ if (!process.env.OPENAI_API_KEY) {
   logger.warn('OPENAI_API_KEY is not set — AI features will be disabled')
 }
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null
 const MODEL  = process.env.OPENAI_MODEL || 'gpt-4o-mini'
 
 // Default system prompt (overridden by whatsapp_ai_settings.system_prompt)
