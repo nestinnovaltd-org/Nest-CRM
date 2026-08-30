@@ -24,16 +24,24 @@ router.get('/', async (req, res) => {
     const isAdmin = req.user.role === 'Admin' || req.user.role === 'MD' || req.user.role === 'System Admin' || req.user.account_type === 'super_admin'
 
     if (!isAdmin) {
-      // Fetch all users in the same org
+      // Fetch all users in the same org (include uid for legacy Firebase UID support)
       const { data: allUsers } = await supabase
         .from('users')
-        .select('id, full_name, name, reports_to')
+        .select('id, uid, full_name, name, reports_to')
         .eq('org_id', req.user.org_id)
+
+      // Fetch current user's own uid (legacy Firebase UID) to match old leads
+      const { data: selfUser } = await supabase
+        .from('users')
+        .select('id, uid')
+        .eq('id', req.user.id)
+        .single()
       
-      // Fetch all teams
+      // Fetch all teams in the same org
       const { data: teams } = await supabase
         .from('teams')
         .select('*')
+        .eq('org_id', req.user.org_id)
 
       const currentUserName = req.user.full_name || ''
       const managedTeams = (teams || []).filter(t => {
@@ -48,12 +56,13 @@ router.get('/', async (req, res) => {
 
       const teamMemberUids = (allUsers || [])
         .filter(u => teamMemberNames.has(u.full_name || u.name))
-        .map(u => u.id)
-        .filter(Boolean)
+        .flatMap(u => [u.id, u.uid].filter(Boolean))
 
       const allowedUids = Array.from(new Set([
         req.user.id,
-        ...(allUsers || []).filter(u => u.reports_to === currentUserName).map(u => u.id).filter(Boolean),
+        // Include legacy Firebase UID for current user if it exists
+        ...(selfUser?.uid ? [selfUser.uid] : []),
+        ...(allUsers || []).filter(u => u.reports_to === currentUserName).flatMap(u => [u.id, u.uid].filter(Boolean)),
         ...teamMemberUids
       ]))
 
@@ -135,8 +144,9 @@ router.post('/check', async (req, res) => {
       .single()
 
     if (!session) return res.status(404).json({ error: 'Session not found' })
-    const liveStatus = sessionManager.getStatus(session_id)
-    if (session.status !== 'CONNECTED' && liveStatus !== 'CONNECTED') {
+    const liveStatus  = sessionManager.getStatus(session_id)
+    const isConnected = liveStatus === 'CONNECTED' || session.status === 'CONNECTED'
+    if (!isConnected) {
       return res.status(400).json({ error: 'Session is not connected' })
     }
 

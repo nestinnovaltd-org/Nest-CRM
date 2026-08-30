@@ -73,7 +73,9 @@ router.post('/:id/start', async (req, res) => {
       return res.status(400).json({ error: `Cannot start campaign with status: ${campaign.status}` })
     }
     const liveStatus = sessionManager.getStatus(campaign.session_id)
-    if (campaign.whatsapp_sessions?.status !== 'CONNECTED' && liveStatus !== 'CONNECTED') {
+    const dbStatus   = campaign.whatsapp_sessions?.status
+    const isConnected = liveStatus === 'CONNECTED' || dbStatus === 'CONNECTED'
+    if (!isConnected) {
       return res.status(400).json({ error: 'WhatsApp session is not connected' })
     }
     if (!campaign.consent_confirmed) {
@@ -150,7 +152,9 @@ router.post('/:id/resume', async (req, res) => {
       .eq('id', req.params.id).single()
 
     const liveStatus = sessionManager.getStatus(campaign.session_id)
-    if (campaign.whatsapp_sessions?.status !== 'CONNECTED' && liveStatus !== 'CONNECTED') {
+    const dbStatus   = campaign.whatsapp_sessions?.status
+    const isConnected = liveStatus === 'CONNECTED' || dbStatus === 'CONNECTED'
+    if (!isConnected) {
       return res.status(400).json({ error: 'Cannot resume: session is not connected' })
     }
 
@@ -238,7 +242,7 @@ async function _getEligibleLeads(campaign, orgId) {
   if (campaign.user_id) {
     const { data: creator } = await supabase
       .from('users')
-      .select('id, role, account_type, full_name')
+      .select('id, uid, role, account_type, full_name')
       .eq('id', campaign.user_id)
       .single()
 
@@ -248,13 +252,14 @@ async function _getEligibleLeads(campaign, orgId) {
         // Fetch all users in the same org
         const { data: allUsers } = await supabase
           .from('users')
-          .select('id, full_name, name, reports_to')
+          .select('id, uid, full_name, name, reports_to')
           .eq('org_id', orgId)
         
-        // Fetch all teams
+        // Fetch all teams in the same org
         const { data: teams } = await supabase
           .from('teams')
           .select('*')
+          .eq('org_id', orgId)
 
         const currentUserName = creator.full_name || ''
         const managedTeams = (teams || []).filter(t => {
@@ -269,12 +274,12 @@ async function _getEligibleLeads(campaign, orgId) {
 
         const teamMemberUids = (allUsers || [])
           .filter(u => teamMemberNames.has(u.full_name || u.name))
-          .map(u => u.id)
-          .filter(Boolean)
+          .flatMap(u => [u.id, u.uid].filter(Boolean))
 
         const allowedUids = Array.from(new Set([
           creator.id,
-          ...(allUsers || []).filter(u => u.reports_to === currentUserName).map(u => u.id).filter(Boolean),
+          ...(creator.uid ? [creator.uid] : []),
+          ...(allUsers || []).filter(u => u.reports_to === currentUserName).flatMap(u => [u.id, u.uid].filter(Boolean)),
           ...teamMemberUids
         ]))
 
