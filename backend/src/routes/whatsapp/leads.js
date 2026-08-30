@@ -18,6 +18,7 @@ router.get('/', async (req, res) => {
       .from('leads')
       .select('id, name, phone, second_phone, email, company, status, assigned_to, created_at', { count: 'exact' })
       .eq('org_id', req.user.org_id)
+      .neq('status', 'Released')
 
     const isAdmin = req.user.role === 'Admin' || req.user.role === 'MD' || req.user.role === 'System Admin' || req.user.account_type === 'super_admin'
 
@@ -85,16 +86,18 @@ router.get('/', async (req, res) => {
       }
     }
 
-    // Merge status and enforce WHATSAPP_AVAILABLE by default if verification is off
+    // Merge status
     const mergedLeads = (leads || []).map(lead => {
       const existingStatus = statusMap[lead.id] || {}
       return {
         ...lead,
         whatsapp_lead_status: {
-          whatsapp_status: existingStatus.opted_out ? 'WHATSAPP_NOT_AVAILABLE' : 'WHATSAPP_AVAILABLE',
+          whatsapp_status: existingStatus.opted_out 
+            ? 'WHATSAPP_NOT_AVAILABLE' 
+            : (existingStatus.whatsapp_status || 'NOT_CHECKED'),
           normalized_phone: existingStatus.normalized_phone || lead.phone,
           whatsapp_link: existingStatus.whatsapp_link || '',
-          last_checked_at: existingStatus.last_checked_at || new Date().toISOString(),
+          last_checked_at: existingStatus.last_checked_at || null,
           opted_out: existingStatus.opted_out || false,
           check_error: existingStatus.check_error || null
         }

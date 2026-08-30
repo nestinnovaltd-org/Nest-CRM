@@ -229,6 +229,7 @@ async function _getEligibleLeads(campaign, orgId) {
     .from('leads')
     .select('id, name, phone, company, email')
     .eq('org_id', orgId)
+    .neq('status', 'Released')
 
   // Fetch the creator's profile to scope campaign leads if they are not admin
   if (campaign.user_id) {
@@ -283,12 +284,17 @@ async function _getEligibleLeads(campaign, orgId) {
     }
   }
 
+  if (filter.lead_ids && Array.isArray(filter.lead_ids) && filter.lead_ids.length > 0) {
+    query = query.in('id', filter.lead_ids)
+  }
+
   if (filter.status)      query = query.eq('status', filter.status)
   if (filter.source)      query = query.eq('source', filter.source)
   if (filter.assigned_to) query = query.eq('assigned_to', filter.assigned_to)
   if (filter.company)     query = query.eq('company', filter.company)
 
-  const { data: leads } = await query.limit(campaign.daily_limit || 200)
+  const limitCount = (filter.lead_ids && filter.lead_ids.length) || campaign.daily_limit || 200
+  const { data: leads } = await query.limit(limitCount)
   if (!leads || leads.length === 0) return []
 
   // Fetch whatsapp statuses separately to filter out opted out leads

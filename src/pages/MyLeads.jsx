@@ -42,10 +42,12 @@ import {
   RefreshCcw as RefreshIcon,
   ChevronLeft,
   ChevronRight,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react';
 import { WhatsAppIcon } from '../components/ui/Icons';
-import { waLeads, waSessions } from '../services/whatsappApi';
+import { waLeads, waSessions, waCampaigns, waTemplates } from '../services/whatsappApi';
+import './whatsapp/whatsapp.css';
 import './Leads.css';
 
 const formatDateTime = (dateStr) => {
@@ -1131,7 +1133,7 @@ const PortalDropdown = ({ children, triggerRef, onClose }) => {
   );
 };
 
-const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterests, onVerifyWhatsApp, showAssignment, activeTab }) => {
+const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterests, onVerifyWhatsApp, showAssignment, activeTab, selectedLeadIds, setSelectedLeadIds }) => {
   const [activeDropdown, setActiveDropdown] = useState(null);
   const triggerRefs = useRef({});
 
@@ -1150,6 +1152,28 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
       <table className="leads-table">
         <thead>
           <tr>
+            <th style={{ width: '40px' }}>
+              <input 
+                type="checkbox" 
+                checked={leads.length > 0 && leads.every(l => selectedLeadIds.has(l.id))}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setSelectedLeadIds(prev => {
+                      const next = new Set(prev);
+                      leads.forEach(l => next.add(l.id));
+                      return next;
+                    });
+                  } else {
+                    setSelectedLeadIds(prev => {
+                      const next = new Set(prev);
+                      leads.forEach(l => next.delete(l.id));
+                      return next;
+                    });
+                  }
+                }}
+                style={{ cursor: 'pointer' }}
+              />
+            </th>
             <th>Lead Name</th>
             <th>Status</th>
             <th>Company</th>
@@ -1163,6 +1187,21 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
         <tbody>
           {leads.map((lead, index) => (
             <tr key={lead.id}>
+              <td>
+                <input 
+                  type="checkbox" 
+                  checked={selectedLeadIds.has(lead.id)} 
+                  onChange={() => {
+                    setSelectedLeadIds(prev => {
+                      const next = new Set(prev);
+                      if (next.has(lead.id)) next.delete(lead.id);
+                      else next.add(lead.id);
+                      return next;
+                    });
+                  }}
+                  style={{ cursor: 'pointer' }}
+                />
+              </td>
               <td>
                 <div className="table-name-cell">
                   <span className="serial-number" style={{ marginRight: '8px' }}>{(index + 1).toString().padStart(2, '0')}.</span>
@@ -1342,21 +1381,41 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
   );
 };
 
-const GridView = ({ leads, onAddUpdate, onAssign, onStatusChange, onEditInterests, onVerifyWhatsApp, showAssignment, activeTab }) => {
+const GridView = ({ leads, onAddUpdate, onAssign, onStatusChange, onEditInterests, onVerifyWhatsApp, showAssignment, activeTab, selectedLeadIds, setSelectedLeadIds }) => {
   return (
     <div className="leads-grid-view">
       {leads.map((lead, index) => (
         <div key={lead.id} className="grid-card-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {/* Serial Number displayed above the card */}
-          <div className="card-serial-number" style={{ 
-            fontFamily: "'JetBrains Mono', monospace", 
-            fontWeight: '700', 
-            color: 'var(--primary)', 
-            fontSize: '0.85rem', 
-            opacity: 0.8,
-            paddingLeft: '4px'
+          {/* Serial Number and Checkbox displayed above the card */}
+          <div className="card-header-row" style={{ 
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingLeft: '4px',
+            paddingRight: '4px'
           }}>
-            {(index + 1).toString().padStart(2, '0')}.
+            <div className="card-serial-number" style={{ 
+              fontFamily: "'JetBrains Mono', monospace", 
+              fontWeight: '700', 
+              color: 'var(--primary)', 
+              fontSize: '0.85rem', 
+              opacity: 0.8
+            }}>
+              {(index + 1).toString().padStart(2, '0')}.
+            </div>
+            <input 
+              type="checkbox" 
+              checked={selectedLeadIds.has(lead.id)} 
+              onChange={() => {
+                setSelectedLeadIds(prev => {
+                  const next = new Set(prev);
+                  if (next.has(lead.id)) next.delete(lead.id);
+                  else next.add(lead.id);
+                  return next;
+                });
+              }}
+              style={{ cursor: 'pointer' }}
+            />
           </div>
           
           <LeadCard 
@@ -1705,6 +1764,107 @@ const InterestsModal = ({ isOpen, onClose, lead, onConfirm, projects }) => {
 };
 
 
+const WaCampaignCreateModal = ({ selectedCount, onSave, onClose }) => {
+  const [sessions, setSessions]   = useState([])
+  const [templates, setTemplates] = useState([])
+  const [form, setForm] = useState({
+    name: '', session_id: '', template_id: '',
+    daily_limit: 200, min_delay_seconds: 10, max_delay_seconds: 25,
+    consent_confirmed: false
+  })
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    Promise.all([
+      waSessions.list().catch(() => ({ sessions: [] })),
+      waTemplates.list().catch(() => ({ templates: [] }))
+    ]).then(([s, t]) => {
+      setSessions((s.sessions || []).filter(ses => ses.status === 'CONNECTED' || ses.live_status === 'CONNECTED'))
+      setTemplates(t.templates || [])
+    })
+  }, [])
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    if (!form.consent_confirmed) return alert('You must confirm consent to proceed.')
+    setSaving(true)
+    try { await onSave(form) } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="wa-modal-overlay" onClick={onClose} style={{ zIndex: 10000 }}>
+      <div className="wa-modal" style={{ maxWidth: 580 }} onClick={e => e.stopPropagation()}>
+        <div className="wa-modal-header">
+          <span className="wa-modal-title">Create WhatsApp Campaign ({selectedCount} leads selected)</span>
+          <button className="wa-btn-icon" onClick={onClose}><X size={18} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="wa-form">
+          <div className="wa-form-group">
+            <label className="wa-form-label">Campaign Name *</label>
+            <input className="wa-form-input" placeholder="e.g. Selected Leads Campaign" value={form.name} onChange={e => set('name', e.target.value)} required />
+          </div>
+          <div className="wa-form-group">
+            <label className="wa-form-label">WhatsApp Session *</label>
+            <select className="wa-form-select" value={form.session_id} onChange={e => set('session_id', e.target.value)} required>
+              <option value="">Select connected session…</option>
+              {sessions.map(s => <option key={s.id} value={s.id}>{s.session_name} — {s.phone_number}</option>)}
+            </select>
+            {sessions.length === 0 && <span style={{ fontSize: '0.75rem', color: '#ef4444' }}>No connected sessions. Please connect a session first.</span>}
+          </div>
+          <div className="wa-form-group">
+            <label className="wa-form-label">Message Template *</label>
+            <select className="wa-form-select" value={form.template_id} onChange={e => set('template_id', e.target.value)} required>
+              <option value="">Select template…</option>
+              {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+            <div className="wa-form-group">
+              <label className="wa-form-label">Daily Limit</label>
+              <input className="wa-form-input" type="number" min={10} max={500} value={form.daily_limit} onChange={e => set('daily_limit', e.target.value)} />
+              <span style={{ fontSize: '0.7rem', color: '#6b7280' }}>Max 500/day</span>
+            </div>
+            <div className="wa-form-group">
+              <label className="wa-form-label">Min Delay (sec)</label>
+              <input className="wa-form-input" type="number" min={8} value={form.min_delay_seconds} onChange={e => set('min_delay_seconds', e.target.value)} />
+              <span style={{ fontSize: '0.7rem', color: '#6b7280' }}>Min 8s enforced</span>
+            </div>
+            <div className="wa-form-group">
+              <label className="wa-form-label">Max Delay (sec)</label>
+              <input className="wa-form-input" type="number" min={10} value={form.max_delay_seconds} onChange={e => set('max_delay_seconds', e.target.value)} />
+            </div>
+          </div>
+
+          <div className="wa-info-box wa-info-box-yellow" style={{ fontSize: '0.8rem' }}>
+            <AlertIcon size={14} />
+            <div>
+              <strong>Consent Requirement:</strong> Only message leads who have given explicit permission to receive WhatsApp messages from your organization. Sending unsolicited messages may violate WhatsApp's Terms of Service.
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <input type="checkbox" id="consent" checked={form.consent_confirmed} onChange={e => set('consent_confirmed', e.target.checked)} style={{ marginTop: 3 }} />
+            <label htmlFor="consent" style={{ fontSize: '0.83rem', color: 'var(--text-primary, #f3f4f6)', cursor: 'pointer' }}>
+              I confirm that all selected leads have given consent to receive WhatsApp messages from our organization.
+            </label>
+          </div>
+
+          <div className="wa-modal-footer">
+            <button type="button" className="wa-btn wa-btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="submit" className="wa-btn wa-btn-primary" disabled={saving || !form.consent_confirmed || !form.session_id || !form.template_id}>
+              {saving ? <span className="wa-spinner" /> : <Plus size={16} />}
+              {saving ? 'Creating…' : 'Create Campaign'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+
 const MyLeads = () => {
   const { user, currentTenant, hasPermission } = useAuth();
   const { userId } = useParams();
@@ -1734,6 +1894,12 @@ const MyLeads = () => {
   const [selectedWhatsAppStatus, setSelectedWhatsAppStatus] = useState('All');
   const [selectedProject, setSelectedProject] = useState('All');
   const [allProjects, setAllProjects] = useState([]);
+  const [selectedLeadIds, setSelectedLeadIds] = useState(new Set());
+  const [showWaCampaignModal, setShowWaCampaignModal] = useState(false);
+
+  useEffect(() => {
+    setSelectedLeadIds(new Set());
+  }, [activeTab, statusFilter, searchTerm, selectedPriority, selectedWhatsAppStatus, selectedProject, currentPage]);
 
   useEffect(() => {
     const fetchProjectsList = async () => {
@@ -1919,7 +2085,7 @@ const MyLeads = () => {
 
   const handleDrop = (e, newStatus) => {
     e.preventDefault();
-    const leadId = parseInt(e.dataTransfer.getData('leadId') || draggedLeadId);
+    const leadId = e.dataTransfer.getData('leadId') || draggedLeadId;
     const lead = leads.find(l => l.id === leadId);
     
     if (lead && lead.status !== newStatus) {
@@ -2203,6 +2369,24 @@ const MyLeads = () => {
     }
   };
 
+  const handleCampaignSave = async (formData) => {
+    try {
+      const data = {
+        ...formData,
+        lead_filter: {
+          lead_ids: Array.from(selectedLeadIds)
+        }
+      };
+      await waCampaigns.create(data);
+      toast.success('Campaign created successfully!');
+      setSelectedLeadIds(new Set());
+      setShowWaCampaignModal(false);
+    } catch (err) {
+      console.error('Error creating campaign:', err);
+      toast.error(err.message || 'Failed to create campaign');
+    }
+  };
+
   const handleBulkVerifyWhatsApp = async () => {
     try {
       const unverifiedLeads = filteredLeads.filter(l => l.phone && !(l.phoneWhatsapp || l.phone_whatsapp));
@@ -2415,6 +2599,8 @@ const MyLeads = () => {
               onVerifyWhatsApp={handleVerifyWhatsApp}
               showAssignment={activeTab === 'team'}
               activeTab={activeTab}
+              selectedLeadIds={selectedLeadIds}
+              setSelectedLeadIds={setSelectedLeadIds}
             />
           ) : viewMode === 'grid' ? (
             <GridView 
@@ -2426,6 +2612,8 @@ const MyLeads = () => {
               onVerifyWhatsApp={handleVerifyWhatsApp}
               showAssignment={activeTab === 'team'}
               activeTab={activeTab}
+              selectedLeadIds={selectedLeadIds}
+              setSelectedLeadIds={setSelectedLeadIds}
             />
           ) : (
             <div className="kanban-board-container">
@@ -2651,6 +2839,51 @@ const MyLeads = () => {
           }
         }}
       />
+      {selectedLeadIds.size > 0 && (
+        <div className="wa-campaign-action-bar" style={{
+          position: 'fixed',
+          bottom: '24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(30, 41, 59, 0.9)',
+          backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          borderRadius: '16px',
+          padding: '12px 24px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '24px',
+          zIndex: 1000,
+          boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5), 0 8px 10px -6px rgba(0,0,0,0.5)'
+        }}>
+          <span style={{ fontSize: '0.9rem', color: '#f3f4f6', fontWeight: 500 }}>
+            {selectedLeadIds.size} {selectedLeadIds.size === 1 ? 'lead' : 'leads'} selected
+          </span>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button 
+              className="wa-btn wa-btn-secondary" 
+              style={{ fontSize: '0.85rem', padding: '6px 12px' }}
+              onClick={() => setSelectedLeadIds(new Set())}
+            >
+              Clear Selection
+            </button>
+            <button 
+              className="wa-btn wa-btn-primary" 
+              style={{ fontSize: '0.85rem', padding: '6px 16px', display: 'flex', alignItems: 'center', gap: '6px' }}
+              onClick={() => setShowWaCampaignModal(true)}
+            >
+              Create WhatsApp Campaign
+            </button>
+          </div>
+        </div>
+      )}
+      {showWaCampaignModal && (
+        <WaCampaignCreateModal 
+          selectedCount={selectedLeadIds.size}
+          onSave={handleCampaignSave}
+          onClose={() => setShowWaCampaignModal(false)}
+        />
+      )}
     </DashboardLayout>
   );
 };
