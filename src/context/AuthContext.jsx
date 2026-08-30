@@ -144,10 +144,10 @@ export const AuthProvider = ({ children }) => {
       }
 
       setUser({
+        ...profile,
         uid: supabaseUser.id,
         id: supabaseUser.id,
         email: supabaseUser.email,
-        ...profile,
         name: profile.full_name || profile.name || 'User',
         account_type: accountType,
         trialExpired,

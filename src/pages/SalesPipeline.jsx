@@ -71,7 +71,11 @@ const SalesPipeline = () => {
         }
       }
       const { data: leadsData } = await query;
-      setLeads(leadsData || []);
+      const mappedLeads = (leadsData || []).map(row => ({
+        ...row,
+        assignedToName: row.assigned_to_name
+      }));
+      setLeads(mappedLeads);
       setIsLoading(false);
     };
 

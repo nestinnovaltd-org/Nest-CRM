@@ -124,7 +124,17 @@ const AllLeads = () => {
     // Fetch leads
     const fetchLeads = async () => {
       const { data } = await supabase.from('leads').select('*');
-      setLeads(data || []);
+      const mappedLeads = (data || []).map(row => ({
+        ...row,
+        ownerId: row.owner_id,
+        assignedTo: row.assigned_to,
+        assignedToName: row.assigned_to_name,
+        phoneWhatsapp: row.phone_whatsapp,
+        secondPhoneWhatsapp: row.second_phone_whatsapp,
+        nextFollowUp: row.next_follow_up,
+        nextFollowUpDate: row.next_follow_up_date
+      }));
+      setLeads(mappedLeads);
       setIsLoading(false);
     };
 

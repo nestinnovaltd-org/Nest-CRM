@@ -45,6 +45,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { WhatsAppIcon } from '../components/ui/Icons';
+import { waLeads, waSessions } from '../services/whatsappApi';
 import './Leads.css';
 
 const formatDateTime = (dateStr) => {
@@ -165,8 +166,9 @@ const checkMultiplePhonesDuplicateInTeam = async (cleanedPhones, user, allUsers,
     .map(u => u.uid || u.id)
     .filter(Boolean);
   
-  if (!teamMemberUids.includes(user.uid)) {
-    teamMemberUids.push(user.uid);
+  const currentUserId = user?.uid || user?.id;
+  if (currentUserId && !teamMemberUids.includes(currentUserId)) {
+    teamMemberUids.push(currentUserId);
   }
 
   // Create list of search formats for query
@@ -224,12 +226,12 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
 
   const downloadTemplate = () => {
     const headers = [
-      'Customer Name', 'Number', 'Profession', 'Project', 
-      'Lead Source', 'Lead Status', 'Location', 'Area', 
+      'Customer Name', 'Number', 'Second Number', 'Profession', 'Project', 
+      'Lead Source', 'Lead Status', 'Location', 'Area', 'Address',
       'Email', 'Priority', 'Description', 'Next Call Date'
     ];
     const csvContent = headers.join(',') + '\n' + 
-      'John Doe,1712345678,Manager,Alpha Project,Facebook,Fresh Lead,Dhaka,Gulshan,john@example.com,High,Interested in 3BHK,2026-08-25';
+      'John Doe,1712345678,1812345678,Manager,Alpha Project,Facebook,Fresh Lead,Dhaka,Gulshan,Gulshan-2 Dhaka,john@example.com,High,Interested in 3BHK,2026-08-25';
     
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
@@ -277,6 +279,9 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
             
             if (h.includes('customer name')) obj.name = value;
             else if (h.includes('profession')) obj.designation = value;
+            else if (h.includes('second number') || h.includes('alt number') || h.includes('alternative number') || h.includes('second phone') || h.includes('alt phone')) {
+              obj.second_phone_raw = value;
+            }
             else if (h.includes('number')) {
               rawPhone = value;
             }
@@ -285,6 +290,7 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
             else if (h.includes('lead status')) obj.status = value;
             else if (h.includes('location')) obj.location = value;
             else if (h.includes('area')) obj.area = value;
+            else if (h.includes('address')) obj.address = value;
             else if (h.includes('email')) obj.email = value;
             else if (h.includes('priority')) obj.priority = value;
             else if (h.includes('description') || h.includes('summary')) obj.description = value;
@@ -298,6 +304,18 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
           const cleaned = cleanPhoneNumber(rawPhone);
           const rowNum = index + 2; // row 1 is header
           obj.rowNum = rowNum;
+
+          if (obj.second_phone_raw) {
+            const cleanedSecond = cleanPhoneNumber(obj.second_phone_raw);
+            if (cleanedSecond.startsWith('1') && cleanedSecond.length === 10) {
+              obj.second_phone = `+880 ${cleanedSecond}`;
+            } else {
+              obj.second_phone = obj.second_phone_raw;
+            }
+            delete obj.second_phone_raw;
+          } else {
+            obj.second_phone = '';
+          }
 
           if (!cleaned.startsWith('1') || cleaned.length !== 10) {
             errors.push(`Row ${rowNum}: Phone number must start with 1 and be 10 digits (got "${rawPhone}").`);
@@ -753,9 +771,36 @@ const LeadCard = ({ lead, index, onDragStart, onAddUpdate, onAssign, onStatusCha
       <div className="card-body">
         <div className="lead-contact-info">
           {lead.phone && (
-            <div className="info-row">
+            <div className="info-row" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
               <Phone size={14} className="info-icon icon-phone" />
               <span className="phone-number">{lead.phone?.replace(/^\+88/, '').replace(/\s+/g, '')}</span>
+              {lead.phone_whatsapp || lead.phoneWhatsapp ? (
+                <span className="wa-verified-badge" style={{ 
+                  background: 'rgba(37, 211, 102, 0.15)', 
+                  color: '#25d366', 
+                  fontSize: '0.7rem', 
+                  padding: '1px 6px', 
+                  borderRadius: '4px', 
+                  fontWeight: '600',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '2px',
+                  border: '1px solid rgba(37, 211, 102, 0.3)'
+                }} title="WhatsApp Verified Leads">✓ WA Verified</span>
+              ) : (
+                <span className="wa-unverified-badge" style={{ 
+                  background: 'rgba(239, 68, 68, 0.1)', 
+                  color: '#f87171', 
+                  fontSize: '0.7rem', 
+                  padding: '1px 6px', 
+                  borderRadius: '4px', 
+                  fontWeight: '600',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '2px',
+                  border: '1px solid rgba(239, 68, 68, 0.2)'
+                }} title="WhatsApp Unverified">WA Unverified</span>
+              )}
               <span className="country-flag">{lead.flag}</span>
             </div>
           )}
@@ -1082,9 +1127,30 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
               <td>
                 <div className="table-contact-cell">
                   {lead.phone && (
-                    <div className="contact-item">
+                    <div className="contact-item" style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
                       <Phone size={12} className="contact-icon" />
                       <span>{lead.phone?.replace(/^\+88/, '').replace(/\s+/g, '')}</span>
+                      {lead.phone_whatsapp || lead.phoneWhatsapp ? (
+                        <span className="wa-verified-badge-mini" title="WhatsApp Verified Leads" style={{ 
+                          color: '#25d366', 
+                          fontSize: '0.65rem', 
+                          background: 'rgba(37, 211, 102, 0.1)', 
+                          padding: '1px 4px', 
+                          borderRadius: '3px',
+                          fontWeight: '600',
+                          border: '1px solid rgba(37, 211, 102, 0.2)'
+                        }}>✓ WA Verified</span>
+                      ) : (
+                        <span className="wa-unverified-badge-mini" title="WhatsApp Unverified" style={{ 
+                          color: '#f87171', 
+                          fontSize: '0.65rem', 
+                          background: 'rgba(239, 68, 68, 0.08)', 
+                          padding: '1px 4px', 
+                          borderRadius: '3px',
+                          fontWeight: '600',
+                          border: '1px solid rgba(239, 68, 68, 0.15)'
+                        }}>WA Unverified</span>
+                      )}
                     </div>
                   )}
                   {lead.email && (
@@ -1599,6 +1665,7 @@ const MyLeads = () => {
   const [statusFilter, setStatusFilter] = useState('All');
   const [activeTab, setActiveTab] = useState(userId ? 'team' : 'personal'); // 'personal' or 'team'
   const [selectedPriority, setSelectedPriority] = useState('All');
+  const [selectedWhatsAppStatus, setSelectedWhatsAppStatus] = useState('All');
   const [selectedProject, setSelectedProject] = useState('All');
   const [allProjects, setAllProjects] = useState([]);
 
@@ -1697,7 +1764,7 @@ const MyLeads = () => {
         if (user.org_id) {
           query = query.eq('org_id', user.org_id);
         } else {
-          query = query.eq('owner_id', user.uid);
+          query = query.eq('owner_id', user.uid || user.id);
         }
       }
 
@@ -1711,7 +1778,7 @@ const MyLeads = () => {
         managedTeams.forEach(t => { if (t.members) t.members.forEach(m => teamMemberNames.add(m)); });
         const teamMemberUids = allUsers.filter(u => teamMemberNames.has(u.full_name || u.fullName || u.name)).map(u => u.uid || u.id).filter(Boolean);
         const allowedUids = Array.from(new Set([
-          user.uid,
+          user.uid || user.id,
           ...allUsers.filter(u => (u.reports_to || u.reportsTo) === currentUserName).map(u => u.uid || u.id).filter(Boolean),
           ...teamMemberUids
         ]));
@@ -1723,6 +1790,13 @@ const MyLeads = () => {
 
       let leadsList = (data || []).map(row => ({
         ...row,
+        ownerId: row.owner_id,
+        assignedTo: row.assigned_to,
+        assignedToName: row.assigned_to_name,
+        phoneWhatsapp: row.phone_whatsapp,
+        secondPhoneWhatsapp: row.second_phone_whatsapp,
+        nextFollowUp: row.next_follow_up,
+        nextFollowUpDate: row.next_follow_up_date,
         age: row.created_at ? formatDateToDDMMYYYY(row.created_at) : 'Just now'
       }));
 
@@ -1841,7 +1915,7 @@ const MyLeads = () => {
         history: newHistory,
         assigned_by_name: user.full_name || user.fullName || user.name
       };
-      if (!lead.owner_id && !lead.ownerId) updatePayload.owner_id = user.uid;
+      if (!lead.owner_id && !lead.ownerId) updatePayload.owner_id = user.uid || user.id;
 
       await supabase.from('leads').update(updatePayload).eq('id', lead.id);
 
@@ -1905,7 +1979,9 @@ const MyLeads = () => {
       const assignedUser = allUsers.find(u => u.id === l.assignedTo || u.uid === l.assignedTo);
       return {
         ...l,
-        assignedToName: assignedUser ? (assignedUser.fullName || assignedUser.name) : 'Unassigned'
+        assignedToName: assignedUser
+          ? (assignedUser.full_name || assignedUser.fullName || assignedUser.name || 'Unassigned')
+          : (l.assignedToName || l.assigned_to_name || 'Unassigned')
       };
     })
     .filter(l => {
@@ -1920,24 +1996,33 @@ const MyLeads = () => {
       const matchesProject = selectedProject === 'All' || l.company === selectedProject;
       if (!matchesPriority || !matchesProject) return false;
 
+      const matchesWhatsApp = selectedWhatsAppStatus === 'All' || 
+        (selectedWhatsAppStatus === 'Verified' && (l.phone_whatsapp || l.phoneWhatsapp)) ||
+        (selectedWhatsAppStatus === 'Unverified' && !(l.phone_whatsapp || l.phoneWhatsapp));
+      if (!matchesWhatsApp) return false;
+
+      const currentUserId = user.uid || user.id;
+
       if (userId) {
         return matchesSearch && l.assignedTo === userId;
       }
       
       if (activeTab === 'personal') {
         // My own leads: I am the owner OR it has no owner but is assigned to me
-        return matchesSearch && (l.ownerId === user.uid || (!l.ownerId && l.assignedTo === user.uid));
+        return matchesSearch && (l.ownerId === currentUserId || (!l.ownerId && l.assignedTo === currentUserId));
       } else if (activeTab === 'assigned') {
         // Assigned to me: I am assigned but I am NOT the owner
-        return matchesSearch && l.assignedTo === user.uid && l.ownerId && l.ownerId !== user.uid;
+        return matchesSearch && l.assignedTo === currentUserId && l.ownerId && l.ownerId !== currentUserId;
       } else {
         // Team leads: Owned or assigned to someone else
-        return matchesSearch && l.ownerId !== user.uid && l.assignedTo !== user.uid;
+        return matchesSearch && l.ownerId !== currentUserId && l.assignedTo !== currentUserId;
       }
     })
     .sort((a, b) => {
       if (activeTab === 'team') {
-        return a.assignedToName.localeCompare(b.assignedToName);
+        const nameA = a.assignedToName || '';
+        const nameB = b.assignedToName || '';
+        return nameA.localeCompare(nameB);
       }
       return 0; // Already sorted by date
     });
@@ -2040,7 +2125,7 @@ const MyLeads = () => {
             >
               <UserCheck size={16} />
               My Own Leads
-              <span className="tab-count">{user ? leads.filter(l => l.ownerId === user.uid || (!l.ownerId && l.assignedTo === user.uid)).length : 0}</span>
+              <span className="tab-count">{user ? leads.filter(l => l.ownerId === (user.uid || user.id) || (!l.ownerId && l.assignedTo === (user.uid || user.id))).length : 0}</span>
             </button>
             <button 
               className={`tab-btn ${activeTab === 'assigned' ? 'active' : ''}`}
@@ -2048,7 +2133,7 @@ const MyLeads = () => {
             >
               <History size={16} />
               Assigned to Me
-              <span className="tab-count">{user ? leads.filter(l => l.assignedTo === user.uid && l.ownerId && l.ownerId !== user.uid).length : 0}</span>
+              <span className="tab-count">{user ? leads.filter(l => l.assignedTo === (user.uid || user.id) && l.ownerId && l.ownerId !== (user.uid || user.id)).length : 0}</span>
             </button>
             {showTeamTab && (
               <button 
@@ -2057,7 +2142,7 @@ const MyLeads = () => {
               >
                 <GitMerge size={16} />
                 Team's Leads
-                <span className="tab-count">{user ? leads.filter(l => l.ownerId !== user.uid && l.assignedTo !== user.uid).length : 0}</span>
+                <span className="tab-count">{user ? leads.filter(l => l.ownerId !== (user.uid || user.id) && l.assignedTo !== (user.uid || user.id)).length : 0}</span>
               </button>
             )}
           </div>
@@ -2074,9 +2159,10 @@ const MyLeads = () => {
               // Counts are specific to the active tab (e.g. My Own Leads vs Assigned to Me)
               const tabLeads = !user ? [] : leads.filter(l => {
                 if (userId) return l.assignedTo === userId;
-                if (activeTab === 'personal') return l.ownerId === user.uid || (!l.ownerId && l.assignedTo === user.uid);
-                if (activeTab === 'assigned') return l.assignedTo === user.uid && l.ownerId && l.ownerId !== user.uid;
-                return l.ownerId !== user.uid && l.assignedTo !== user.uid;
+                const currentUserId = user.uid || user.id;
+                if (activeTab === 'personal') return l.ownerId === currentUserId || (!l.ownerId && l.assignedTo === currentUserId);
+                if (activeTab === 'assigned') return l.assignedTo === currentUserId && l.ownerId && l.ownerId !== currentUserId;
+                return l.ownerId !== currentUserId && l.assignedTo !== currentUserId;
               });
               const count = tabLeads.filter(l => status === 'All' || l.status === status).length;
               
@@ -2117,6 +2203,18 @@ const MyLeads = () => {
                 <option value="High Priority">High Priority</option>
                 <option value="Urgent">Urgent</option>
                 <option value="Follow-up">Follow-up</option>
+              </select>
+            </div>
+
+            <div className="fu-filter-select-wrapper">
+              <select 
+                value={selectedWhatsAppStatus} 
+                onChange={e => { setSelectedWhatsAppStatus(e.target.value); setCurrentPage(1); }}
+                className="fu-filter-select"
+              >
+                <option value="All">All WhatsApp Status</option>
+                <option value="Verified">WhatsApp Verified Leads</option>
+                <option value="Unverified">WhatsApp Unverified</option>
               </select>
             </div>
 
@@ -2282,7 +2380,7 @@ const MyLeads = () => {
           isOpen={assignModal.isOpen}
           onClose={() => setAssignModal({ isOpen: false, lead: null })}
           lead={assignModal.lead}
-          teamUsers={user ? allUsers.filter(u => u.uid !== user.uid) : []}
+          teamUsers={user ? allUsers.filter(u => (u.uid || u.id) !== (user.uid || user.id)) : []}
           onConfirm={handleAssignConfirm}
         />
 
@@ -2321,20 +2419,85 @@ const MyLeads = () => {
                 });
               }
 
-              return supabase.from('leads').insert({
-                ...lead,
-                created_at: new Date().toISOString(),
-                owner_id: user.uid,
-                assigned_to: user.uid,
-                assigned_to_name: user.full_name || user.fullName || user.name,
-                status: lead.nextFollowUp ? 'Follow Up' : 'Fresh Lead',
-                history: history,
-                type: 'mine'
-              });
+              // Explicitly map keys to match DB schema columns to avoid PostgREST column cache mismatch errors
+              const isSA = user?.account_type === 'super_admin';
+              const resolvedOrgId = (isSA && currentTenant?.type === 'org')
+                ? currentTenant.id
+                : (user?.org_id || null);
+
+              const resolvedOwnerId = (isSA && currentTenant?.type === 'individual')
+                ? currentTenant.id
+                : user.uid || user.id;
+
+              const dbPayload = {
+                name:                  lead.name || '',
+                company:               lead.company || '',
+                designation:           lead.designation || '',
+                phone:                 lead.phone || '',
+                phone_whatsapp:        lead.phone_whatsapp || false,
+                second_phone:          lead.second_phone || '',
+                second_phone_whatsapp: lead.second_phone_whatsapp || false,
+                email:                 lead.email || '',
+                location:              lead.location || '',
+                area:                  lead.area || '',
+                address:               lead.address || '',
+                assigned_to:           resolvedOwnerId,
+                assigned_to_name:      user.full_name || user.fullName || user.name || 'Admin',
+                owner_id:              resolvedOwnerId,
+                owner_name:            user.full_name || user.fullName || user.name || 'Admin',
+                priority:              lead.priority || 'Medium',
+                source:                lead.source || 'CSV Import',
+                status:                lead.nextFollowUp ? 'Follow Up' : 'Fresh Lead',
+                description:           lead.description || '',
+                next_follow_up:        lead.nextFollowUp || '',
+                next_follow_up_date:   lead.nextFollowUpDate || null,
+                image:                 lead.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(lead.name || 'Lead')}&background=random`,
+                history:               history,
+                org_id:                resolvedOrgId,
+                created_at:            new Date().toISOString(),
+                updated_at:            new Date().toISOString()
+              };
+
+              return supabase.from('leads').insert(dbPayload).select();
             });
             
-            await Promise.all(importPromises);
-            toast.success(`Successfully imported ${data.length} leads!`);
+            const insertResults = await Promise.all(importPromises);
+            const failedInserts = insertResults.filter(res => res.error);
+            if (failedInserts.length > 0) {
+              console.error('Some lead inserts failed:', failedInserts);
+              failedInserts.forEach(res => {
+                toast.error(`Database Error: ${res.error.message}`);
+              });
+            }
+
+            const insertedLeads = insertResults
+              .map(res => res.data?.[0])
+              .filter(Boolean);
+            
+            const insertedIds = insertedLeads.map(l => l.id);
+
+            toast.success(`Successfully imported ${insertedLeads.length} leads!`);
+
+            if (insertedIds.length > 0) {
+              try {
+                const sessionsRes = await waSessions.list();
+                const connectedSession = (sessionsRes.sessions || []).find(
+                  s => s.status === 'CONNECTED' || s.live_status === 'CONNECTED'
+                );
+
+                if (connectedSession) {
+                  await waLeads.checkBulk(insertedIds, connectedSession.id);
+                  toast.success(`Checking WhatsApp status for ${insertedIds.length} leads in background...`, {
+                    duration: 5000
+                  });
+                } else {
+                  console.info('No active WhatsApp session connected. Automatic check skipped.');
+                  toast.error('No connected WhatsApp session found. WhatsApp status checks could not be initiated.');
+                }
+              } catch (sessionErr) {
+                console.error('Error initiating automatic WhatsApp check:', sessionErr);
+              }
+            }
           } catch (error) {
             console.error('Import error:', error);
             toast.error('Failed to import leads to database.');

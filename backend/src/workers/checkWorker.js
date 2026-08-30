@@ -74,6 +74,16 @@ async function _upsertStatus(leadId, orgId, rawPhone, normalized, status, sessio
       check_error:          error,
       updated_at:           new Date().toISOString()
     }, { onConflict: 'lead_id' })
+
+  // Sync back to the leads table
+  const isAvailable = status === 'WHATSAPP_AVAILABLE';
+  await supabase
+    .from('leads')
+    .update({
+      phone_whatsapp: isAvailable,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', leadId);
 }
 
 worker.on('failed', (job, err) => {
