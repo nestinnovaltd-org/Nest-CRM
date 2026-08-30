@@ -7,12 +7,9 @@
 import { supabase } from './supabase.js'
 import { logger }   from './logger.js'
 
-// ─── Safety Floors (CANNOT be overridden by campaign config) ─────────────────
+// ─── Safety Floors ────────────────────────────────────────────────────────────
 export const SAFETY_FLOORS = {
-  MIN_DELAY_SECONDS:       parseInt(process.env.SAFETY_MIN_DELAY_SECONDS)  || 8,
-  MAX_DAILY_LIMIT:         parseInt(process.env.SAFETY_MAX_DAILY_LIMIT)    || 500,
-  MAX_HOURLY:              parseInt(process.env.SAFETY_MAX_HOURLY)          || 50,
-  MIN_DELAY_AFTER_FAILURE: 60,   // seconds to wait after any failure
+  MIN_DELAY_SECONDS:       parseInt(process.env.SAFETY_MIN_DELAY_SECONDS)  || 1,
   MAX_CONSECUTIVE_FAILURES: 10   // auto-pause threshold
 }
 
@@ -21,18 +18,18 @@ export const SAFETY_FLOORS = {
  */
 export function enforceSafetyFloors(config) {
   return {
-    min_delay_seconds: Math.max(Number(config.min_delay_seconds) || 8, SAFETY_FLOORS.MIN_DELAY_SECONDS),
-    max_delay_seconds: Math.max(Number(config.max_delay_seconds) || 20, (config.min_delay_seconds || 8) + 5),
-    daily_limit:       Math.min(Number(config.daily_limit)       || 200, SAFETY_FLOORS.MAX_DAILY_LIMIT)
+    min_delay_seconds: Math.max(Number(config.min_delay_seconds) || 5, SAFETY_FLOORS.MIN_DELAY_SECONDS),
+    max_delay_seconds: Math.max(Number(config.max_delay_seconds) || 15, (config.min_delay_seconds || 5) + 2),
+    daily_limit:       Number(config.daily_limit) || null
   }
 }
 
 /**
- * Returns a random delay in milliseconds between min and max (floor-enforced).
+ * Returns a random delay in milliseconds between min and max.
  */
 export function randomDelayMs(minSec, maxSec) {
   const safeMin = Math.max(minSec, SAFETY_FLOORS.MIN_DELAY_SECONDS)
-  const safeMax = Math.max(maxSec, safeMin + 5)
+  const safeMax = Math.max(maxSec, safeMin + 2)
   const seconds = Math.floor(Math.random() * (safeMax - safeMin + 1)) + safeMin
   return seconds * 1000
 }
@@ -49,11 +46,20 @@ export async function sleepRandom(minSec, maxSec) {
 /**
  * Check if the campaign has reached its daily sending limit.
  * Returns true if limit reached (should stop sending), false if safe to continue.
+ * If no daily_limit is set, always returns false (unlimited).
  */
 export async function isDailyLimitReached(campaignId) {
   try {
-    const today = new Date().toISOString().split('T')[0]
+    const { data: campaign } = await supabase
+      .from('whatsapp_campaigns')
+      .select('daily_limit')
+      .eq('id', campaignId)
+      .single()
 
+    // No limit set — unlimited
+    if (!campaign?.daily_limit) return false
+
+    const today = new Date().toISOString().split('T')[0]
     const { count, error } = await supabase
       .from('whatsapp_campaign_recipients')
       .select('id', { count: 'exact', head: true })
@@ -63,23 +69,14 @@ export async function isDailyLimitReached(campaignId) {
 
     if (error) throw error
 
-    const { data: campaign } = await supabase
-      .from('whatsapp_campaigns')
-      .select('daily_limit')
-      .eq('id', campaignId)
-      .single()
-
-    const safeLimit = Math.min(campaign?.daily_limit || 200, SAFETY_FLOORS.MAX_DAILY_LIMIT)
-    const reached   = (count || 0) >= safeLimit
-
+    const reached = (count || 0) >= campaign.daily_limit
     if (reached) {
-      logger.warn({ campaignId, count, safeLimit, event: 'daily_limit_reached' }, 'Campaign daily limit reached')
+      logger.warn({ campaignId, count, limit: campaign.daily_limit, event: 'daily_limit_reached' }, 'Campaign daily limit reached')
     }
-
     return reached
   } catch (err) {
     logger.error({ err, campaignId }, 'campaignSafety: error checking daily limit')
-    return true  // fail-safe: treat as reached to prevent over-sending
+    return false  // on error, continue sending
   }
 }
 

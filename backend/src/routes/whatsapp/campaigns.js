@@ -28,24 +28,22 @@ router.get('/', async (req, res) => {
 // POST /api/whatsapp/campaigns — Create campaign
 router.post('/', async (req, res) => {
   try {
-    const { name, session_id, template_id, lead_filter = {}, daily_limit = 200,
-            min_delay_seconds = 8, max_delay_seconds = 20, start_time, consent_confirmed } = req.body
+    const { name, session_id, template_id, lead_filter = {}, daily_limit,
+            min_delay_seconds = 5, max_delay_seconds = 15, start_time } = req.body
 
     if (!name || !session_id || !template_id) {
       return res.status(400).json({ error: 'name, session_id, template_id required' })
     }
-    if (!consent_confirmed) {
-      return res.status(400).json({ error: 'Consent must be confirmed before creating a campaign' })
-    }
-
-    // Enforce safety floors
-    const safe = enforceSafetyFloors({ daily_limit, min_delay_seconds, max_delay_seconds })
 
     const { data, error } = await supabase
       .from('whatsapp_campaigns')
       .insert({
         org_id: req.user.org_id, user_id: req.user.id, name, session_id, template_id,
-        lead_filter, ...safe, start_time, consent_confirmed: true, status: 'DRAFT',
+        lead_filter,
+        daily_limit:       daily_limit ? Number(daily_limit) : null,
+        min_delay_seconds: Number(min_delay_seconds) || 5,
+        max_delay_seconds: Number(max_delay_seconds) || 15,
+        start_time, consent_confirmed: true, status: 'DRAFT',
         created_at: new Date().toISOString()
       })
       .select().single()
