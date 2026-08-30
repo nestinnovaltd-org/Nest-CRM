@@ -1817,7 +1817,7 @@ const MyLeads = () => {
     const isAdmin = user.role === 'Admin' || user.role === 'MD' || user.role === 'System Admin' || user.account_type === 'super_admin';
 
     const fetchLeads = async () => {
-      let query = supabase.from('leads').select('*, whatsapp_lead_status(whatsapp_status, check_error, last_checked_at)').neq('status', 'Released');
+      let query = supabase.from('leads').select('*').neq('status', 'Released');
 
       // Tenant isolation filter
       if (user.account_type === 'super_admin') {
@@ -1854,6 +1854,26 @@ const MyLeads = () => {
       const { data, error } = await query;
       if (error) { console.error('Error fetching leads:', error); setIsLoading(false); return; }
 
+      // Fetch whatsapp statuses in a separate query to bypass the missing foreign key relationship cache constraint
+      let whatsappStatusMap = {};
+      if (data && data.length > 0) {
+        try {
+          const leadIds = data.map(l => l.id);
+          const { data: statusData, error: statusErr } = await supabase
+            .from('whatsapp_lead_status')
+            .select('lead_id, whatsapp_status, check_error, last_checked_at')
+            .in('lead_id', leadIds);
+          
+          if (!statusErr && statusData) {
+            statusData.forEach(row => {
+              whatsappStatusMap[row.lead_id] = row;
+            });
+          }
+        } catch (e) {
+          console.error('Error fetching whatsapp lead statuses:', e);
+        }
+      }
+
       let leadsList = (data || []).map(row => ({
         ...row,
         ownerId: row.owner_id,
@@ -1863,6 +1883,7 @@ const MyLeads = () => {
         secondPhoneWhatsapp: row.second_phone_whatsapp,
         nextFollowUp: row.next_follow_up,
         nextFollowUpDate: row.next_follow_up_date,
+        whatsapp_lead_status: whatsappStatusMap[row.id] || null,
         age: row.created_at ? formatDateToDDMMYYYY(row.created_at) : 'Just now'
       }));
 
