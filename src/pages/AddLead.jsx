@@ -58,6 +58,8 @@ const checkPhoneDuplicateInTeam = async (phoneNumber, user, allUsers, teams) => 
   const formats = [
     `+880 ${cleanedSearchPhone}`,
     `+880${cleanedSearchPhone}`,
+    `880${cleanedSearchPhone}`,
+    `880 ${cleanedSearchPhone}`,
     `0${cleanedSearchPhone}`,
     cleanedSearchPhone
   ];
@@ -302,13 +304,17 @@ const AddLeadPage = () => {
         });
       }
 
+      const codeCleaned = formData.countryCode.replace(/[^\d]/g, '');
+      const fullPhone = `${codeCleaned}${cleanedPhone}`;
+      const secondPhoneCleaned = formData.secondPhone ? `${codeCleaned}${cleanPhoneNumber(formData.secondPhone)}` : '';
+
       const leadPayload = {
         name: formData.name,
         company: formData.company,
         designation: formData.designation,
         phone: fullPhone,
         phone_whatsapp: formData.phoneWhatsapp || false,
-        second_phone: formData.secondPhone ? `${formData.countryCode} ${formData.secondPhone}` : '',
+        second_phone: secondPhoneCleaned,
         second_phone_whatsapp: formData.secondPhoneWhatsapp || false,
         email: formData.email,
         location: formData.location,

@@ -22,9 +22,7 @@ export const checkQueue = new Queue('whatsapp-check', {
   }
 })
 
-const worker = new Worker('whatsapp-check', async (job) => {
-  const { leadId, phone, orgId, sessionId } = job.data
-
+export async function performWhatsAppCheck(leadId, phone, orgId, sessionId) {
   // Normalize phone
   const { normalized, valid, error: normError } = normalizePhone(phone)
 
@@ -52,7 +50,11 @@ const worker = new Worker('whatsapp-check', async (job) => {
     logger.error({ err, leadId, event: 'check_failed' }, 'WA check failed')
     await _upsertStatus(leadId, orgId, phone, normalized, 'CHECK_FAILED', sessionId, err.message)
   }
+}
 
+const worker = new Worker('whatsapp-check', async (job) => {
+  const { leadId, phone, orgId, sessionId } = job.data
+  await performWhatsAppCheck(leadId, phone, orgId, sessionId)
 }, {
   connection:  redis,
   concurrency: 2,   // 2 concurrent checks
@@ -77,12 +79,16 @@ async function _upsertStatus(leadId, orgId, rawPhone, normalized, status, sessio
 
   // Sync back to the leads table
   const isAvailable = status === 'WHATSAPP_AVAILABLE';
+  const updatePayload = {
+    phone_whatsapp: isAvailable,
+    updated_at: new Date().toISOString()
+  };
+  if (normalized) {
+    updatePayload.phone = normalized;
+  }
   await supabase
     .from('leads')
-    .update({
-      phone_whatsapp: isAvailable,
-      updated_at: new Date().toISOString()
-    })
+    .update(updatePayload)
     .eq('id', leadId);
 }
 

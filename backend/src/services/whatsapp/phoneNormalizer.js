@@ -32,18 +32,18 @@ export function normalizePhone(raw) {
   // Step 2: Bangladesh-specific normalization
   // 11-digit starting with 01 → prepend 880
   if (cleaned.length === 11 && cleaned.startsWith('01')) {
-    return { normalized: `+880${cleaned}`, valid: true }
+    return { normalized: `880${cleaned}`, valid: true }
   }
   // 10-digit starting with 1 (BD local format without leading 0)
   if (cleaned.length === 10 && cleaned.startsWith('1') && isBDPrefix(cleaned)) {
-    return { normalized: `+8801${cleaned.slice(1)}`, valid: true }
+    return { normalized: `8801${cleaned.slice(1)}`, valid: true }
   }
 
   // Step 3: Already has country code (had + prefix)
   if (hadPlus) {
     // Must be 7-15 digits total (E.164 range)
     if (cleaned.length >= 7 && cleaned.length <= 15) {
-      return { normalized: `+${cleaned}`, valid: true }
+      return { normalized: `${cleaned}`, valid: true }
     }
     return { normalized: null, valid: false, error: 'Invalid length with country code' }
   }
@@ -51,22 +51,22 @@ export function normalizePhone(raw) {
   // Step 4: No + but starts with country code digits
   // BD: starts with 880
   if (cleaned.startsWith('880') && cleaned.length >= 12) {
-    return { normalized: `+${cleaned}`, valid: true }
+    return { normalized: `${cleaned}`, valid: true }
   }
 
   // US/Canada: 10 digits (NANP)
   if (cleaned.length === 10) {
-    return { normalized: `+1${cleaned}`, valid: true }
+    return { normalized: `1${cleaned}`, valid: true }
   }
 
   // UK: starts with 44, 11-12 digits total
   if (cleaned.startsWith('44') && (cleaned.length === 12 || cleaned.length === 13)) {
-    return { normalized: `+${cleaned}`, valid: true }
+    return { normalized: `${cleaned}`, valid: true }
   }
 
   // Generic: 7-15 digits, assume has country code
   if (cleaned.length >= 7 && cleaned.length <= 15) {
-    return { normalized: `+${cleaned}`, valid: true }
+    return { normalized: `${cleaned}`, valid: true }
   }
 
   return { normalized: null, valid: false, error: `Unrecognized format: ${cleaned.length} digits` }

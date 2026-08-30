@@ -64,6 +64,21 @@ const formatDateTime = (dateStr) => {
   }
 };
 
+const normalizePhoneForDb = (raw) => {
+  if (!raw) return '';
+  let cleaned = String(raw).trim().replace(/[^\d]/g, '');
+  if (cleaned.length === 11 && cleaned.startsWith('01')) {
+    return `880${cleaned}`;
+  }
+  if (cleaned.length === 10 && cleaned.startsWith('1')) {
+    return `880${cleaned}`;
+  }
+  if (cleaned.startsWith('880') && cleaned.length >= 12) {
+    return cleaned;
+  }
+  return cleaned;
+};
+
 const formatDateToDDMMYYYY = (dateVal) => {
   if (!dateVal) return 'Not Set';
   
@@ -176,6 +191,8 @@ const checkMultiplePhonesDuplicateInTeam = async (cleanedPhones, user, allUsers,
   cleanedPhones.forEach(phone => {
     searchFormats.push(`+880 ${phone}`);
     searchFormats.push(`+880${phone}`);
+    searchFormats.push(`880${phone}`);
+    searchFormats.push(`880 ${phone}`);
     searchFormats.push(`0${phone}`);
     searchFormats.push(phone);
   });
@@ -708,6 +725,85 @@ const LEAD_STATUSES = [
   { id: 'Junk Lead', title: 'Junk Lead', color: '#78716c' },
 ];
 
+const renderWhatsAppBadge = (lead, isMini = false) => {
+  const statusObj = Array.isArray(lead.whatsapp_lead_status) 
+    ? lead.whatsapp_lead_status[0] 
+    : lead.whatsapp_lead_status;
+  const status = statusObj?.whatsapp_status || (lead.phone_whatsapp ? 'WHATSAPP_AVAILABLE' : 'PENDING');
+  
+  const baseStyle = isMini ? {
+    fontSize: '0.65rem', 
+    padding: '1px 4px', 
+    borderRadius: '3px',
+    fontWeight: '600',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '2px',
+  } : {
+    fontSize: '0.7rem', 
+    padding: '1px 6px', 
+    borderRadius: '4px',
+    fontWeight: '600',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '2px',
+  };
+
+  if (status === 'WHATSAPP_AVAILABLE') {
+    return (
+      <span className="wa-verified-badge" title="WhatsApp Verified" style={{ 
+        ...baseStyle,
+        background: 'rgba(37, 211, 102, 0.15)', 
+        color: '#25d366', 
+        border: '1px solid rgba(37, 211, 102, 0.3)'
+      }}>🟢 WhatsApp Verified</span>
+    );
+  }
+
+  if (status === 'CHECKING') {
+    return (
+      <span className="wa-checking-badge" title="Checking WhatsApp Status" style={{ 
+        ...baseStyle,
+        background: 'rgba(245, 158, 11, 0.15)', 
+        color: '#f59e0b', 
+        border: '1px solid rgba(245, 158, 11, 0.3)'
+      }}>🟡 Checking...</span>
+    );
+  }
+
+  if (status === 'WHATSAPP_NOT_AVAILABLE') {
+    return (
+      <span className="wa-not-available-badge" title="Not on WhatsApp" style={{ 
+        ...baseStyle,
+        background: 'rgba(239, 68, 68, 0.15)', 
+        color: '#f87171', 
+        border: '1px solid rgba(239, 68, 68, 0.3)'
+      }}>🔴 Not on WhatsApp</span>
+    );
+  }
+
+  if (status === 'CHECK_FAILED' || status === 'INVALID_NUMBER') {
+    return (
+      <span className="wa-failed-badge" title="Check Failed" style={{ 
+        ...baseStyle,
+        background: 'rgba(239, 68, 68, 0.15)', 
+        color: '#f87171', 
+        border: '1px solid rgba(239, 68, 68, 0.3)'
+      }}>⚠ Check Failed</span>
+    );
+  }
+
+  // Default: PENDING / UNVERIFIED
+  return (
+    <span className="wa-unverified-badge" title="WhatsApp Unverified" style={{ 
+      ...baseStyle,
+      background: 'rgba(239, 68, 68, 0.1)', 
+      color: '#f87171', 
+      border: '1px solid rgba(239, 68, 68, 0.2)'
+    }}>🔴 WA Unverified</span>
+  );
+};
+
 const LeadCard = ({ lead, index, onDragStart, onAddUpdate, onAssign, onStatusChange, onEditInterests, onVerifyWhatsApp, showAssignment, activeTab, className = '' }) => {
   const [expandedHistory, setExpandedHistory] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -773,34 +869,8 @@ const LeadCard = ({ lead, index, onDragStart, onAddUpdate, onAssign, onStatusCha
           {lead.phone && (
             <div className="info-row" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
               <Phone size={14} className="info-icon icon-phone" />
-              <span className="phone-number">{lead.phone?.replace(/^\+88/, '').replace(/\s+/g, '')}</span>
-              {lead.phone_whatsapp || lead.phoneWhatsapp ? (
-                <span className="wa-verified-badge" style={{ 
-                  background: 'rgba(37, 211, 102, 0.15)', 
-                  color: '#25d366', 
-                  fontSize: '0.7rem', 
-                  padding: '1px 6px', 
-                  borderRadius: '4px', 
-                  fontWeight: '600',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '2px',
-                  border: '1px solid rgba(37, 211, 102, 0.3)'
-                }} title="WhatsApp Verified Leads">✓ WA Verified</span>
-              ) : (
-                <span className="wa-unverified-badge" style={{ 
-                  background: 'rgba(239, 68, 68, 0.1)', 
-                  color: '#f87171', 
-                  fontSize: '0.7rem', 
-                  padding: '1px 6px', 
-                  borderRadius: '4px', 
-                  fontWeight: '600',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '2px',
-                  border: '1px solid rgba(239, 68, 68, 0.2)'
-                }} title="WhatsApp Unverified">WA Unverified</span>
-              )}
+              <span className="phone-number">{lead.phone?.replace(/^(\+?88)?0?/, '0').replace(/\s+/g, '')}</span>
+              {renderWhatsAppBadge(lead, false)}
               <span className="country-flag">{lead.flag}</span>
             </div>
           )}
@@ -1136,28 +1206,8 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
                   {lead.phone && (
                     <div className="contact-item" style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
                       <Phone size={12} className="contact-icon" />
-                      <span>{lead.phone?.replace(/^\+88/, '').replace(/\s+/g, '')}</span>
-                      {lead.phone_whatsapp || lead.phoneWhatsapp ? (
-                        <span className="wa-verified-badge-mini" title="WhatsApp Verified Leads" style={{ 
-                          color: '#25d366', 
-                          fontSize: '0.65rem', 
-                          background: 'rgba(37, 211, 102, 0.1)', 
-                          padding: '1px 4px', 
-                          borderRadius: '3px',
-                          fontWeight: '600',
-                          border: '1px solid rgba(37, 211, 102, 0.2)'
-                        }}>✓ WA Verified</span>
-                      ) : (
-                        <span className="wa-unverified-badge-mini" title="WhatsApp Unverified" style={{ 
-                          color: '#f87171', 
-                          fontSize: '0.65rem', 
-                          background: 'rgba(239, 68, 68, 0.08)', 
-                          padding: '1px 4px', 
-                          borderRadius: '3px',
-                          fontWeight: '600',
-                          border: '1px solid rgba(239, 68, 68, 0.15)'
-                        }}>WA Unverified</span>
-                      )}
+                      <span>{lead.phone?.replace(/^(\+?88)?0?/, '0').replace(/\s+/g, '')}</span>
+                      {renderWhatsAppBadge(lead, true)}
                     </div>
                   )}
                   {lead.email && (
@@ -1767,7 +1817,7 @@ const MyLeads = () => {
     const isAdmin = user.role === 'Admin' || user.role === 'MD' || user.role === 'System Admin' || user.account_type === 'super_admin';
 
     const fetchLeads = async () => {
-      let query = supabase.from('leads').select('*').neq('status', 'Released');
+      let query = supabase.from('leads').select('*, whatsapp_lead_status(whatsapp_status, check_error, last_checked_at)').neq('status', 'Released');
 
       // Tenant isolation filter
       if (user.account_type === 'super_admin') {
@@ -1824,6 +1874,9 @@ const MyLeads = () => {
     fetchLeads();
     const ch = supabase.channel('myleads-channel')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => {
+        fetchLeads();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'whatsapp_lead_status' }, () => {
         fetchLeads();
       })
       .subscribe();
@@ -2506,9 +2559,9 @@ const MyLeads = () => {
                 name:                  lead.name || '',
                 company:               lead.company || '',
                 designation:           lead.designation || '',
-                phone:                 lead.phone || '',
+                phone:                 normalizePhoneForDb(lead.phone || ''),
                 phone_whatsapp:        lead.phone_whatsapp || false,
-                second_phone:          lead.second_phone || '',
+                second_phone:          normalizePhoneForDb(lead.second_phone || ''),
                 second_phone_whatsapp: lead.second_phone_whatsapp || false,
                 email:                 lead.email || '',
                 location:              lead.location || '',

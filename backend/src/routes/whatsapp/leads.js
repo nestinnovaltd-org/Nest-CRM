@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { supabase }   from '../../utils/supabase.js'
 import { logger }     from '../../utils/logger.js'
 import { withOrg }    from '../../middleware/orgScope.js'
-import { checkQueue } from '../../workers/checkWorker.js'
+import { checkQueue, performWhatsAppCheck } from '../../workers/checkWorker.js'
 import { normalizePhone } from '../../services/whatsapp/phoneNormalizer.js'
 
 const router = Router()
@@ -66,21 +66,50 @@ router.post('/check', async (req, res) => {
 
     if (!leads?.length) return res.status(404).json({ error: 'No leads found' })
 
-    // Enqueue check jobs
-    const jobs = leads.map(lead => ({
-      name: `check-${lead.id}`,
-      data: {
-        leadId:    lead.id,
-        phone:     lead.phone,
-        orgId:     req.user.org_id,
-        sessionId: session_id
+    // Update status to CHECKING in the database immediately so the UI reflects it
+    for (const lead of leads) {
+      await supabase
+        .from('whatsapp_lead_status')
+        .upsert({
+          lead_id: lead.id,
+          org_id: req.user.org_id,
+          phone_number: lead.phone,
+          whatsapp_status: 'CHECKING',
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'lead_id' })
+    }
+
+    // Try to queue the checks via BullMQ
+    try {
+      const jobs = leads.map(lead => ({
+        name: `check-${lead.id}`,
+        data: {
+          leadId:    lead.id,
+          phone:     lead.phone,
+          orgId:     req.user.org_id,
+          sessionId: session_id
+        }
+      }))
+      await checkQueue.addBulk(jobs)
+      logger.info({ count: jobs.length, sessionId: session_id, event: 'check_jobs_queued' }, 'Check jobs queued in BullMQ')
+    } catch (redisErr) {
+      logger.warn({ err: redisErr.message }, 'Could not queue in BullMQ (Redis connection failed). Falling back to direct check execution.')
+    }
+
+    // Run direct background execution (fallback/immediate check mechanism)
+    (async () => {
+      for (const lead of leads) {
+        try {
+          await performWhatsAppCheck(lead.id, lead.phone, req.user.org_id, session_id);
+          // Wait 500ms between checks to avoid rate-limiting issues
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (err) {
+          logger.error({ err, leadId: lead.id }, 'Direct background check failed');
+        }
       }
-    }))
+    })();
 
-    await checkQueue.addBulk(jobs)
-
-    logger.info({ count: jobs.length, sessionId: session_id, event: 'check_jobs_queued' }, 'Check jobs queued')
-    res.json({ message: `${jobs.length} leads queued for checking`, count: jobs.length })
+    res.json({ message: `${leads.length} leads queued for checking`, count: leads.length })
   } catch (err) {
     logger.error({ err }, 'POST /leads/check error')
     res.status(500).json({ error: 'Failed to queue checks' })
