@@ -227,19 +227,40 @@ async function _getEligibleLeads(campaign, orgId) {
 
   let query = supabase
     .from('leads')
-    .select('id, name, phone, company, email, whatsapp_lead_status(normalized_phone, whatsapp_status, opted_out)')
+    .select('id, name, phone, company, email')
     .eq('org_id', orgId)
-    // Only send to verified WA numbers
-    .eq('whatsapp_lead_status.whatsapp_status', 'WHATSAPP_AVAILABLE')
-    .eq('whatsapp_lead_status.opted_out', false)
 
   if (filter.status)      query = query.eq('status', filter.status)
   if (filter.source)      query = query.eq('source', filter.source)
   if (filter.assigned_to) query = query.eq('assigned_to', filter.assigned_to)
   if (filter.company)     query = query.eq('company', filter.company)
 
-  const { data } = await query.limit(campaign.daily_limit || 200)
-  return (data || []).filter(l => l.whatsapp_lead_status?.whatsapp_status === 'WHATSAPP_AVAILABLE')
+  const { data: leads } = await query.limit(campaign.daily_limit || 200)
+  if (!leads || leads.length === 0) return []
+
+  // Fetch whatsapp statuses separately to filter out opted out leads
+  const leadIds = leads.map(l => l.id)
+  const { data: statuses } = await supabase
+    .from('whatsapp_lead_status')
+    .select('lead_id, opted_out')
+    .in('lead_id', leadIds)
+
+  const optedOutSet = new Set(
+    (statuses || [])
+      .filter(s => s.opted_out)
+      .map(s => s.lead_id)
+  )
+
+  // Map and return leads as WHATSAPP_AVAILABLE by default if not opted out
+  return leads
+    .filter(l => l.phone && !optedOutSet.has(l.id))
+    .map(l => ({
+      ...l,
+      whatsapp_lead_status: {
+        whatsapp_status: 'WHATSAPP_AVAILABLE',
+        opted_out: false
+      }
+    }))
 }
 
 export default router

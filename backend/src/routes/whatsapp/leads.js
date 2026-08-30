@@ -13,25 +13,56 @@ router.get('/', async (req, res) => {
     const { status, page = 1, limit = 50 } = req.query
     const offset = (Number(page) - 1) * Number(limit)
 
-    // Join leads with whatsapp_lead_status
+    // Fetch leads first to avoid PGRST200 join error
     let query = supabase
       .from('leads')
-      .select(`
-        id, name, phone, second_phone, email, company, status, assigned_to,
-        whatsapp_lead_status ( whatsapp_status, normalized_phone, whatsapp_link, last_checked_at, opted_out )
-      `, { count: 'exact' })
+      .select('id, name, phone, second_phone, email, company, status, assigned_to, created_at', { count: 'exact' })
       .eq('org_id', req.user.org_id)
       .order('created_at', { ascending: false })
       .range(offset, offset + Number(limit) - 1)
 
-    if (status) {
-      query = query.eq('whatsapp_lead_status.whatsapp_status', status)
-    }
-
-    const { data, count, error } = await query
+    const { data: leads, count, error } = await query
     if (error) throw error
 
-    res.json({ leads: data || [], total: count, page: Number(page), limit: Number(limit) })
+    // Fetch whatsapp lead status metadata for opt-outs
+    let statusMap = {}
+    if (leads && leads.length > 0) {
+      const leadIds = leads.map(l => l.id)
+      const { data: statuses } = await supabase
+        .from('whatsapp_lead_status')
+        .select('lead_id, whatsapp_status, check_error, last_checked_at, opted_out, whatsapp_link, normalized_phone')
+        .in('lead_id', leadIds)
+      
+      if (statuses) {
+        statuses.forEach(s => {
+          statusMap[s.lead_id] = s
+        })
+      }
+    }
+
+    // Merge status and enforce WHATSAPP_AVAILABLE by default if verification is off
+    const mergedLeads = (leads || []).map(lead => {
+      const existingStatus = statusMap[lead.id] || {}
+      return {
+        ...lead,
+        whatsapp_lead_status: {
+          whatsapp_status: existingStatus.opted_out ? 'WHATSAPP_NOT_AVAILABLE' : 'WHATSAPP_AVAILABLE',
+          normalized_phone: existingStatus.normalized_phone || lead.phone,
+          whatsapp_link: existingStatus.whatsapp_link || '',
+          last_checked_at: existingStatus.last_checked_at || new Date().toISOString(),
+          opted_out: existingStatus.opted_out || false,
+          check_error: existingStatus.check_error || null
+        }
+      }
+    })
+
+    // If status filter is passed (e.g. WHATSAPP_AVAILABLE), filter the list
+    let filteredLeads = mergedLeads
+    if (status) {
+      filteredLeads = mergedLeads.filter(l => l.whatsapp_lead_status.whatsapp_status === status)
+    }
+
+    res.json({ leads: filteredLeads, total: count, page: Number(page), limit: Number(limit) })
   } catch (err) {
     logger.error({ err }, 'GET /leads error')
     res.status(500).json({ error: 'Failed to fetch leads' })
