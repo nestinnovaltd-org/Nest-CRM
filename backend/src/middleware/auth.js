@@ -13,6 +13,7 @@ export async function requireAuth(req, res, next) {
     }
 
     const token = authHeader.replace('Bearer ', '').trim()
+    logger.info({ tokenLength: token.length, tokenStart: token.slice(0, 15), tokenEnd: token.slice(-15) }, 'Auth token received')
 
     // Verify token with Supabase
     const { data: { user }, error } = await supabase.auth.getUser(token)

@@ -14,3 +14,5 @@ export const supabase = createClient(
     auth: { autoRefreshToken: false, persistSession: false }
   }
 )
+
+console.log('Supabase client initialized with URL:', supabaseUrl, 'Key starts with:', supabaseKey ? supabaseKey.slice(0, 15) : 'null')

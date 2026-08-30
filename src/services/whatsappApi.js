@@ -14,7 +14,26 @@ const BASE = import.meta.env.VITE_WA_BACKEND_URL || 'http://localhost:3001'
  */
 async function apiFetch(path, options = {}) {
   // Get fresh session token from Supabase client
-  const { data: { session } } = await supabase.auth.getSession()
+  let { data: { session } } = await supabase.auth.getSession()
+
+  if (session) {
+    try {
+      // Decode JWT payload to check expiry
+      const payload = JSON.parse(atob(session.access_token.split('.')[1]))
+      const exp = payload.exp * 1000
+      if (Date.now() > exp - 60000) { // Expired or expiring in 60s
+        console.log('Session token expired or expiring soon, refreshing...')
+        const { data: { session: refreshedSession }, error } = await supabase.auth.refreshSession()
+        if (error) throw error
+        if (refreshedSession) {
+          session = refreshedSession
+        }
+      }
+    } catch (err) {
+      console.error('Error refreshing session in apiFetch:', err)
+    }
+  }
+
   const token = session?.access_token || ''
 
   const res = await fetch(`${BASE}${path}`, {

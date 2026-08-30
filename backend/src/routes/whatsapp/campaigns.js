@@ -230,6 +230,59 @@ async function _getEligibleLeads(campaign, orgId) {
     .select('id, name, phone, company, email')
     .eq('org_id', orgId)
 
+  // Fetch the creator's profile to scope campaign leads if they are not admin
+  if (campaign.user_id) {
+    const { data: creator } = await supabase
+      .from('users')
+      .select('id, role, account_type, full_name')
+      .eq('id', campaign.user_id)
+      .single()
+
+    if (creator) {
+      const isAdmin = creator.role === 'Admin' || creator.role === 'MD' || creator.role === 'System Admin' || creator.account_type === 'super_admin'
+      if (!isAdmin) {
+        // Fetch all users in the same org
+        const { data: allUsers } = await supabase
+          .from('users')
+          .select('id, full_name, name, reports_to')
+          .eq('org_id', orgId)
+        
+        // Fetch all teams
+        const { data: teams } = await supabase
+          .from('teams')
+          .select('*')
+
+        const currentUserName = creator.full_name || ''
+        const managedTeams = (teams || []).filter(t => {
+          const teamLeads = t.team_leads || t.teamLeads || (t.team_lead ? [t.team_lead] : [])
+          return teamLeads.includes(currentUserName)
+        })
+
+        const teamMemberNames = new Set()
+        managedTeams.forEach(t => {
+          if (t.members) t.members.forEach(m => teamMemberNames.add(m))
+        })
+
+        const teamMemberUids = (allUsers || [])
+          .filter(u => teamMemberNames.has(u.full_name || u.name))
+          .map(u => u.id)
+          .filter(Boolean)
+
+        const allowedUids = Array.from(new Set([
+          creator.id,
+          ...(allUsers || []).filter(u => u.reports_to === currentUserName).map(u => u.id).filter(Boolean),
+          ...teamMemberUids
+        ]))
+
+        if (allowedUids.length > 0) {
+          query = query.or(`assigned_to.in.(${allowedUids.join(',')}),owner_id.in.(${allowedUids.join(',')})`)
+        } else {
+          query = query.eq('assigned_to', creator.id)
+        }
+      }
+    }
+  }
+
   if (filter.status)      query = query.eq('status', filter.status)
   if (filter.source)      query = query.eq('source', filter.source)
   if (filter.assigned_to) query = query.eq('assigned_to', filter.assigned_to)

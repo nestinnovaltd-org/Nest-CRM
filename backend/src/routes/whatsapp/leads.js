@@ -18,6 +18,51 @@ router.get('/', async (req, res) => {
       .from('leads')
       .select('id, name, phone, second_phone, email, company, status, assigned_to, created_at', { count: 'exact' })
       .eq('org_id', req.user.org_id)
+
+    const isAdmin = req.user.role === 'Admin' || req.user.role === 'MD' || req.user.role === 'System Admin' || req.user.account_type === 'super_admin'
+
+    if (!isAdmin) {
+      // Fetch all users in the same org
+      const { data: allUsers } = await supabase
+        .from('users')
+        .select('id, full_name, name, reports_to')
+        .eq('org_id', req.user.org_id)
+      
+      // Fetch all teams
+      const { data: teams } = await supabase
+        .from('teams')
+        .select('*')
+
+      const currentUserName = req.user.full_name || ''
+      const managedTeams = (teams || []).filter(t => {
+        const teamLeads = t.team_leads || t.teamLeads || (t.team_lead ? [t.team_lead] : [])
+        return teamLeads.includes(currentUserName)
+      })
+
+      const teamMemberNames = new Set()
+      managedTeams.forEach(t => {
+        if (t.members) t.members.forEach(m => teamMemberNames.add(m))
+      })
+
+      const teamMemberUids = (allUsers || [])
+        .filter(u => teamMemberNames.has(u.full_name || u.name))
+        .map(u => u.id)
+        .filter(Boolean)
+
+      const allowedUids = Array.from(new Set([
+        req.user.id,
+        ...(allUsers || []).filter(u => u.reports_to === currentUserName).map(u => u.id).filter(Boolean),
+        ...teamMemberUids
+      ]))
+
+      if (allowedUids.length > 0) {
+        query = query.or(`assigned_to.in.(${allowedUids.join(',')}),owner_id.in.(${allowedUids.join(',')})`)
+      } else {
+        query = query.eq('assigned_to', req.user.id)
+      }
+    }
+
+    query = query
       .order('created_at', { ascending: false })
       .range(offset, offset + Number(limit) - 1)
 
