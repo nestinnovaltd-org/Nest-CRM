@@ -4,6 +4,7 @@ import { logger }     from '../../utils/logger.js'
 import { withOrg }    from '../../middleware/orgScope.js'
 import { checkQueue, performWhatsAppCheck } from '../../workers/checkWorker.js'
 import { normalizePhone } from '../../services/whatsapp/phoneNormalizer.js'
+import { sessionManager } from '../../services/whatsapp/sessionManager.js'
 
 const router = Router()
 
@@ -134,7 +135,10 @@ router.post('/check', async (req, res) => {
       .single()
 
     if (!session) return res.status(404).json({ error: 'Session not found' })
-    if (session.status !== 'CONNECTED') return res.status(400).json({ error: 'Session is not connected' })
+    const liveStatus = sessionManager.getStatus(session_id)
+    if (session.status !== 'CONNECTED' && liveStatus !== 'CONNECTED') {
+      return res.status(400).json({ error: 'Session is not connected' })
+    }
 
     // Fetch lead phones
     const { data: leads } = await supabase

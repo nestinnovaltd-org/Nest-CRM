@@ -4,6 +4,7 @@ import { logger }         from '../../utils/logger.js'
 import { withOrg, verifyOrgOwnership } from '../../middleware/orgScope.js'
 import { messageQueue }   from '../../workers/messageWorker.js'
 import { enforceSafetyFloors, resolveTemplate } from '../../utils/campaignSafety.js'
+import { sessionManager }  from '../../services/whatsapp/sessionManager.js'
 
 const router = Router()
 
@@ -71,7 +72,8 @@ router.post('/:id/start', async (req, res) => {
     if (!['DRAFT', 'PAUSED', 'SCHEDULED'].includes(campaign.status)) {
       return res.status(400).json({ error: `Cannot start campaign with status: ${campaign.status}` })
     }
-    if (campaign.whatsapp_sessions?.status !== 'CONNECTED') {
+    const liveStatus = sessionManager.getStatus(campaign.session_id)
+    if (campaign.whatsapp_sessions?.status !== 'CONNECTED' && liveStatus !== 'CONNECTED') {
       return res.status(400).json({ error: 'WhatsApp session is not connected' })
     }
     if (!campaign.consent_confirmed) {
@@ -147,7 +149,8 @@ router.post('/:id/resume', async (req, res) => {
       .select('session_id, whatsapp_sessions(status)')
       .eq('id', req.params.id).single()
 
-    if (campaign.whatsapp_sessions?.status !== 'CONNECTED') {
+    const liveStatus = sessionManager.getStatus(campaign.session_id)
+    if (campaign.whatsapp_sessions?.status !== 'CONNECTED' && liveStatus !== 'CONNECTED') {
       return res.status(400).json({ error: 'Cannot resume: session is not connected' })
     }
 

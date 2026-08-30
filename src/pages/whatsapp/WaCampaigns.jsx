@@ -33,7 +33,7 @@ function CreateModal({ onSave, onClose }) {
       waSessions.list().catch(() => ({ sessions: [] })),
       waTemplates.list().catch(() => ({ templates: [] }))
     ]).then(([s, t]) => {
-      setSessions((s.sessions || []).filter(ses => ses.status === 'CONNECTED'))
+      setSessions((s.sessions || []).filter(ses => ses.status === 'CONNECTED' || ses.live_status === 'CONNECTED'))
       setTemplates(t.templates || [])
     })
   }, [])
