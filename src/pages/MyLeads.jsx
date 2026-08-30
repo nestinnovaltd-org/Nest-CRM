@@ -708,7 +708,7 @@ const LEAD_STATUSES = [
   { id: 'Junk Lead', title: 'Junk Lead', color: '#78716c' },
 ];
 
-const LeadCard = ({ lead, index, onDragStart, onAddUpdate, onAssign, onStatusChange, onEditInterests, showAssignment, activeTab, className = '' }) => {
+const LeadCard = ({ lead, index, onDragStart, onAddUpdate, onAssign, onStatusChange, onEditInterests, onVerifyWhatsApp, showAssignment, activeTab, className = '' }) => {
   const [expandedHistory, setExpandedHistory] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const cleanPhone = lead.phone.replace(/[^\d+]/g, '');
@@ -950,6 +950,13 @@ const LeadCard = ({ lead, index, onDragStart, onAddUpdate, onAssign, onStatusCha
                   <Briefcase size={14} style={{ marginRight: '8px' }} />
                   Edit Interests
                 </button>
+                <button 
+                  className="dropdown-item"
+                  onClick={() => { onVerifyWhatsApp(lead); setIsDropdownOpen(false); }}
+                >
+                  <WhatsAppIcon size={14} style={{ marginRight: '8px' }} />
+                  Verify WhatsApp
+                </button>
               </div>
             )}
           </div>
@@ -1054,7 +1061,7 @@ const PortalDropdown = ({ children, triggerRef, onClose }) => {
   );
 };
 
-const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterests, showAssignment, activeTab }) => {
+const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterests, onVerifyWhatsApp, showAssignment, activeTab }) => {
   const [activeDropdown, setActiveDropdown] = useState(null);
   const triggerRefs = useRef({});
 
@@ -1262,6 +1269,14 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
                                <Briefcase size={14} style={{ marginRight: '8px' }} />
                                Edit Interests
                              </button>
+                             <button 
+                               className="dropdown-item"
+                               onClick={() => { onVerifyWhatsApp(lead); setActiveDropdown(null); }}
+                               style={{ color: 'var(--primary)', fontWeight: '600' }}
+                             >
+                               <WhatsAppIcon size={14} style={{ marginRight: '8px' }} />
+                               Verify WhatsApp
+                             </button>
                            </div>
                          </PortalDropdown>
                        )}
@@ -1277,7 +1292,7 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
   );
 };
 
-const GridView = ({ leads, onAddUpdate, onAssign, onStatusChange, onEditInterests, showAssignment, activeTab }) => {
+const GridView = ({ leads, onAddUpdate, onAssign, onStatusChange, onEditInterests, onVerifyWhatsApp, showAssignment, activeTab }) => {
   return (
     <div className="leads-grid-view">
       {leads.map((lead, index) => (
@@ -1302,6 +1317,7 @@ const GridView = ({ leads, onAddUpdate, onAssign, onStatusChange, onEditInterest
             onAssign={onAssign}
             onStatusChange={onStatusChange}
             onEditInterests={onEditInterests}
+            onVerifyWhatsApp={onVerifyWhatsApp}
             showAssignment={showAssignment}
             activeTab={activeTab}
           />
@@ -2093,6 +2109,53 @@ const MyLeads = () => {
     });
   };
 
+  const handleVerifyWhatsApp = async (lead) => {
+    try {
+      const sessionsRes = await waSessions.list();
+      const connectedSession = (sessionsRes.sessions || []).find(
+        s => s.status === 'CONNECTED' || s.live_status === 'CONNECTED'
+      );
+
+      if (!connectedSession) {
+        toast.error('No connected WhatsApp session found. Please connect a WhatsApp session first under WhatsApp > Sessions.');
+        return;
+      }
+
+      await waLeads.checkBulk([lead.id], connectedSession.id);
+      toast.success(`Verification queued for ${lead.name} in background...`);
+    } catch (err) {
+      console.error('Error verifying WhatsApp:', err);
+      toast.error('Failed to initiate WhatsApp verification.');
+    }
+  };
+
+  const handleBulkVerifyWhatsApp = async () => {
+    try {
+      const unverifiedLeads = filteredLeads.filter(l => l.phone && !(l.phoneWhatsapp || l.phone_whatsapp));
+      if (unverifiedLeads.length === 0) {
+        toast.error('No unverified leads found on this tab.');
+        return;
+      }
+
+      const sessionsRes = await waSessions.list();
+      const connectedSession = (sessionsRes.sessions || []).find(
+        s => s.status === 'CONNECTED' || s.live_status === 'CONNECTED'
+      );
+
+      if (!connectedSession) {
+        toast.error('No connected WhatsApp session found. Please connect a WhatsApp session first under WhatsApp > Sessions.');
+        return;
+      }
+
+      const leadIds = unverifiedLeads.map(l => l.id);
+      await waLeads.checkBulk(leadIds, connectedSession.id);
+      toast.success(`Queued WhatsApp verification for ${unverifiedLeads.length} leads in background...`);
+    } catch (err) {
+      console.error('Error in bulk WhatsApp verification:', err);
+      toast.error('Failed to initiate bulk WhatsApp verification.');
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="leads-page-container">
@@ -2103,6 +2166,14 @@ const MyLeads = () => {
             <div className="header-actions">
               <Button variant="secondary" icon={Download} onClick={handleExport}>Export</Button>
               <Button variant="secondary" icon={Upload} onClick={() => setIsBulkUploadModalOpen(true)}>Bulk Upload</Button>
+              <Button 
+                variant="secondary" 
+                icon={WhatsAppIcon} 
+                onClick={handleBulkVerifyWhatsApp}
+                title="Verify WhatsApp for all unverified leads on this page"
+              >
+                Verify WhatsApp Status
+              </Button>
               {hasPermission('Lead Management', 'create') && (
                 <Link to="/leads/add">
                   <Button variant="primary" icon={Plus}>Add New Lead</Button>
@@ -2267,6 +2338,7 @@ const MyLeads = () => {
               onStatusChange={handleStatusChangeFromTable}
               onAssign={(lead) => setAssignModal({ isOpen: true, lead })}
               onEditInterests={(lead) => setInterestsModal({ isOpen: true, lead })}
+              onVerifyWhatsApp={handleVerifyWhatsApp}
               showAssignment={activeTab === 'team'}
               activeTab={activeTab}
             />
@@ -2277,6 +2349,7 @@ const MyLeads = () => {
               onAssign={(lead) => setAssignModal({ isOpen: true, lead })}
               onStatusChange={(lead, newStatus) => setUpdateModal({ isOpen: true, lead, newStatus })}
               onEditInterests={(lead) => setInterestsModal({ isOpen: true, lead })}
+              onVerifyWhatsApp={handleVerifyWhatsApp}
               showAssignment={activeTab === 'team'}
               activeTab={activeTab}
             />
