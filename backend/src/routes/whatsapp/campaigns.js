@@ -427,6 +427,26 @@ async function _processCampaignDirectly(campaignId, sessionId, orgId) {
   try {
     logger.info({ campaignId, sessionId, event: 'direct_campaign_processing_started' }, 'Direct campaign processing loop started')
 
+    // Fetch template details (media_url, media_type) for this campaign once
+    let mediaUrl = null, mediaType = null
+    const { data: campMeta } = await supabase
+      .from('whatsapp_campaigns')
+      .select('template_id')
+      .eq('id', campaignId)
+      .single()
+
+    if (campMeta?.template_id) {
+      const { data: tmpl } = await supabase
+        .from('whatsapp_templates')
+        .select('media_url, media_type')
+        .eq('id', campMeta.template_id)
+        .single()
+      mediaUrl  = tmpl?.media_url  || null
+      mediaType = tmpl?.media_type || null
+    }
+
+    logger.info({ campaignId, mediaUrl, mediaType }, 'Direct loop retrieved template media info')
+
     while (true) {
       // 1. Check campaign status
       const { data: campaign } = await supabase
@@ -477,10 +497,10 @@ async function _processCampaignDirectly(campaignId, sessionId, orgId) {
 
       // 4. Send message (with media if template has attachment)
       try {
-        const tmpl = campaign.whatsapp_templates
-        const providerId = (tmpl?.media_url)
-          ? await sessionManager.sendMediaMessage(sessionId, recipient.phone_number, recipient.message_body, tmpl.media_url, tmpl.media_type)
+        const providerId = mediaUrl
+          ? await sessionManager.sendMediaMessage(sessionId, recipient.phone_number, recipient.message_body, mediaUrl, mediaType)
           : await sessionManager.sendMessage(sessionId, recipient.phone_number, recipient.message_body)
+
 
         const now = new Date().toISOString()
 
