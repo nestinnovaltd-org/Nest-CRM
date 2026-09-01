@@ -171,22 +171,30 @@ export const sessionManager = {
     const jid = `${phone.replace('+', '')}@s.whatsapp.net`
     const mt  = (mediaType || 'image').toLowerCase()
 
+    // Download media buffer first to ensure URL is valid and accessible
+    const fetchRes = await fetch(mediaUrl)
+    if (!fetchRes.ok) {
+      throw new Error(`Media download failed (HTTP ${fetchRes.status}): ${mediaUrl}`)
+    }
+    const buffer = Buffer.from(await fetchRes.arrayBuffer())
+
     let msg
     if (mt === 'image') {
-      msg = { image: { url: mediaUrl }, caption: body || '' }
+      msg = { image: buffer, caption: body || '' }
     } else if (mt === 'video') {
-      msg = { video: { url: mediaUrl }, caption: body || '' }
+      msg = { video: buffer, caption: body || '' }
     } else if (mt === 'audio') {
-      msg = { audio: { url: mediaUrl }, mimetype: 'audio/mpeg', ptt: false }
+      msg = { audio: buffer, mimetype: 'audio/mpeg', ptt: false }
     } else {
       // document
       const fileName = decodeURIComponent(mediaUrl.split('/').pop().split('?')[0]) || 'attachment'
-      msg = { document: { url: mediaUrl }, mimetype: 'application/octet-stream', fileName, caption: body || '' }
+      msg = { document: buffer, mimetype: 'application/octet-stream', fileName, caption: body || '' }
     }
 
     const result = await s.socket.sendMessage(jid, msg)
     return result?.key?.id
   },
+
 
   /** Check if a phone number has WhatsApp via Baileys onWhatsApp. */
   async checkNumber(sessionId, phone) {

@@ -20,6 +20,9 @@ import aiRouter            from './routes/whatsapp/ai.js'
 const app  = express()
 const PORT = process.env.PORT || 3001
 
+// Trust reverse proxy (CloudPanel / Nginx) for rate limiter and IP forwarding
+app.set('trust proxy', 1)
+
 // ─── CORS ────────────────────────────────────────────────────────────────────
 const allowedOrigins = (process.env.ALLOWED_ORIGIN || '').split(',').map(o => o.trim()).filter(Boolean)
 
