@@ -62,14 +62,23 @@ router.post('/:id/start', async (req, res) => {
     const owned = await verifyOrgOwnership('whatsapp_campaigns', req.params.id, req.user.org_id)
     if (!owned) return res.status(404).json({ error: 'Campaign not found' })
 
-    const { data: campaign } = await supabase
+    const { data: campaign, error: fetchErr } = await supabase
       .from('whatsapp_campaigns')
       .select('*, whatsapp_templates(body, variables), whatsapp_sessions(status)')
       .eq('id', req.params.id).single()
 
+    if (fetchErr || !campaign) {
+      return res.status(404).json({ error: 'Campaign not found' })
+    }
+
     if (!['DRAFT', 'PAUSED', 'SCHEDULED'].includes(campaign.status)) {
       return res.status(400).json({ error: `Cannot start campaign with status: ${campaign.status}` })
     }
+
+    if (!campaign.template_id || !campaign.whatsapp_templates?.body) {
+      return res.status(400).json({ error: 'Campaign template is missing or invalid' })
+    }
+
     const liveStatus = sessionManager.getStatus(campaign.session_id)
     const dbStatus   = campaign.whatsapp_sessions?.status
     const isConnected = liveStatus === 'CONNECTED' || dbStatus === 'CONNECTED'
@@ -82,7 +91,9 @@ router.post('/:id/start', async (req, res) => {
 
     // Fetch eligible leads based on lead_filter
     const leads = await _getEligibleLeads(campaign, req.user.org_id)
-    if (!leads.length) return res.status(400).json({ error: 'No eligible leads found for this campaign' })
+    if (!leads || !leads.length) {
+      return res.status(400).json({ error: 'No eligible leads found for this campaign' })
+    }
 
     // Upsert recipients (ON CONFLICT DO NOTHING for duplicates)
     const recipients = leads.map(lead => ({
@@ -124,7 +135,7 @@ router.post('/:id/start', async (req, res) => {
     res.json({ message: 'Campaign started', recipients: leads.length })
   } catch (err) {
     logger.error({ err }, 'POST /campaigns/:id/start error')
-    res.status(500).json({ error: 'Failed to start campaign' })
+    res.status(500).json({ error: err.message || 'Failed to start campaign' })
   }
 })
 
@@ -243,6 +254,32 @@ router.get('/:id', async (req, res) => {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 async function _getEligibleLeads(campaign, orgId) {
   const filter = campaign.lead_filter || {}
+
+  // If specific lead_ids are passed (from lead selection), fetch them directly
+  if (filter.lead_ids && Array.isArray(filter.lead_ids) && filter.lead_ids.length > 0) {
+    const { data: explicitLeads } = await supabase
+      .from('leads')
+      .select('id, name, phone, company, email')
+      .eq('org_id', orgId)
+      .in('id', filter.lead_ids)
+
+    if (!explicitLeads || explicitLeads.length === 0) return []
+
+    // Fetch opt-out statuses
+    const { data: statuses } = await supabase
+      .from('whatsapp_lead_status')
+      .select('lead_id, opted_out')
+      .in('lead_id', filter.lead_ids)
+
+    const optedOutSet = new Set((statuses || []).filter(s => s.opted_out).map(s => s.lead_id))
+
+    return explicitLeads
+      .filter(l => l.phone && !optedOutSet.has(l.id))
+      .map(l => ({
+        ...l,
+        whatsapp_lead_status: { whatsapp_status: 'WHATSAPP_AVAILABLE', opted_out: false }
+      }))
+  }
 
   let query = supabase
     .from('leads')
