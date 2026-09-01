@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { Users, Search, RefreshCw, CheckCircle, XCircle, Clock } from 'lucide-react'
-import { waLeads, waSessions } from '../../services/whatsappApi'
-import DashboardLayout from '../../layouts/DashboardLayout'
+import { useNavigate } from 'react-router-dom'
+import { Users, Search, RefreshCw, CheckCircle, XCircle, Send } from 'lucide-react'
+import { waLeads, waSessions, waCampaigns } from '../../services/whatsappApi'
+import { CreateModal } from './WaCampaigns'
+import WaLayout from './WaLayout'
 import './whatsapp.css'
 
 const STATUS_CONFIG = {
@@ -19,6 +21,7 @@ function WaStatusBadge({ status }) {
 }
 
 export default function WaLeads() {
+  const navigate = useNavigate()
   const [leads, setLeads]       = useState([])
   const [sessions, setSessions] = useState([])
   const [total, setTotal]       = useState(0)
@@ -28,6 +31,7 @@ export default function WaLeads() {
   const [selected, setSelected]   = useState(new Set())
   const [checking, setChecking]   = useState(false)
   const [loading, setLoading]     = useState(true)
+  const [showCreateCampaign, setShowCreateCampaign] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -76,104 +80,129 @@ export default function WaLeads() {
     }
   }
 
+  const handleCreateCampaign = async (form) => {
+    const res = await waCampaigns.create(form)
+    setShowCreateCampaign(false)
+    const count = selected.size
+    setSelected(new Set())
+    alert(`Campaign "${form.name}" created successfully targeting ${count} selected leads!`)
+    navigate('/whatsapp/campaigns')
+  }
+
   const stats = {
     available:    leads.filter(l => l.whatsapp_lead_status?.whatsapp_status === 'WHATSAPP_AVAILABLE').length,
     notAvailable: leads.filter(l => l.whatsapp_lead_status?.whatsapp_status === 'WHATSAPP_NOT_AVAILABLE').length,
     unchecked:    leads.filter(l => !l.whatsapp_lead_status?.whatsapp_status).length,
   }
 
-  return (
-    <DashboardLayout>
-      <div className="wa-page">
-      <div className="wa-page-header">
-        <h1 className="wa-page-title"><Users size={24} className="wa-icon" /> WhatsApp Leads</h1>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <select className="wa-form-select" style={{ width: 'auto', padding: '8px 12px' }} value={sessionId} onChange={e => setSessionId(e.target.value)}>
-            <option value="">Select session to check…</option>
-            {sessions.map(s => <option key={s.id} value={s.id}>{s.session_name} — {s.phone_number}</option>)}
-          </select>
-          <button className="wa-btn wa-btn-primary" disabled={checking || selected.size === 0 || !sessionId} onClick={handleCheckBulk}>
-            {checking ? <span className="wa-spinner" /> : <CheckCircle size={16} />}
-            Check WA Status ({selected.size})
-          </button>
-          <button className="wa-btn wa-btn-secondary" onClick={load}><RefreshCw size={16} /></button>
-        </div>
-      </div>
-
-      {/* Quick stats */}
-      <div className="wa-stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-        <div className="wa-stat-card"><div className="wa-stat-label">WA Available</div><div className="wa-stat-value" style={{ color: '#25d366' }}>{stats.available}</div></div>
-        <div className="wa-stat-card"><div className="wa-stat-label">Not Available</div><div className="wa-stat-value" style={{ color: '#9ca3af' }}>{stats.notAvailable}</div></div>
-        <div className="wa-stat-card"><div className="wa-stat-label">Not Checked</div><div className="wa-stat-value" style={{ color: '#fbbf24' }}>{stats.unchecked}</div></div>
-      </div>
-
-      <div className="wa-card">
-        {/* Search + select all */}
-        <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-          <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
-            <Search size={16} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#6b7280' }} />
-            <input className="wa-form-input" style={{ paddingLeft: 32 }} placeholder="Search by name, phone, company…" value={search} onChange={e => setSearch(e.target.value)} />
-          </div>
-          <button className="wa-btn wa-btn-secondary" style={{ fontSize: '0.8rem' }} onClick={selectAll}>
-            {selected.size === filtered.length && filtered.length > 0 ? 'Deselect All' : `Select All (${filtered.length})`}
-          </button>
-        </div>
-
-        {loading ? (
-          <div className="wa-empty"><div className="wa-spinner" /><p>Loading leads…</p></div>
-        ) : filtered.length === 0 ? (
-          <div className="wa-empty"><div className="wa-empty-icon">👥</div><p>No leads found</p></div>
-        ) : (
-          <div className="wa-table-wrap">
-            <table className="wa-table">
-              <thead>
-                <tr>
-                  <th><input type="checkbox" checked={selected.size === filtered.length && filtered.length > 0} onChange={selectAll} /></th>
-                  <th>Name</th>
-                  <th>Phone</th>
-                  <th>Company</th>
-                  <th>WA Status</th>
-                  <th>Last Checked</th>
-                  <th>Opted Out</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(l => {
-                  const ws = l.whatsapp_lead_status
-                  return (
-                    <tr key={l.id}>
-                      <td><input type="checkbox" checked={selected.has(l.id)} onChange={() => toggleSelect(l.id)} /></td>
-                      <td style={{ fontWeight: 500 }}>{l.name || '—'}</td>
-                      <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{l.phone}</td>
-                      <td>{l.company || '—'}</td>
-                      <td><WaStatusBadge status={ws?.whatsapp_status || 'NOT_CHECKED'} /></td>
-                      <td style={{ fontSize: '0.75rem', color: '#6b7280' }}>
-                        {ws?.last_checked_at ? new Date(ws.last_checked_at).toLocaleString() : '—'}
-                      </td>
-                      <td>
-                        {ws?.opted_out
-                          ? <span className="wa-badge wa-badge-red"><XCircle size={12} /> Opted Out</span>
-                          : <span style={{ color: '#6b7280', fontSize: '0.78rem' }}>—</span>}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Pagination */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, fontSize: '0.82rem', color: '#6b7280' }}>
-          <span>Showing {filtered.length} of {total} leads</span>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="wa-btn wa-btn-secondary" style={{ padding: '4px 10px', fontSize: '0.8rem' }} disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
-            <span style={{ padding: '4px 8px', color: 'var(--text-primary, #f3f4f6)' }}>Page {page}</span>
-            <button className="wa-btn wa-btn-secondary" style={{ padding: '4px 10px', fontSize: '0.8rem' }} disabled={filtered.length < 50} onClick={() => setPage(p => p + 1)}>Next →</button>
-          </div>
-        </div>
-      </div>
+  const headerActions = (
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+      {selected.size > 0 && (
+        <button 
+          className="wa-btn wa-btn-primary" 
+          onClick={() => setShowCreateCampaign(true)}
+          style={{ background: '#25d366', color: '#fff', fontWeight: 600 }}
+        >
+          <Send size={16} /> Create Campaign ({selected.size})
+        </button>
+      )}
+      <select className="wa-form-select" style={{ width: 'auto', padding: '8px 12px' }} value={sessionId} onChange={e => setSessionId(e.target.value)}>
+        <option value="">Select session to check…</option>
+        {sessions.map(s => <option key={s.id} value={s.id}>{s.session_name} — {s.phone_number}</option>)}
+      </select>
+      <button className="wa-btn wa-btn-primary" disabled={checking || selected.size === 0 || !sessionId} onClick={handleCheckBulk}>
+        {checking ? <span className="wa-spinner" /> : <CheckCircle size={16} />}
+        Check WA Status ({selected.size})
+      </button>
+      <button className="wa-btn wa-btn-secondary" onClick={load}><RefreshCw size={16} /></button>
     </div>
-    </DashboardLayout>
+  )
+
+  return (
+    <WaLayout title="Leads" headerActions={headerActions}>
+      <div className="wa-page">
+        {/* Quick stats */}
+        <div className="wa-stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+          <div className="wa-stat-card"><div className="wa-stat-label">WA Available</div><div className="wa-stat-value" style={{ color: '#25d366' }}>{stats.available}</div></div>
+          <div className="wa-stat-card"><div className="wa-stat-label">Not Available</div><div className="wa-stat-value" style={{ color: '#9ca3af' }}>{stats.notAvailable}</div></div>
+          <div className="wa-stat-card"><div className="wa-stat-label">Not Checked</div><div className="wa-stat-value" style={{ color: '#fbbf24' }}>{stats.unchecked}</div></div>
+        </div>
+
+        <div className="wa-card">
+          {/* Search + select all */}
+          <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
+              <Search size={16} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#6b7280' }} />
+              <input className="wa-form-input" style={{ paddingLeft: 32 }} placeholder="Search by name, phone, company…" value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+            <button className="wa-btn wa-btn-secondary" style={{ fontSize: '0.8rem' }} onClick={selectAll}>
+              {selected.size === filtered.length && filtered.length > 0 ? 'Deselect All' : `Select All (${filtered.length})`}
+            </button>
+          </div>
+
+          {loading ? (
+            <div className="wa-empty"><div className="wa-spinner" /><p>Loading leads…</p></div>
+          ) : filtered.length === 0 ? (
+            <div className="wa-empty"><div className="wa-empty-icon">👥</div><p>No leads found</p></div>
+          ) : (
+            <div className="wa-table-wrap">
+              <table className="wa-table">
+                <thead>
+                  <tr>
+                    <th><input type="checkbox" checked={selected.size === filtered.length && filtered.length > 0} onChange={selectAll} /></th>
+                    <th>Name</th>
+                    <th>Phone</th>
+                    <th>Company</th>
+                    <th>WA Status</th>
+                    <th>Last Checked</th>
+                    <th>Opted Out</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(l => {
+                    const ws = l.whatsapp_lead_status
+                    return (
+                      <tr key={l.id}>
+                        <td><input type="checkbox" checked={selected.has(l.id)} onChange={() => toggleSelect(l.id)} /></td>
+                        <td style={{ fontWeight: 500 }}>{l.name || '—'}</td>
+                        <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{l.phone}</td>
+                        <td>{l.company || '—'}</td>
+                        <td><WaStatusBadge status={ws?.whatsapp_status || 'NOT_CHECKED'} /></td>
+                        <td style={{ fontSize: '0.75rem', color: '#6b7280' }}>
+                          {ws?.last_checked_at ? new Date(ws.last_checked_at).toLocaleString() : '—'}
+                        </td>
+                        <td>
+                          {ws?.opted_out
+                            ? <span className="wa-badge wa-badge-red"><XCircle size={12} /> Opted Out</span>
+                            : <span style={{ color: '#6b7280', fontSize: '0.78rem' }}>—</span>}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Pagination */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, fontSize: '0.82rem', color: '#6b7280' }}>
+            <span>Showing {filtered.length} of {total} leads</span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="wa-btn wa-btn-secondary" style={{ padding: '4px 10px', fontSize: '0.8rem' }} disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
+              <span style={{ padding: '4px 8px', color: 'var(--text-primary, #f3f4f6)' }}>Page {page}</span>
+              <button className="wa-btn wa-btn-secondary" style={{ padding: '4px 10px', fontSize: '0.8rem' }} disabled={filtered.length < 50} onClick={() => setPage(p => p + 1)}>Next →</button>
+            </div>
+          </div>
+        </div>
+
+        {showCreateCampaign && (
+          <CreateModal 
+            preSelectedLeadIds={[...selected]} 
+            onSave={handleCreateCampaign} 
+            onClose={() => setShowCreateCampaign(false)} 
+          />
+        )}
+      </div>
+    </WaLayout>
   )
 }

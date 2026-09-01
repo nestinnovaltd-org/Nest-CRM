@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { MessageSquare, Smartphone, Users, Send, MessageCircle, Zap, TrendingUp } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { waHealth, waSessions, waCampaigns } from '../../services/whatsappApi'
-import DashboardLayout from '../../layouts/DashboardLayout'
+import WaLayout from './WaLayout'
 import './whatsapp.css'
 
 function StatCard({ icon: Icon, label, value, sub, color = '#25d366' }) {
@@ -41,33 +41,33 @@ export default function WaDashboard() {
   const totalSent    = campaigns.reduce((acc, c) => acc + (c.sent_count || 0), 0)
   const totalFailed  = campaigns.reduce((acc, c) => acc + (c.failed_count || 0), 0)
 
+  const headerActions = (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      {health && (
+        <span style={{ fontSize: '0.8rem', color: health.status === 'ok' ? '#25d366' : '#ef4444', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span className={`wa-dot wa-dot-${health.status === 'ok' ? 'green' : 'red'}`} />
+          Backend {health.status === 'ok' ? 'Online' : 'Degraded'}
+        </span>
+      )}
+      <Link to="/whatsapp/sessions" className="wa-btn wa-btn-primary" style={{ textDecoration: 'none' }}>
+        <Smartphone size={16} /> Manage Sessions
+      </Link>
+    </div>
+  )
+
   if (loading) return (
-    <DashboardLayout>
+    <WaLayout title="Dashboard">
       <div className="wa-page">
-        <div className="wa-page-header">
-          <h1 className="wa-page-title"><MessageSquare size={24} className="wa-icon" /> WhatsApp Dashboard</h1>
-        </div>
         <div className="wa-empty"><div className="wa-spinner" /><p>Loading dashboard...</p></div>
       </div>
-    </DashboardLayout>
+    </WaLayout>
   )
 
   return (
-    <DashboardLayout>
+    <WaLayout title="Dashboard" headerActions={headerActions}>
       <div className="wa-page">
         <div className="wa-page-header">
-          <h1 className="wa-page-title"><MessageSquare size={24} className="wa-icon" /> WhatsApp Dashboard</h1>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {health && (
-              <span style={{ fontSize: '0.8rem', color: health.status === 'ok' ? '#25d366' : '#ef4444', display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span className={`wa-dot wa-dot-${health.status === 'ok' ? 'green' : 'red'}`} />
-                Backend {health.status === 'ok' ? 'Online' : 'Degraded'}
-              </span>
-            )}
-            <Link to="/whatsapp/sessions" className="wa-btn wa-btn-primary" style={{ textDecoration: 'none' }}>
-              <Smartphone size={16} /> Manage Sessions
-            </Link>
-          </div>
+          <h2 className="wa-page-title"><MessageSquare size={22} className="wa-icon" /> Overview</h2>
         </div>
 
         {error && (
@@ -164,7 +164,7 @@ export default function WaDashboard() {
           )}
         </div>
       </div>
-    </DashboardLayout>
+    </WaLayout>
   )
 }
 

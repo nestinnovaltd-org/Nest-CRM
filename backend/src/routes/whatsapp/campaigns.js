@@ -106,14 +106,21 @@ router.post('/:id/start', async (req, res) => {
       total_recipients: leads.length, updated_at: new Date().toISOString()
     }).eq('id', campaign.id)
 
-    // Enqueue all recipient jobs
-    const jobs = (inserted || []).map(r => ({
-      name: `msg-${r.id}`,
-      data: { recipientId: r.id, campaignId: campaign.id, sessionId: campaign.session_id, orgId: req.user.org_id }
-    }))
-    if (jobs.length) await messageQueue.addBulk(jobs)
+    // Enqueue all recipient jobs in BullMQ (if available)
+    try {
+      const jobs = (inserted || []).map(r => ({
+        name: `msg-${r.id}`,
+        data: { recipientId: r.id, campaignId: campaign.id, sessionId: campaign.session_id, orgId: req.user.org_id }
+      }))
+      if (jobs.length) await messageQueue.addBulk(jobs)
+    } catch (mqErr) {
+      logger.warn({ err: mqErr.message }, 'Could not queue in BullMQ — using direct background processor')
+    }
 
-    logger.info({ campaignId: campaign.id, jobCount: jobs.length, event: 'campaign_started' }, 'Campaign started')
+    // Launch direct background processor (same process holds the active Baileys session)
+    _processCampaignDirectly(campaign.id, campaign.session_id, req.user.org_id)
+
+    logger.info({ campaignId: campaign.id, recipientsCount: leads.length, event: 'campaign_started' }, 'Campaign started')
     res.json({ message: 'Campaign started', recipients: leads.length })
   } catch (err) {
     logger.error({ err }, 'POST /campaigns/:id/start error')
@@ -165,14 +172,21 @@ router.post('/:id/resume', async (req, res) => {
 
     await supabase.from('whatsapp_campaigns').update({ status: 'RUNNING', pause_reason: null }).eq('id', req.params.id)
 
-    const jobs = (queued || []).map(r => ({
-      name: `msg-${r.id}`,
-      data: { recipientId: r.id, campaignId: req.params.id, sessionId: campaign.session_id, orgId: req.user.org_id }
-    }))
-    if (jobs.length) await messageQueue.addBulk(jobs)
+    try {
+      const jobs = (queued || []).map(r => ({
+        name: `msg-${r.id}`,
+        data: { recipientId: r.id, campaignId: req.params.id, sessionId: campaign.session_id, orgId: req.user.org_id }
+      }))
+      if (jobs.length) await messageQueue.addBulk(jobs)
+    } catch (mqErr) {
+      logger.warn({ err: mqErr.message }, 'Could not queue in BullMQ on resume')
+    }
 
-    logger.info({ campaignId: req.params.id, event: 'campaign_resumed', count: jobs.length }, 'Campaign resumed')
-    res.json({ message: 'Campaign resumed', requeued: jobs.length })
+    // Launch direct background processor
+    _processCampaignDirectly(req.params.id, campaign.session_id, req.user.org_id)
+
+    logger.info({ campaignId: req.params.id, event: 'campaign_resumed', count: queued?.length || 0 }, 'Campaign resumed')
+    res.json({ message: 'Campaign resumed', requeued: queued?.length || 0 })
   } catch (err) {
     res.status(500).json({ error: 'Failed to resume campaign' })
   }
@@ -328,4 +342,150 @@ async function _getEligibleLeads(campaign, orgId) {
     }))
 }
 
+// ─── Direct Background Sender Loop ──────────────────────────────────────────
+async function _processCampaignDirectly(campaignId, sessionId, orgId) {
+  try {
+    logger.info({ campaignId, sessionId, event: 'direct_campaign_processing_started' }, 'Direct campaign processing loop started')
+
+    while (true) {
+      // 1. Check campaign status
+      const { data: campaign } = await supabase
+        .from('whatsapp_campaigns')
+        .select('status, min_delay_seconds, max_delay_seconds, daily_limit')
+        .eq('id', campaignId)
+        .single()
+
+      if (!campaign || campaign.status !== 'RUNNING') {
+        logger.info({ campaignId, status: campaign?.status }, 'Campaign no longer RUNNING — stopping direct processing loop')
+        break
+      }
+
+      // 2. Fetch next QUEUED recipient
+      const { data: recipient } = await supabase
+        .from('whatsapp_campaign_recipients')
+        .select('*')
+        .eq('campaign_id', campaignId)
+        .eq('status', 'QUEUED')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+
+      if (!recipient) {
+        // Check if any recipient is in PROCESSING state
+        const { count: remainingProcessing } = await supabase
+          .from('whatsapp_campaign_recipients')
+          .select('id', { count: 'exact', head: true })
+          .eq('campaign_id', campaignId)
+          .eq('status', 'PROCESSING')
+
+        if (!remainingProcessing || remainingProcessing === 0) {
+          logger.info({ campaignId }, 'All recipients processed — marking campaign COMPLETED')
+          await supabase.from('whatsapp_campaigns').update({
+            status: 'COMPLETED',
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }).eq('id', campaignId)
+        }
+        break
+      }
+
+      // 3. Mark recipient PROCESSING
+      await supabase
+        .from('whatsapp_campaign_recipients')
+        .update({ status: 'PROCESSING', updated_at: new Date().toISOString() })
+        .eq('id', recipient.id)
+
+      // 4. Send message
+      try {
+        const providerId = await sessionManager.sendMessage(
+          sessionId,
+          recipient.phone_number,
+          recipient.message_body
+        )
+
+        const now = new Date().toISOString()
+
+        // 5. Update recipient -> SENT
+        await supabase
+          .from('whatsapp_campaign_recipients')
+          .update({
+            status: 'SENT',
+            provider_message_id: providerId || null,
+            sent_at: now,
+            updated_at: now
+          })
+          .eq('id', recipient.id)
+
+        // 6. Insert message record
+        await supabase.from('whatsapp_messages').insert({
+          org_id: orgId,
+          lead_id: recipient.lead_id,
+          session_id: sessionId,
+          campaign_id: campaignId,
+          direction: 'OUTBOUND',
+          message_source: 'CAMPAIGN',
+          message_body: recipient.message_body,
+          status: 'SENT',
+          provider_message_id: providerId || null,
+          sent_at: now,
+          created_at: now
+        })
+
+        // 7. Increment sent_count
+        const { data: currentCampaign } = await supabase
+          .from('whatsapp_campaigns')
+          .select('sent_count')
+          .eq('id', campaignId)
+          .single()
+
+        await supabase
+          .from('whatsapp_campaigns')
+          .update({
+            sent_count: (currentCampaign?.sent_count || 0) + 1,
+            updated_at: now
+          })
+          .eq('id', campaignId)
+
+        logger.info({ campaignId, recipientId: recipient.id, providerId, event: 'direct_msg_sent' }, 'Message sent via direct loop')
+      } catch (sendErr) {
+        logger.error({ campaignId, recipientId: recipient.id, err: sendErr.message }, 'Direct send failed')
+        const now = new Date().toISOString()
+
+        await supabase
+          .from('whatsapp_campaign_recipients')
+          .update({
+            status: 'FAILED',
+            error_message: sendErr.message.slice(0, 500),
+            updated_at: now
+          })
+          .eq('id', recipient.id)
+
+        const { data: currentCampaign } = await supabase
+          .from('whatsapp_campaigns')
+          .select('failed_count')
+          .eq('id', campaignId)
+          .single()
+
+        await supabase
+          .from('whatsapp_campaigns')
+          .update({
+            failed_count: (currentCampaign?.failed_count || 0) + 1,
+            updated_at: now
+          })
+          .eq('id', campaignId)
+      }
+
+      // 8. Apply safety delay between messages
+      const minDelay = Math.max(Number(campaign.min_delay_seconds) || 5, 2)
+      const maxDelay = Math.max(Number(campaign.max_delay_seconds) || 15, minDelay + 2)
+      const randomMs = Math.floor(Math.random() * (maxDelay - minDelay + 1) + minDelay) * 1000
+
+      await new Promise(resolve => setTimeout(resolve, randomMs))
+    }
+  } catch (loopErr) {
+    logger.error({ campaignId, err: loopErr.message }, 'Fatal error in direct campaign processing loop')
+  }
+}
+
 export default router
+

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { Send, Plus, Play, Pause, StopCircle, X, RefreshCw, CheckCircle } from 'lucide-react'
 import { waCampaigns, waSessions, waTemplates } from '../../services/whatsappApi'
-import DashboardLayout from '../../layouts/DashboardLayout'
+import WaLayout from './WaLayout'
 import './whatsapp.css'
 
 const STATUS_CFG = {
@@ -18,13 +18,14 @@ function CampaignBadge({ status }) {
   return <span className={`wa-badge wa-badge-${cfg.cls}`}>{cfg.label}</span>
 }
 
-function CreateModal({ onSave, onClose }) {
+export function CreateModal({ onSave, onClose, preSelectedLeadIds = [] }) {
   const [sessions, setSessions]   = useState([])
   const [templates, setTemplates] = useState([])
   const [form, setForm] = useState({
     name: '', session_id: '', template_id: '',
     min_delay_seconds: 5, max_delay_seconds: 15,
-    consent_confirmed: true
+    consent_confirmed: true,
+    lead_filter: preSelectedLeadIds.length > 0 ? { lead_ids: preSelectedLeadIds } : {}
   })
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState('')
@@ -62,6 +63,11 @@ function CreateModal({ onSave, onClose }) {
           <button className="wa-btn-icon" onClick={onClose}><X size={18} /></button>
         </div>
         <form onSubmit={handleSubmit} className="wa-form">
+          {preSelectedLeadIds.length > 0 && (
+            <div style={{ background: 'rgba(37, 211, 102, 0.1)', border: '1px solid rgba(37, 211, 102, 0.3)', borderRadius: 8, padding: '8px 12px', fontSize: '0.82rem', color: '#25d366' }}>
+              ✓ Targeting <strong>{preSelectedLeadIds.length}</strong> selected leads from My Leads
+            </div>
+          )}
           <div className="wa-form-group">
             <label className="wa-form-label">Campaign Name *</label>
             <input className="wa-form-input" placeholder="e.g. July Project Launch" value={form.name} onChange={e => set('name', e.target.value)} required />
@@ -168,98 +174,98 @@ export default function WaCampaigns() {
     return Math.round(((c.sent_count || 0) / total) * 100)
   }
 
-  return (
-    <DashboardLayout>
-      <div className="wa-page">
-      <div className="wa-page-header">
-        <h1 className="wa-page-title"><Send size={24} className="wa-icon" /> Campaigns</h1>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {lastUpdated && (
-            <span style={{ fontSize: '0.72rem', color: '#6b7280' }}>Updated {lastUpdated.toLocaleTimeString()}</span>
-          )}
-          <button className="wa-btn wa-btn-secondary" onClick={() => load()} title="Refresh"><RefreshCw size={15} /></button>
-          <button className="wa-btn wa-btn-primary" onClick={() => setShowCreate(true)}><Plus size={16} /> New Campaign</button>
-        </div>
-      </div>
-
-      {loading && campaigns.length === 0 ? (
-        <div className="wa-empty"><div className="wa-spinner" /><p>Loading campaigns…</p></div>
-      ) : campaigns.length === 0 ? (
-        <div className="wa-card">
-          <div className="wa-empty">
-            <div className="wa-empty-icon">📤</div><p>No campaigns yet</p>
-            <button className="wa-btn wa-btn-primary" onClick={() => setShowCreate(true)}><Plus size={16} /> Create Campaign</button>
-          </div>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {campaigns.map(c => {
-            const pct  = getProgress(c)
-            const busy = actionLoading[c.id]
-            return (
-              <div key={c.id} className="wa-card">
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <span style={{ fontWeight: 600, fontSize: '1rem' }}>{c.name}</span>
-                      <CampaignBadge status={c.status} />
-                    </div>
-                    <div style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: 4 }}>
-                      Session: {c.whatsapp_sessions?.session_name || '—'} · Template: {c.whatsapp_templates?.name || '—'}
-                      {c.created_at && <> · {new Date(c.created_at).toLocaleDateString()}</>}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    {c.status === 'DRAFT' && (
-                      <button className="wa-btn wa-btn-primary" style={{ fontSize: '0.8rem' }} disabled={busy} onClick={withAction(c.id, () => waCampaigns.start(c.id))}>
-                        {busy ? <span className="wa-spinner" /> : <Play size={14} />} Start
-                      </button>
-                    )}
-                    {c.status === 'RUNNING' && (
-                      <button className="wa-btn wa-btn-secondary" style={{ fontSize: '0.8rem' }} disabled={busy} onClick={withAction(c.id, () => waCampaigns.pause(c.id))}>
-                        {busy ? <span className="wa-spinner" /> : <Pause size={14} />} Pause
-                      </button>
-                    )}
-                    {c.status === 'PAUSED' && (
-                      <button className="wa-btn wa-btn-primary" style={{ fontSize: '0.8rem' }} disabled={busy} onClick={withAction(c.id, () => waCampaigns.resume(c.id))}>
-                        {busy ? <span className="wa-spinner" /> : <Play size={14} />} Resume
-                      </button>
-                    )}
-                    {['RUNNING', 'PAUSED'].includes(c.status) && (
-                      <button className="wa-btn wa-btn-danger" style={{ fontSize: '0.8rem' }} disabled={busy} onClick={withAction(c.id, async () => {
-                        if (!window.confirm(`Stop campaign "${c.name}"? This cannot be resumed.`)) return
-                        await waCampaigns.stop(c.id)
-                      })}>
-                        {busy ? <span className="wa-spinner" /> : <StopCircle size={14} />} Stop
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Progress bar */}
-                <div style={{ marginTop: 14 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#6b7280', marginBottom: 6 }}>
-                    <span>{c.sent_count || 0} sent · {c.failed_count || 0} failed</span>
-                    <span>{pct}% · {c.total_recipients || 0} total</span>
-                  </div>
-                  <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.06)' }}>
-                    <div style={{ height: '100%', borderRadius: 3, width: `${pct}%`, background: c.status === 'RUNNING' ? '#25d366' : '#818cf8', transition: 'width 0.5s ease' }} />
-                  </div>
-                </div>
-
-                {c.pause_reason && (
-                  <div style={{ marginTop: 8, fontSize: '0.75rem', color: '#fbbf24', display: 'flex', gap: 6 }}>
-                    ⚠ {c.pause_reason}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
+  const headerActions = (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      {lastUpdated && (
+        <span style={{ fontSize: '0.72rem', color: '#6b7280' }}>Updated {lastUpdated.toLocaleTimeString()}</span>
       )}
-
-      {showCreate && <CreateModal onSave={handleCreate} onClose={() => setShowCreate(false)} />}
+      <button className="wa-btn wa-btn-secondary" onClick={() => load()} title="Refresh"><RefreshCw size={15} /></button>
+      <button className="wa-btn wa-btn-primary" onClick={() => setShowCreate(true)}><Plus size={16} /> New Campaign</button>
     </div>
-    </DashboardLayout>
+  )
+
+  return (
+    <WaLayout title="Campaigns" headerActions={headerActions}>
+      <div className="wa-page">
+        {loading && campaigns.length === 0 ? (
+          <div className="wa-empty"><div className="wa-spinner" /><p>Loading campaigns…</p></div>
+        ) : campaigns.length === 0 ? (
+          <div className="wa-card">
+            <div className="wa-empty">
+              <div className="wa-empty-icon">📤</div><p>No campaigns yet</p>
+              <button className="wa-btn wa-btn-primary" onClick={() => setShowCreate(true)}><Plus size={16} /> Create Campaign</button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {campaigns.map(c => {
+              const pct  = getProgress(c)
+              const busy = actionLoading[c.id]
+              return (
+                <div key={c.id} className="wa-card">
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontWeight: 600, fontSize: '1rem' }}>{c.name}</span>
+                        <CampaignBadge status={c.status} />
+                      </div>
+                      <div style={{ fontSize: '0.78rem', color: '#6b7280', marginTop: 4 }}>
+                        Session: {c.whatsapp_sessions?.session_name || '—'} · Template: {c.whatsapp_templates?.name || '—'}
+                        {c.created_at && <> · {new Date(c.created_at).toLocaleDateString()}</>}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      {c.status === 'DRAFT' && (
+                        <button className="wa-btn wa-btn-primary" style={{ fontSize: '0.8rem' }} disabled={busy} onClick={withAction(c.id, () => waCampaigns.start(c.id))}>
+                          {busy ? <span className="wa-spinner" /> : <Play size={14} />} Start
+                        </button>
+                      )}
+                      {c.status === 'RUNNING' && (
+                        <button className="wa-btn wa-btn-secondary" style={{ fontSize: '0.8rem' }} disabled={busy} onClick={withAction(c.id, () => waCampaigns.pause(c.id))}>
+                          {busy ? <span className="wa-spinner" /> : <Pause size={14} />} Pause
+                        </button>
+                      )}
+                      {c.status === 'PAUSED' && (
+                        <button className="wa-btn wa-btn-primary" style={{ fontSize: '0.8rem' }} disabled={busy} onClick={withAction(c.id, () => waCampaigns.resume(c.id))}>
+                          {busy ? <span className="wa-spinner" /> : <Play size={14} />} Resume
+                        </button>
+                      )}
+                      {['RUNNING', 'PAUSED'].includes(c.status) && (
+                        <button className="wa-btn wa-btn-danger" style={{ fontSize: '0.8rem' }} disabled={busy} onClick={withAction(c.id, async () => {
+                          if (!window.confirm(`Stop campaign "${c.name}"? This cannot be resumed.`)) return
+                          await waCampaigns.stop(c.id)
+                        })}>
+                          {busy ? <span className="wa-spinner" /> : <StopCircle size={14} />} Stop
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Progress bar */}
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#6b7280', marginBottom: 6 }}>
+                      <span>{c.sent_count || 0} sent · {c.failed_count || 0} failed</span>
+                      <span>{pct}% · {c.total_recipients || 0} total</span>
+                    </div>
+                    <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.06)' }}>
+                      <div style={{ height: '100%', borderRadius: 3, width: `${pct}%`, background: c.status === 'RUNNING' ? '#25d366' : '#818cf8', transition: 'width 0.5s ease' }} />
+                    </div>
+                  </div>
+
+                  {c.pause_reason && (
+                    <div style={{ marginTop: 8, fontSize: '0.75rem', color: '#fbbf24', display: 'flex', gap: 6 }}>
+                      ⚠ {c.pause_reason}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {showCreate && <CreateModal onSave={handleCreate} onClose={() => setShowCreate(false)} />}
+      </div>
+    </WaLayout>
   )
 }
+

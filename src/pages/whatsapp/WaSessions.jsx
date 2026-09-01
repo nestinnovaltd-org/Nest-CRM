@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { Smartphone, Plus, RefreshCw, Trash2, Power, X } from 'lucide-react'
 import { waSessions } from '../../services/whatsappApi'
-import DashboardLayout from '../../layouts/DashboardLayout'
+import WaLayout from './WaLayout'
 import './whatsapp.css'
 
 const STATUS_BADGE = {
@@ -131,91 +131,90 @@ export default function WaSessions() {
     setActionLoading(prev => ({ ...prev, [id]: false }))
   }
 
+  const headerActions = (
+    <button className="wa-btn wa-btn-primary" onClick={() => setShowCreate(true)}>
+      <Plus size={16} /> New Session
+    </button>
+  )
+
   return (
-    <DashboardLayout>
+    <WaLayout title="Sessions" headerActions={headerActions}>
       <div className="wa-page">
-      <div className="wa-page-header">
-        <h1 className="wa-page-title"><Smartphone size={24} className="wa-icon" /> WhatsApp Sessions</h1>
-        <button className="wa-btn wa-btn-primary" onClick={() => setShowCreate(true)}>
-          <Plus size={16} /> New Session
-        </button>
-      </div>
-
-      <div className="wa-info-box wa-info-box-green" style={{ fontSize: '0.82rem' }}>
-        Each session represents one linked WhatsApp number. Keep sessions connected to enable campaigns and auto-replies.
-      </div>
-
-      {loading ? (
-        <div className="wa-empty"><div className="wa-spinner" /><p>Loading sessions…</p></div>
-      ) : sessions.length === 0 ? (
-        <div className="wa-card">
-          <div className="wa-empty">
-            <div className="wa-empty-icon">📱</div>
-            <p>No sessions yet</p>
-            <button className="wa-btn wa-btn-primary" onClick={() => setShowCreate(true)}><Plus size={16} /> Create First Session</button>
-          </div>
+        <div className="wa-info-box wa-info-box-green" style={{ fontSize: '0.82rem' }}>
+          Each session represents one linked WhatsApp number. Keep sessions connected to enable campaigns and auto-replies.
         </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {sessions.map(s => (
-            <div key={s.id} className="wa-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1 }}>
-                <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(37,211,102,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Smartphone size={20} style={{ color: '#25d366' }} />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{s.session_name}</div>
-                  <div style={{ fontSize: '0.78rem', color: '#9ca3af', marginTop: 2 }}>
-                    {s.phone_number || 'Not connected'} · ID: {s.id.slice(0, 8)}…
-                  </div>
-                  {s.last_connected_at && (
-                    <div style={{ fontSize: '0.72rem', color: '#6b7280', marginTop: 2 }}>
-                      Last connected: {new Date(s.last_connected_at).toLocaleString()}
-                    </div>
-                  )}
-                </div>
-              </div>
 
-              <StatusBadge status={s.live_status || s.status} />
-
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                {/* QR scan button */}
-                {['QR_REQUIRED', 'CONNECTING', 'RECONNECTING', 'NOT_LOADED'].includes(s.live_status || s.status) && (
-                  <button className="wa-btn wa-btn-secondary" style={{ fontSize: '0.8rem' }} onClick={() => setQrSession(s)}>
-                    📷 Scan QR
-                  </button>
-                )}
-
-                {/* Reconnect */}
-                {['DISCONNECTED', 'ERROR', 'NOT_LOADED'].includes(s.live_status || s.status) && (
-                  <button className="wa-btn wa-btn-secondary" style={{ fontSize: '0.8rem' }} disabled={actionLoading[s.id]} onClick={withAction(s.id, () => waSessions.reconnect(s.id))}>
-                    {actionLoading[s.id] ? <span className="wa-spinner" /> : <RefreshCw size={14} />} Reconnect
-                  </button>
-                )}
-
-                {/* Disconnect */}
-                {s.live_status === 'CONNECTED' && (
-                  <button className="wa-btn wa-btn-secondary" style={{ fontSize: '0.8rem' }} disabled={actionLoading[s.id]} onClick={withAction(s.id, () => waSessions.disconnect(s.id))}>
-                    {actionLoading[s.id] ? <span className="wa-spinner" /> : <Power size={14} />} Disconnect
-                  </button>
-                )}
-
-                {/* Delete */}
-                <button className="wa-btn wa-btn-danger" style={{ fontSize: '0.8rem' }} disabled={actionLoading[s.id]} onClick={withAction(s.id, async () => {
-                  if (!window.confirm(`Delete session "${s.session_name}"? This cannot be undone.`)) return
-                  await waSessions.delete(s.id)
-                })}>
-                  <Trash2 size={14} />
-                </button>
-              </div>
+        {loading ? (
+          <div className="wa-empty"><div className="wa-spinner" /><p>Loading sessions…</p></div>
+        ) : sessions.length === 0 ? (
+          <div className="wa-card">
+            <div className="wa-empty">
+              <div className="wa-empty-icon">📱</div>
+              <p>No sessions yet</p>
+              <button className="wa-btn wa-btn-primary" onClick={() => setShowCreate(true)}><Plus size={16} /> Create First Session</button>
             </div>
-          ))}
-        </div>
-      )}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {sessions.map(s => (
+              <div key={s.id} className="wa-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(37,211,102,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Smartphone size={20} style={{ color: '#25d366' }} />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{s.session_name}</div>
+                    <div style={{ fontSize: '0.78rem', color: '#9ca3af', marginTop: 2 }}>
+                      {s.phone_number || 'Not connected'} · ID: {s.id.slice(0, 8)}…
+                    </div>
+                    {s.last_connected_at && (
+                      <div style={{ fontSize: '0.72rem', color: '#6b7280', marginTop: 2 }}>
+                        Last connected: {new Date(s.last_connected_at).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+                </div>
 
-      {qrSession  && <QRModal    session={qrSession}  onClose={() => { setQrSession(null); load() }} />}
-      {showCreate && <CreateModal onCreate={handleCreate} onClose={() => setShowCreate(false)} />}
-    </div>
-    </DashboardLayout>
+                <StatusBadge status={s.live_status || s.status} />
+
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  {/* QR scan button */}
+                  {['QR_REQUIRED', 'CONNECTING', 'RECONNECTING', 'NOT_LOADED'].includes(s.live_status || s.status) && (
+                    <button className="wa-btn wa-btn-secondary" style={{ fontSize: '0.8rem' }} onClick={() => setQrSession(s)}>
+                      📷 Scan QR
+                    </button>
+                  )}
+
+                  {/* Reconnect */}
+                  {['DISCONNECTED', 'ERROR', 'NOT_LOADED'].includes(s.live_status || s.status) && (
+                    <button className="wa-btn wa-btn-secondary" style={{ fontSize: '0.8rem' }} disabled={actionLoading[s.id]} onClick={withAction(s.id, () => waSessions.reconnect(s.id))}>
+                      {actionLoading[s.id] ? <span className="wa-spinner" /> : <RefreshCw size={14} />} Reconnect
+                    </button>
+                  )}
+
+                  {/* Disconnect */}
+                  {s.live_status === 'CONNECTED' && (
+                    <button className="wa-btn wa-btn-secondary" style={{ fontSize: '0.8rem' }} disabled={actionLoading[s.id]} onClick={withAction(s.id, () => waSessions.disconnect(s.id))}>
+                      {actionLoading[s.id] ? <span className="wa-spinner" /> : <Power size={14} />} Disconnect
+                    </button>
+                  )}
+
+                  {/* Delete */}
+                  <button className="wa-btn wa-btn-danger" style={{ fontSize: '0.8rem' }} disabled={actionLoading[s.id]} onClick={withAction(s.id, async () => {
+                    if (!window.confirm(`Delete session "${s.session_name}"? This cannot be undone.`)) return
+                    await waSessions.delete(s.id)
+                  })}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {qrSession  && <QRModal    session={qrSession}  onClose={() => { setQrSession(null); load() }} />}
+        {showCreate && <CreateModal onCreate={handleCreate} onClose={() => setShowCreate(false)} />}
+      </div>
+    </WaLayout>
   )
 }

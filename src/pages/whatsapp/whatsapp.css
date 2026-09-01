@@ -1,11 +1,191 @@
 /* ─── WhatsApp Module Shared Styles ─────────────────────────────────────────── */
 
+/* Layout Container */
+.wa-layout-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 100px);
+  gap: 16px;
+  padding: 20px 24px;
+  box-sizing: border-box;
+  animation: wa-fade-in 0.3s ease;
+  overflow: hidden;
+}
+
+.wa-module-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: var(--surface-elevated, #13161c);
+  border: 1px solid var(--border-strong, rgba(255,255,255,0.08));
+  border-radius: 14px;
+  flex-shrink: 0;
+}
+
+.wa-module-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.wa-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-strong, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  color: var(--text-primary, #f3f4f6);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.wa-back-btn:hover {
+  background: rgba(37, 211, 102, 0.12);
+  border-color: rgba(37, 211, 102, 0.4);
+  color: #25d366;
+  transform: translateX(-2px);
+}
+
+.wa-header-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border-strong, rgba(255, 255, 255, 0.1));
+}
+
+.wa-module-title-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wa-module-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary, #f3f4f6);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.wa-module-subtitle {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #25d366;
+}
+
+.wa-module-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Module Body: Vertical Nav + Content Area */
+.wa-module-body {
+  display: flex;
+  gap: 20px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Vertical Left Navigation */
+.wa-vertical-nav {
+  width: 210px;
+  flex-shrink: 0;
+  background: var(--surface-elevated, #13161c);
+  border: 1px solid var(--border-strong, rgba(255,255,255,0.08));
+  border-radius: 14px;
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.wa-nav-header {
+  padding: 4px 8px;
+}
+
+.wa-nav-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary, #9ca3af);
+}
+
+.wa-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wa-nav-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  color: var(--text-secondary, #9ca3af);
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.wa-nav-tab:hover {
+  color: var(--text-primary, #f3f4f6);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.wa-nav-tab.active {
+  color: #25d366;
+  background: rgba(37, 211, 102, 0.1);
+  font-weight: 600;
+}
+
+.wa-nav-tab-icon {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.wa-nav-tab:hover .wa-nav-tab-icon {
+  transform: scale(1.1);
+}
+
+.wa-nav-tab.active .wa-nav-tab-icon {
+  color: #25d366;
+}
+
+.wa-nav-active-pill {
+  position: absolute;
+  right: 8px;
+  width: 5px;
+  height: 18px;
+  background: #25d366;
+  border-radius: 10px;
+  box-shadow: 0 0 8px rgba(37, 211, 102, 0.6);
+}
+
+/* Content Area */
+.wa-content-area {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
 /* Page wrapper */
 .wa-page {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding: 24px;
+  gap: 20px;
+  padding: 4px 0 20px 0;
   min-height: 100%;
   animation: wa-fade-in 0.3s ease;
 }
@@ -25,17 +205,19 @@
 }
 
 .wa-page-title {
-  font-size: 1.5rem;
+  font-size: 1.35rem;
   font-weight: 700;
   color: var(--text-primary, #f3f4f6);
   display: flex;
   align-items: center;
   gap: 10px;
+  margin: 0;
 }
 
 .wa-page-title .wa-icon {
   color: #25d366;
 }
+
 
 /* Cards */
 .wa-card {

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { MessageCircle, Send, User, Bot, UserCheck, RotateCcw } from 'lucide-react'
 import { waConversations } from '../../services/whatsappApi'
-import DashboardLayout from '../../layouts/DashboardLayout'
+import WaLayout from './WaLayout'
 import './whatsapp.css'
 
 function ConversationItem({ convo, active, onClick }) {
@@ -111,91 +111,91 @@ export default function WaConversations() {
     setSelected(prev => prev ? { ...prev, ai_status: 'ACTIVE' } : prev)
   }
 
+  const headerActions = (
+    <select className="wa-form-select" style={{ width: 'auto', padding: '6px 12px', fontSize: '0.82rem' }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+      <option value="">All conversations</option>
+      <option value="ACTIVE">AI Active</option>
+      <option value="HUMAN_REQUIRED">Needs Human</option>
+      <option value="MANUAL">Manual</option>
+    </select>
+  )
+
   return (
-    <DashboardLayout>
-      <div className="wa-page" style={{ padding: 0, height: 'calc(100vh - 64px)' }}>
-      <div style={{ padding: '16px 24px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h1 className="wa-page-title" style={{ fontSize: '1.1rem' }}><MessageCircle size={20} className="wa-icon" /> Conversations</h1>
-        <select className="wa-form-select" style={{ width: 'auto', padding: '6px 10px', fontSize: '0.82rem' }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-          <option value="">All conversations</option>
-          <option value="ACTIVE">AI Active</option>
-          <option value="HUMAN_REQUIRED">Needs Human</option>
-          <option value="MANUAL">Manual</option>
-        </select>
-      </div>
+    <WaLayout title="Conversations" headerActions={headerActions}>
+      <div className="wa-page" style={{ padding: 0, height: '100%' }}>
+        <div className="wa-chat-container">
+          {/* Conversation list */}
+          <div className="wa-convo-list">
+            {loading ? (
+              <div className="wa-empty" style={{ padding: 24 }}><div className="wa-spinner" /></div>
+            ) : convos.length === 0 ? (
+              <div className="wa-empty" style={{ padding: 24 }}><div className="wa-empty-icon">💬</div><p style={{ fontSize: '0.8rem' }}>No conversations yet</p></div>
+            ) : (
+              convos.map(c => (
+                <ConversationItem key={c.id} convo={c} active={selected?.id === c.id} onClick={() => selectConvo(c)} />
+              ))
+            )}
+          </div>
 
-      <div className="wa-chat-container" style={{ height: 'calc(100% - 64px)', borderRadius: 0, border: 'none' }}>
-        {/* Conversation list */}
-        <div className="wa-convo-list">
-          {loading ? (
-            <div className="wa-empty" style={{ padding: 24 }}><div className="wa-spinner" /></div>
-          ) : convos.length === 0 ? (
-            <div className="wa-empty" style={{ padding: 24 }}><div className="wa-empty-icon">💬</div><p style={{ fontSize: '0.8rem' }}>No conversations yet</p></div>
-          ) : (
-            convos.map(c => (
-              <ConversationItem key={c.id} convo={c} active={selected?.id === c.id} onClick={() => selectConvo(c)} />
-            ))
-          )}
-        </div>
-
-        {/* Chat panel */}
-        <div className="wa-chat-panel">
-          {!selected ? (
-            <div className="wa-empty" style={{ flex: 1 }}>
-              <div className="wa-empty-icon">💬</div>
-              <p>Select a conversation to start chatting</p>
-            </div>
-          ) : (
-            <>
-              {/* Header */}
-              <div className="wa-chat-header">
-                <div>
-                  <div style={{ fontWeight: 600 }}>{selected.lead_name || selected.phone_number}</div>
-                  <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>{selected.phone_number}</div>
+          {/* Chat panel */}
+          <div className="wa-chat-panel">
+            {!selected ? (
+              <div className="wa-empty" style={{ flex: 1 }}>
+                <div className="wa-empty-icon">💬</div>
+                <p>Select a conversation to start chatting</p>
+              </div>
+            ) : (
+              <>
+                {/* Header */}
+                <div className="wa-chat-header">
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{selected.lead_name || selected.phone_number}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>{selected.phone_number}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span className={`wa-badge wa-badge-${selected.ai_status === 'ACTIVE' ? 'blue' : selected.ai_status === 'HUMAN_REQUIRED' ? 'red' : 'gray'}`}>
+                      {selected.ai_status === 'ACTIVE' ? '🤖 AI' : selected.ai_status === 'HUMAN_REQUIRED' ? '⚠ Needs Human' : '👤 Manual'}
+                    </span>
+                    {selected.ai_status !== 'MANUAL' && selected.ai_status !== 'HUMAN_REQUIRED' && (
+                      <button className="wa-btn wa-btn-secondary" style={{ fontSize: '0.78rem', padding: '5px 10px' }} onClick={handleTakeover}>
+                        <UserCheck size={13} /> Take Over
+                      </button>
+                    )}
+                    {(selected.ai_status === 'MANUAL' || selected.ai_status === 'HUMAN_REQUIRED') && (
+                      <button className="wa-btn wa-btn-secondary" style={{ fontSize: '0.78rem', padding: '5px 10px' }} onClick={handleResumeAI}>
+                        <Bot size={13} /> Resume AI
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <span className={`wa-badge wa-badge-${selected.ai_status === 'ACTIVE' ? 'blue' : selected.ai_status === 'HUMAN_REQUIRED' ? 'red' : 'gray'}`}>
-                    {selected.ai_status === 'ACTIVE' ? '🤖 AI' : selected.ai_status === 'HUMAN_REQUIRED' ? '⚠ Needs Human' : '👤 Manual'}
-                  </span>
-                  {selected.ai_status !== 'MANUAL' && selected.ai_status !== 'HUMAN_REQUIRED' && (
-                    <button className="wa-btn wa-btn-secondary" style={{ fontSize: '0.78rem', padding: '5px 10px' }} onClick={handleTakeover}>
-                      <UserCheck size={13} /> Take Over
-                    </button>
-                  )}
-                  {(selected.ai_status === 'MANUAL' || selected.ai_status === 'HUMAN_REQUIRED') && (
-                    <button className="wa-btn wa-btn-secondary" style={{ fontSize: '0.78rem', padding: '5px 10px' }} onClick={handleResumeAI}>
-                      <Bot size={13} /> Resume AI
-                    </button>
-                  )}
+
+                {/* Messages */}
+                <div className="wa-messages-area">
+                  {msgLoading && messages.length === 0 && <div className="wa-empty" style={{ flex: 1 }}><div className="wa-spinner" /></div>}
+                  {messages.map(m => <Message key={m.id} msg={m} />)}
+                  <div ref={msgEndRef} />
                 </div>
-              </div>
 
-              {/* Messages */}
-              <div className="wa-messages-area">
-                {msgLoading && messages.length === 0 && <div className="wa-empty" style={{ flex: 1 }}><div className="wa-spinner" /></div>}
-                {messages.map(m => <Message key={m.id} msg={m} />)}
-                <div ref={msgEndRef} />
-              </div>
-
-              {/* Input */}
-              <div className="wa-chat-input-row">
-                <textarea
-                  className="wa-chat-input"
-                  rows={2}
-                  placeholder="Type a message… (Enter to send, Shift+Enter for new line)"
-                  value={msgInput}
-                  onChange={e => setMsgInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                />
-                <button className="wa-btn wa-btn-primary" style={{ alignSelf: 'flex-end' }} disabled={sending || !msgInput.trim()} onClick={handleSend}>
-                  {sending ? <span className="wa-spinner" style={{ width: 16, height: 16 }} /> : <Send size={16} />}
-                </button>
-              </div>
-            </>
-          )}
+                {/* Input */}
+                <div className="wa-chat-input-row">
+                  <textarea
+                    className="wa-chat-input"
+                    rows={2}
+                    placeholder="Type a message… (Enter to send, Shift+Enter for new line)"
+                    value={msgInput}
+                    onChange={e => setMsgInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                  />
+                  <button className="wa-btn wa-btn-primary" style={{ alignSelf: 'flex-end' }} disabled={sending || !msgInput.trim()} onClick={handleSend}>
+                    {sending ? <span className="wa-spinner" style={{ width: 16, height: 16 }} /> : <Send size={16} />}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
-    </div>
-    </DashboardLayout>
+    </WaLayout>
   )
 }
+

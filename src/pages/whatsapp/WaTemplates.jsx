@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { MessageSquare, Plus, Pencil, Trash2, X, Copy } from 'lucide-react'
 import { waTemplates } from '../../services/whatsappApi'
-import DashboardLayout from '../../layouts/DashboardLayout'
+import WaLayout from './WaLayout'
 import './whatsapp.css'
 
 const VARIABLES = ['{{name}}', '{{phone}}', '{{company}}', '{{project_name}}']
@@ -102,61 +102,61 @@ export default function WaTemplates() {
     navigator.clipboard.writeText(body).then(() => alert('Template body copied!'))
   }
 
+  const headerActions = (
+    <button className="wa-btn wa-btn-primary" onClick={() => setModal('create')}>
+      <Plus size={16} /> New Template
+    </button>
+  )
+
   return (
-    <DashboardLayout>
+    <WaLayout title="Templates" headerActions={headerActions}>
       <div className="wa-page">
-      <div className="wa-page-header">
-        <h1 className="wa-page-title"><MessageSquare size={24} className="wa-icon" /> Message Templates</h1>
-        <button className="wa-btn wa-btn-primary" onClick={() => setModal('create')}>
-          <Plus size={16} /> New Template
-        </button>
-      </div>
-
-      <div className="wa-info-box wa-info-box-green" style={{ fontSize: '0.82rem' }}>
-        Templates support variables: <code>{'{{name}}'}</code>, <code>{'{{company}}'}</code>, <code>{'{{project_name}}'}</code> — they're resolved per lead at send time.
-      </div>
-
-      {loading ? (
-        <div className="wa-empty"><div className="wa-spinner" /><p>Loading templates…</p></div>
-      ) : templates.length === 0 ? (
-        <div className="wa-card">
-          <div className="wa-empty">
-            <div className="wa-empty-icon">💬</div>
-            <p>No templates yet</p>
-            <button className="wa-btn wa-btn-primary" onClick={() => setModal('create')}><Plus size={16} /> Create First Template</button>
-          </div>
+        <div className="wa-info-box wa-info-box-green" style={{ fontSize: '0.82rem' }}>
+          Templates support variables: <code>{'{{name}}'}</code>, <code>{'{{company}}'}</code>, <code>{'{{project_name}}'}</code> — they're resolved per lead at send time.
         </div>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-          {templates.map(t => (
-            <div key={t.id} className="wa-card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-                <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{t.name}</div>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <button className="wa-btn-icon" title="Copy body" onClick={() => handleCopy(t.body)}><Copy size={14} /></button>
-                  <button className="wa-btn-icon" title="Edit" onClick={() => setModal(t)}><Pencil size={14} /></button>
-                  <button className="wa-btn-icon" title="Archive" onClick={() => handleDelete(t)} style={{ color: '#ef4444' }}><Trash2 size={14} /></button>
+
+        {loading ? (
+          <div className="wa-empty"><div className="wa-spinner" /><p>Loading templates…</p></div>
+        ) : templates.length === 0 ? (
+          <div className="wa-card">
+            <div className="wa-empty">
+              <div className="wa-empty-icon">💬</div>
+              <p>No templates yet</p>
+              <button className="wa-btn wa-btn-primary" onClick={() => setModal('create')}><Plus size={16} /> Create First Template</button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+            {templates.map(t => (
+              <div key={t.id} className="wa-card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{t.name}</div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button className="wa-btn-icon" title="Copy body" onClick={() => handleCopy(t.body)}><Copy size={14} /></button>
+                    <button className="wa-btn-icon" title="Edit" onClick={() => setModal(t)}><Pencil size={14} /></button>
+                    <button className="wa-btn-icon" title="Archive" onClick={() => handleDelete(t)} style={{ color: '#ef4444' }}><Trash2 size={14} /></button>
+                  </div>
+                </div>
+                <div style={{ fontSize: '0.83rem', color: '#9ca3af', background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 8, whiteSpace: 'pre-wrap', lineHeight: 1.5, maxHeight: 120, overflow: 'hidden' }}>
+                  {t.body}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: '#6b7280' }}>
+                  Created {new Date(t.created_at).toLocaleDateString()}
                 </div>
               </div>
-              <div style={{ fontSize: '0.83rem', color: '#9ca3af', background: 'rgba(255,255,255,0.03)', padding: '10px 12px', borderRadius: 8, whiteSpace: 'pre-wrap', lineHeight: 1.5, maxHeight: 120, overflow: 'hidden' }}>
-                {t.body}
-              </div>
-              <div style={{ fontSize: '0.72rem', color: '#6b7280' }}>
-                Created {new Date(t.created_at).toLocaleDateString()}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
 
-      {modal && (
-        <TemplateModal
-          existing={modal === 'create' ? null : modal}
-          onSave={handleSave}
-          onClose={() => setModal(null)}
-        />
-      )}
-    </div>
-    </DashboardLayout>
+        {modal && (
+          <TemplateModal
+            existing={modal === 'create' ? null : modal}
+            onSave={handleSave}
+            onClose={() => setModal(null)}
+          />
+        )}
+      </div>
+    </WaLayout>
   )
 }
+
