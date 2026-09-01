@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { Send, Plus, Play, Pause, StopCircle, X, RefreshCw, CheckCircle } from 'lucide-react'
-import { waCampaigns, waSessions, waTemplates } from '../../services/whatsappApi'
+import { Send, Plus, Play, Pause, StopCircle, X, RefreshCw, CheckCircle, Search, Users } from 'lucide-react'
+import { waCampaigns, waSessions, waTemplates, waLeads } from '../../services/whatsappApi'
 import WaLayout from './WaLayout'
 import './whatsapp.css'
 
@@ -19,13 +19,18 @@ function CampaignBadge({ status }) {
 }
 
 export function CreateModal({ onSave, onClose, preSelectedLeadIds = [] }) {
-  const [sessions, setSessions]   = useState([])
-  const [templates, setTemplates] = useState([])
+  const [sessions, setSessions]     = useState([])
+  const [templates, setTemplates]   = useState([])
+  const [allLeads, setAllLeads]     = useState([])
+  const [targetType, setTargetType] = useState(preSelectedLeadIds.length > 0 ? 'selected' : 'all')
+  const [selectedStatus, setSelectedStatus]   = useState('')
+  const [selectedLeadIds, setSelectedLeadIds] = useState(preSelectedLeadIds)
+  const [leadSearch, setLeadSearch]           = useState('')
+
   const [form, setForm] = useState({
     name: '', session_id: '', template_id: '',
     min_delay_seconds: 5, max_delay_seconds: 15,
     consent_confirmed: true,
-    lead_filter: preSelectedLeadIds.length > 0 ? { lead_ids: preSelectedLeadIds } : {}
   })
   const [saving, setSaving] = useState(false)
   const [error, setError]   = useState('')
@@ -33,21 +38,60 @@ export function CreateModal({ onSave, onClose, preSelectedLeadIds = [] }) {
   useEffect(() => {
     Promise.all([
       waSessions.list().catch(() => ({ sessions: [] })),
-      waTemplates.list().catch(() => ({ templates: [] }))
-    ]).then(([s, t]) => {
+      waTemplates.list().catch(() => ({ templates: [] })),
+      waLeads.list({ limit: 200 }).catch(() => ({ leads: [] }))
+    ]).then(([s, t, l]) => {
       setSessions((s.sessions || []).filter(ses => ses.status === 'CONNECTED' || ses.live_status === 'CONNECTED'))
       setTemplates(t.templates || [])
+      setAllLeads(l.leads || [])
     })
   }, [])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
+  const toggleLeadSelect = (id) => {
+    setSelectedLeadIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    )
+  }
+
+  const filteredLeadsList = allLeads.filter(l => {
+    const q = leadSearch.toLowerCase()
+    return !q || l.name?.toLowerCase().includes(q) || l.phone?.includes(q) || l.company?.toLowerCase().includes(q)
+  })
+
+  const selectAllFilteredLeads = () => {
+    const filteredIds = filteredLeadsList.map(l => l.id)
+    const allSelected = filteredIds.every(id => selectedLeadIds.includes(id))
+    if (allSelected) {
+      setSelectedLeadIds(prev => prev.filter(id => !filteredIds.includes(id)))
+    } else {
+      setSelectedLeadIds(prev => Array.from(new Set([...prev, ...filteredIds])))
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+
+    let lead_filter = {}
+    if (targetType === 'selected') {
+      if (selectedLeadIds.length === 0) {
+        setError('Please select at least one target lead.')
+        return
+      }
+      lead_filter = { lead_ids: selectedLeadIds }
+    } else if (targetType === 'status') {
+      if (!selectedStatus) {
+        setError('Please select a lead status filter.')
+        return
+      }
+      lead_filter = { status: selectedStatus }
+    }
+
     setSaving(true)
     try {
-      await onSave(form)
+      await onSave({ ...form, lead_filter })
     } catch (err) {
       setError(err.message || 'Failed to create campaign')
     } finally {
@@ -57,21 +101,17 @@ export function CreateModal({ onSave, onClose, preSelectedLeadIds = [] }) {
 
   return (
     <div className="wa-modal-overlay" onClick={onClose}>
-      <div className="wa-modal" style={{ maxWidth: 540 }} onClick={e => e.stopPropagation()}>
+      <div className="wa-modal" style={{ maxWidth: 580 }} onClick={e => e.stopPropagation()}>
         <div className="wa-modal-header">
           <span className="wa-modal-title">Create Campaign</span>
-          <button className="wa-btn-icon" onClick={onClose}><X size={18} /></button>
+          <button className="wa-btn-icon" type="button" onClick={onClose}><X size={18} /></button>
         </div>
         <form onSubmit={handleSubmit} className="wa-form">
-          {preSelectedLeadIds.length > 0 && (
-            <div style={{ background: 'rgba(37, 211, 102, 0.1)', border: '1px solid rgba(37, 211, 102, 0.3)', borderRadius: 8, padding: '8px 12px', fontSize: '0.82rem', color: '#25d366' }}>
-              ✓ Targeting <strong>{preSelectedLeadIds.length}</strong> selected leads from My Leads
-            </div>
-          )}
           <div className="wa-form-group">
             <label className="wa-form-label">Campaign Name *</label>
             <input className="wa-form-input" placeholder="e.g. July Project Launch" value={form.name} onChange={e => set('name', e.target.value)} required />
           </div>
+
           <div className="wa-form-group">
             <label className="wa-form-label">WhatsApp Session *</label>
             <select className="wa-form-select" value={form.session_id} onChange={e => set('session_id', e.target.value)} required>
@@ -80,6 +120,7 @@ export function CreateModal({ onSave, onClose, preSelectedLeadIds = [] }) {
             </select>
             {sessions.length === 0 && <span style={{ fontSize: '0.75rem', color: '#ef4444' }}>No connected sessions. Please connect a session first.</span>}
           </div>
+
           <div className="wa-form-group">
             <label className="wa-form-label">Message Template *</label>
             <select className="wa-form-select" value={form.template_id} onChange={e => set('template_id', e.target.value)} required>
@@ -87,6 +128,79 @@ export function CreateModal({ onSave, onClose, preSelectedLeadIds = [] }) {
               {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </div>
+
+          {/* Target Audience Section */}
+          <div className="wa-form-group" style={{ background: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)' }}>
+            <label className="wa-form-label" style={{ fontWeight: 600, color: 'var(--primary, #25d366)', marginBottom: 8, display: 'block' }}>🎯 Target Audience / Leads</label>
+            
+            <div style={{ display: 'flex', gap: 14, marginBottom: 10, flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', cursor: 'pointer' }}>
+                <input type="radio" name="targetType" value="all" checked={targetType === 'all'} onChange={() => setTargetType('all')} />
+                All My Leads
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', cursor: 'pointer' }}>
+                <input type="radio" name="targetType" value="status" checked={targetType === 'status'} onChange={() => setTargetType('status')} />
+                Filter by Status
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', cursor: 'pointer' }}>
+                <input type="radio" name="targetType" value="selected" checked={targetType === 'selected'} onChange={() => setTargetType('selected')} />
+                Select Specific Leads ({selectedLeadIds.length})
+              </label>
+            </div>
+
+            {targetType === 'status' && (
+              <select className="wa-form-select" value={selectedStatus} onChange={e => setSelectedStatus(e.target.value)} required>
+                <option value="">Select lead status filter…</option>
+                <option value="New Lead">New Lead</option>
+                <option value="In Progress">In Progress</option>
+                <option value="Connected">Connected</option>
+                <option value="Interested">Interested</option>
+                <option value="Negotiation">Negotiation</option>
+                <option value="Won">Won</option>
+                <option value="Lost">Lost</option>
+              </select>
+            )}
+
+            {targetType === 'selected' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input 
+                    className="wa-form-input" 
+                    placeholder="Search leads by name, phone, company…" 
+                    value={leadSearch} 
+                    onChange={e => setLeadSearch(e.target.value)}
+                    style={{ fontSize: '0.8rem', padding: '6px 10px' }}
+                  />
+                  <button type="button" className="wa-btn wa-btn-secondary" style={{ fontSize: '0.75rem', padding: '4px 10px', whitespace: 'nowrap' }} onClick={selectAllFilteredLeads}>
+                    Select All ({filteredLeadsList.length})
+                  </button>
+                </div>
+
+                <div style={{ maxHeight: 150, overflowY: 'auto', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6, padding: '4px 8px', background: 'rgba(0,0,0,0.2)' }}>
+                  {filteredLeadsList.length === 0 ? (
+                    <div style={{ fontSize: '0.78rem', color: '#6b7280', padding: '8px 0', textAlign: 'center' }}>No leads found</div>
+                  ) : (
+                    filteredLeadsList.map(l => (
+                      <label key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: '0.8rem', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={selectedLeadIds.includes(l.id)} 
+                          onChange={() => toggleLeadSelect(l.id)} 
+                        />
+                        <span style={{ fontWeight: 500 }}>{l.name || 'Unnamed'}</span>
+                        <span style={{ fontFamily: 'monospace', color: '#9ca3af', fontSize: '0.75rem' }}>{l.phone}</span>
+                        {l.company && <span style={{ color: '#6b7280', fontSize: '0.72rem' }}>({l.company})</span>}
+                      </label>
+                    ))
+                  )}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#25d366' }}>
+                  ✓ Selected <strong>{selectedLeadIds.length}</strong> lead(s) for this campaign
+                </div>
+              </div>
+            )}
+          </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div className="wa-form-group">
               <label className="wa-form-label">Min Delay (sec)</label>
