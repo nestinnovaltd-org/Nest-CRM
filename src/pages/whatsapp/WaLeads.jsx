@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Users, Search, RefreshCw, CheckCircle, XCircle, Send } from 'lucide-react'
+import { Users, Search, RefreshCw, CheckCircle, XCircle, Send, Tag } from 'lucide-react'
 import { waLeads, waSessions, waCampaigns } from '../../services/whatsappApi'
 import { CreateModal } from './WaCampaigns'
 import WaLayout from './WaLayout'
 import './whatsapp.css'
 
-const STATUS_CONFIG = {
+const WA_STATUS_CONFIG = {
   WHATSAPP_AVAILABLE:     { cls: 'green',  label: '✓ Available' },
   WHATSAPP_NOT_AVAILABLE: { cls: 'gray',   label: '✗ Not Available' },
   CHECKING:               { cls: 'yellow', label: '⟳ Checking…' },
@@ -15,9 +15,31 @@ const STATUS_CONFIG = {
   NOT_CHECKED:            { cls: 'gray',   label: '— Not Checked' },
 }
 
+const LEAD_STATUS_COLORS = {
+  'New Lead':    '#3b82f6',
+  'In Progress': '#f59e0b',
+  'Connected':   '#8b5cf6',
+  'Interested':  '#06b6d4',
+  'Negotiation': '#f97316',
+  'Won':         '#22c55e',
+  'Lost':        '#ef4444',
+}
+
 function WaStatusBadge({ status }) {
-  const cfg = STATUS_CONFIG[status] || STATUS_CONFIG['NOT_CHECKED']
+  const cfg = WA_STATUS_CONFIG[status] || WA_STATUS_CONFIG['NOT_CHECKED']
   return <span className={`wa-badge wa-badge-${cfg.cls}`}>{cfg.label}</span>
+}
+
+function LeadStatusBadge({ status }) {
+  const color = LEAD_STATUS_COLORS[status] || '#6b7280'
+  return (
+    <span style={{
+      fontSize: '0.72rem', fontWeight: 600, padding: '2px 7px', borderRadius: 10,
+      background: color + '22', color, border: `1px solid ${color}44`, whiteSpace: 'nowrap'
+    }}>
+      {status || '—'}
+    </span>
+  )
 }
 
 export default function WaLeads() {
@@ -36,7 +58,8 @@ export default function WaLeads() {
   const load = useCallback(async () => {
     setLoading(true)
     const [leadsRes, sessRes] = await Promise.all([
-      waLeads.list({ page, limit: 50 }).catch(() => ({ leads: [], total: 0 })),
+      // mine=true → only leads assigned to the current user
+      waLeads.list({ page, limit: 100, mine: 'true' }).catch(() => ({ leads: [], total: 0 })),
       waSessions.list().catch(() => ({ sessions: [] }))
     ])
     setLeads(leadsRes.leads || [])
@@ -50,7 +73,7 @@ export default function WaLeads() {
   // Filtered view (client-side search)
   const filtered = leads.filter(l => {
     const q = search.toLowerCase()
-    return !q || l.name?.toLowerCase().includes(q) || l.phone?.includes(q) || l.company?.toLowerCase().includes(q)
+    return !q || l.name?.toLowerCase().includes(q) || l.phone?.includes(q) || l.company?.toLowerCase().includes(q) || l.status?.toLowerCase().includes(q)
   })
 
   const toggleSelect = (id) => setSelected(prev => {
@@ -85,25 +108,26 @@ export default function WaLeads() {
     setShowCreateCampaign(false)
     const count = selected.size
     setSelected(new Set())
-    alert(`Campaign "${form.name}" created successfully targeting ${count} selected leads!`)
+    alert(`Campaign "${res.campaign?.name || form.name}" created successfully targeting ${count} selected leads!\n\nGo to Campaigns tab to start it.`)
     navigate('/whatsapp/campaigns')
   }
 
   const stats = {
-    available:    leads.filter(l => l.whatsapp_lead_status?.whatsapp_status === 'WHATSAPP_AVAILABLE').length,
+    total:     leads.length,
+    available: leads.filter(l => l.whatsapp_lead_status?.whatsapp_status === 'WHATSAPP_AVAILABLE').length,
     notAvailable: leads.filter(l => l.whatsapp_lead_status?.whatsapp_status === 'WHATSAPP_NOT_AVAILABLE').length,
-    unchecked:    leads.filter(l => !l.whatsapp_lead_status?.whatsapp_status).length,
+    unchecked: leads.filter(l => !l.whatsapp_lead_status?.whatsapp_status || l.whatsapp_lead_status?.whatsapp_status === 'NOT_CHECKED').length,
   }
 
   const headerActions = (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
       {selected.size > 0 && (
-        <button 
-          className="wa-btn wa-btn-primary" 
+        <button
+          className="wa-btn wa-btn-primary"
           onClick={() => setShowCreateCampaign(true)}
-          style={{ background: '#25d366', color: '#fff', fontWeight: 600 }}
+          style={{ background: 'linear-gradient(135deg, #25d366, #128c7e)', color: '#fff', fontWeight: 600 }}
         >
-          <Send size={16} /> Create Campaign ({selected.size})
+          <Send size={15} /> Create Campaign ({selected.size} leads)
         </button>
       )}
       <select className="wa-form-select" style={{ width: 'auto', padding: '8px 12px' }} value={sessionId} onChange={e => setSessionId(e.target.value)}>
@@ -112,28 +136,54 @@ export default function WaLeads() {
       </select>
       <button className="wa-btn wa-btn-primary" disabled={checking || selected.size === 0 || !sessionId} onClick={handleCheckBulk}>
         {checking ? <span className="wa-spinner" /> : <CheckCircle size={16} />}
-        Check WA Status ({selected.size})
+        Check WA ({selected.size})
       </button>
       <button className="wa-btn wa-btn-secondary" onClick={load}><RefreshCw size={16} /></button>
     </div>
   )
 
   return (
-    <WaLayout title="Leads" headerActions={headerActions}>
+    <WaLayout title="My Leads" headerActions={headerActions}>
       <div className="wa-page">
         {/* Quick stats */}
-        <div className="wa-stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-          <div className="wa-stat-card"><div className="wa-stat-label">WA Available</div><div className="wa-stat-value" style={{ color: '#25d366' }}>{stats.available}</div></div>
-          <div className="wa-stat-card"><div className="wa-stat-label">Not Available</div><div className="wa-stat-value" style={{ color: '#9ca3af' }}>{stats.notAvailable}</div></div>
-          <div className="wa-stat-card"><div className="wa-stat-label">Not Checked</div><div className="wa-stat-value" style={{ color: '#fbbf24' }}>{stats.unchecked}</div></div>
+        <div className="wa-stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+          <div className="wa-stat-card">
+            <div className="wa-stat-label">My Leads</div>
+            <div className="wa-stat-value" style={{ color: '#818cf8' }}>{stats.total}</div>
+          </div>
+          <div className="wa-stat-card">
+            <div className="wa-stat-label">WA Available</div>
+            <div className="wa-stat-value" style={{ color: '#25d366' }}>{stats.available}</div>
+          </div>
+          <div className="wa-stat-card">
+            <div className="wa-stat-label">Not Available</div>
+            <div className="wa-stat-value" style={{ color: '#9ca3af' }}>{stats.notAvailable}</div>
+          </div>
+          <div className="wa-stat-card">
+            <div className="wa-stat-label">Not Checked</div>
+            <div className="wa-stat-value" style={{ color: '#fbbf24' }}>{stats.unchecked}</div>
+          </div>
         </div>
+
+        {selected.size > 0 && (
+          <div style={{ padding: '10px 16px', borderRadius: 8, background: 'rgba(37,211,102,0.08)', border: '1px solid rgba(37,211,102,0.2)', fontSize: '0.85rem', color: '#25d366', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Users size={16} />
+            <strong>{selected.size}</strong> lead(s) selected —
+            <button className="wa-btn wa-btn-primary" style={{ fontSize: '0.78rem', padding: '4px 12px' }} onClick={() => setShowCreateCampaign(true)}>
+              <Send size={13} /> Create WhatsApp Campaign
+            </button>
+            <button className="wa-btn wa-btn-secondary" style={{ fontSize: '0.78rem', padding: '4px 10px' }} onClick={() => setSelected(new Set())}>
+              Clear Selection
+            </button>
+          </div>
+        )}
 
         <div className="wa-card">
           {/* Search + select all */}
           <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
               <Search size={16} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#6b7280' }} />
-              <input className="wa-form-input" style={{ paddingLeft: 32 }} placeholder="Search by name, phone, company…" value={search} onChange={e => setSearch(e.target.value)} />
+              <input className="wa-form-input" style={{ paddingLeft: 32 }} placeholder="Search by name, phone, company, status…" value={search} onChange={e => setSearch(e.target.value)} />
             </div>
             <button className="wa-btn wa-btn-secondary" style={{ fontSize: '0.8rem' }} onClick={selectAll}>
               {selected.size === filtered.length && filtered.length > 0 ? 'Deselect All' : `Select All (${filtered.length})`}
@@ -141,9 +191,12 @@ export default function WaLeads() {
           </div>
 
           {loading ? (
-            <div className="wa-empty"><div className="wa-spinner" /><p>Loading leads…</p></div>
+            <div className="wa-empty"><div className="wa-spinner" /><p>Loading your leads…</p></div>
           ) : filtered.length === 0 ? (
-            <div className="wa-empty"><div className="wa-empty-icon">👥</div><p>No leads found</p></div>
+            <div className="wa-empty">
+              <div className="wa-empty-icon">👥</div>
+              <p>{search ? 'No leads match your search' : 'No leads assigned to you yet'}</p>
+            </div>
           ) : (
             <div className="wa-table-wrap">
               <table className="wa-table">
@@ -153,6 +206,7 @@ export default function WaLeads() {
                     <th>Name</th>
                     <th>Phone</th>
                     <th>Company</th>
+                    <th>Status</th>
                     <th>WA Status</th>
                     <th>Last Checked</th>
                     <th>Opted Out</th>
@@ -162,11 +216,12 @@ export default function WaLeads() {
                   {filtered.map(l => {
                     const ws = l.whatsapp_lead_status
                     return (
-                      <tr key={l.id}>
+                      <tr key={l.id} style={{ background: selected.has(l.id) ? 'rgba(37,211,102,0.05)' : undefined }}>
                         <td><input type="checkbox" checked={selected.has(l.id)} onChange={() => toggleSelect(l.id)} /></td>
                         <td style={{ fontWeight: 500 }}>{l.name || '—'}</td>
                         <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{l.phone}</td>
-                        <td>{l.company || '—'}</td>
+                        <td style={{ fontSize: '0.82rem', color: '#9ca3af' }}>{l.company || '—'}</td>
+                        <td><LeadStatusBadge status={l.status} /></td>
                         <td><WaStatusBadge status={ws?.whatsapp_status || 'NOT_CHECKED'} /></td>
                         <td style={{ fontSize: '0.75rem', color: '#6b7280' }}>
                           {ws?.last_checked_at ? new Date(ws.last_checked_at).toLocaleString() : '—'}
@@ -190,16 +245,16 @@ export default function WaLeads() {
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="wa-btn wa-btn-secondary" style={{ padding: '4px 10px', fontSize: '0.8rem' }} disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
               <span style={{ padding: '4px 8px', color: 'var(--text-primary, #f3f4f6)' }}>Page {page}</span>
-              <button className="wa-btn wa-btn-secondary" style={{ padding: '4px 10px', fontSize: '0.8rem' }} disabled={filtered.length < 50} onClick={() => setPage(p => p + 1)}>Next →</button>
+              <button className="wa-btn wa-btn-secondary" style={{ padding: '4px 10px', fontSize: '0.8rem' }} disabled={leads.length < 100} onClick={() => setPage(p => p + 1)}>Next →</button>
             </div>
           </div>
         </div>
 
         {showCreateCampaign && (
-          <CreateModal 
-            preSelectedLeadIds={[...selected]} 
-            onSave={handleCreateCampaign} 
-            onClose={() => setShowCreateCampaign(false)} 
+          <CreateModal
+            preSelectedLeadIds={[...selected]}
+            onSave={handleCreateCampaign}
+            onClose={() => setShowCreateCampaign(false)}
           />
         )}
       </div>

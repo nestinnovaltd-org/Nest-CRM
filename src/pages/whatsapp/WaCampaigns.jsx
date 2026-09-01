@@ -39,13 +39,14 @@ export function CreateModal({ onSave, onClose, preSelectedLeadIds = [] }) {
     Promise.all([
       waSessions.list().catch(() => ({ sessions: [] })),
       waTemplates.list().catch(() => ({ templates: [] })),
-      waLeads.list({ limit: 200 }).catch(() => ({ leads: [] }))
+      waLeads.list({ limit: 500, mine: 'true' }).catch(() => ({ leads: [] }))
     ]).then(([s, t, l]) => {
       setSessions((s.sessions || []).filter(ses => ses.status === 'CONNECTED' || ses.live_status === 'CONNECTED'))
       setTemplates(t.templates || [])
       setAllLeads(l.leads || [])
     })
   }, [])
+
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 

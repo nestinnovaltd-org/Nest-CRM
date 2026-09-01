@@ -11,7 +11,7 @@ const router = Router()
 // GET /api/whatsapp/leads — leads with their WA status
 router.get('/', async (req, res) => {
   try {
-    const { status, page = 1, limit = 50 } = req.query
+    const { status, page = 1, limit = 50, mine } = req.query
     const offset = (Number(page) - 1) * Number(limit)
 
     // Fetch leads first to avoid PGRST200 join error
@@ -23,7 +23,16 @@ router.get('/', async (req, res) => {
 
     const isAdmin = req.user.role === 'Admin' || req.user.role === 'MD' || req.user.role === 'System Admin' || req.user.account_type === 'super_admin'
 
-    if (!isAdmin) {
+    // mine=true: only show leads assigned directly to current user (for WaLeads page)
+    if (mine === 'true') {
+      const { data: selfUser } = await supabase
+        .from('users')
+        .select('id, uid')
+        .eq('id', req.user.id)
+        .single()
+      const myIds = [req.user.id, ...(selfUser?.uid ? [selfUser.uid] : [])].filter(Boolean)
+      query = query.or(`assigned_to.in.(${myIds.join(',')}),owner_id.in.(${myIds.join(',')})`)
+    } else if (!isAdmin) {
       // Fetch all users in the same org (include uid for legacy Firebase UID support)
       const { data: allUsers } = await supabase
         .from('users')
