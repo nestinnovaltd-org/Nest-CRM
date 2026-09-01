@@ -23,12 +23,18 @@ router.get('/', async (req, res) => {
 // POST /api/whatsapp/templates
 router.post('/', async (req, res) => {
   try {
-    const { name, body, variables = [] } = req.body
+    const { name, body, variables = [], media_url = null, media_type = null } = req.body
     if (!name?.trim() || !body?.trim()) return res.status(400).json({ error: 'name and body required' })
 
     const { data, error } = await supabase
       .from('whatsapp_templates')
-      .insert({ org_id: req.user.org_id, user_id: req.user.id, name: name.trim(), body: body.trim(), variables, created_at: new Date().toISOString() })
+      .insert({
+        org_id: req.user.org_id, user_id: req.user.id,
+        name: name.trim(), body: body.trim(), variables,
+        media_url: media_url || null,
+        media_type: media_type || null,
+        created_at: new Date().toISOString()
+      })
       .select().single()
 
     if (error) throw error
@@ -45,11 +51,13 @@ router.put('/:id', async (req, res) => {
     const owned = await verifyOrgOwnership('whatsapp_templates', req.params.id, req.user.org_id)
     if (!owned) return res.status(404).json({ error: 'Template not found' })
 
-    const { name, body, variables } = req.body
+    const { name, body, variables, media_url, media_type } = req.body
     const update = {}
-    if (name)      update.name = name.trim()
-    if (body)      update.body = body.trim()
-    if (variables) update.variables = variables
+    if (name)                update.name      = name.trim()
+    if (body)                update.body      = body.trim()
+    if (variables)           update.variables = variables
+    if (media_url  !== undefined) update.media_url  = media_url  || null
+    if (media_type !== undefined) update.media_type = media_type || null
 
     const { data, error } = await supabase.from('whatsapp_templates').update(update).eq('id', req.params.id).select().single()
     if (error) throw error

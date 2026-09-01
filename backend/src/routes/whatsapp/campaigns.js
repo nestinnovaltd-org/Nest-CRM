@@ -101,7 +101,7 @@ router.post('/:id/start', async (req, res) => {
 
     // Manually fetch template and session
     const [{ data: template }, { data: session }] = await Promise.all([
-      supabase.from('whatsapp_templates').select('id, body, variables').eq('id', campaign.template_id).single(),
+      supabase.from('whatsapp_templates').select('id, body, variables, media_url, media_type').eq('id', campaign.template_id).single(),
       supabase.from('whatsapp_sessions').select('id, status').eq('id', campaign.session_id).single()
     ])
     campaign.whatsapp_templates = template || null
@@ -475,13 +475,12 @@ async function _processCampaignDirectly(campaignId, sessionId, orgId) {
         .update({ status: 'PROCESSING', updated_at: new Date().toISOString() })
         .eq('id', recipient.id)
 
-      // 4. Send message
+      // 4. Send message (with media if template has attachment)
       try {
-        const providerId = await sessionManager.sendMessage(
-          sessionId,
-          recipient.phone_number,
-          recipient.message_body
-        )
+        const tmpl = campaign.whatsapp_templates
+        const providerId = (tmpl?.media_url)
+          ? await sessionManager.sendMediaMessage(sessionId, recipient.phone_number, recipient.message_body, tmpl.media_url, tmpl.media_type)
+          : await sessionManager.sendMessage(sessionId, recipient.phone_number, recipient.message_body)
 
         const now = new Date().toISOString()
 

@@ -101,11 +101,27 @@ const worker = new Worker('whatsapp-outbound', async (job) => {
   logger.info({ campaignId, recipientId, delayMs }, 'Delay applied before send')
 
   // ─── 8. Send the message ──────────────────────────────────────────────────
-  const providerId = await sessionManager.sendMessage(
-    sessionId,
-    recipient.phone_number,
-    recipient.message_body
-  )
+  // Fetch campaign's template to check for media attachment
+  let mediaUrl = null, mediaType = null
+  const { data: campRow } = await supabase
+    .from('whatsapp_campaigns')
+    .select('template_id')
+    .eq('id', campaignId)
+    .single()
+
+  if (campRow?.template_id) {
+    const { data: tmpl } = await supabase
+      .from('whatsapp_templates')
+      .select('media_url, media_type')
+      .eq('id', campRow.template_id)
+      .single()
+    mediaUrl  = tmpl?.media_url  || null
+    mediaType = tmpl?.media_type || null
+  }
+
+  const providerId = mediaUrl
+    ? await sessionManager.sendMediaMessage(sessionId, recipient.phone_number, recipient.message_body, mediaUrl, mediaType)
+    : await sessionManager.sendMessage(sessionId, recipient.phone_number, recipient.message_body)
 
   const now = new Date().toISOString()
 

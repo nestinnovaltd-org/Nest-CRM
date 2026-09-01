@@ -162,6 +162,32 @@ export const sessionManager = {
     return result?.key?.id
   },
 
+  /** Send a message with media attachment (image/video/document/audio). */
+  async sendMediaMessage(sessionId, phone, body, mediaUrl, mediaType) {
+    const s = sessions.get(sessionId)
+    if (!s || s.status !== 'CONNECTED') {
+      throw new Error(`Session ${sessionId} not connected`)
+    }
+    const jid = `${phone.replace('+', '')}@s.whatsapp.net`
+    const mt  = (mediaType || 'image').toLowerCase()
+
+    let msg
+    if (mt === 'image') {
+      msg = { image: { url: mediaUrl }, caption: body || '' }
+    } else if (mt === 'video') {
+      msg = { video: { url: mediaUrl }, caption: body || '' }
+    } else if (mt === 'audio') {
+      msg = { audio: { url: mediaUrl }, mimetype: 'audio/mpeg', ptt: false }
+    } else {
+      // document
+      const fileName = decodeURIComponent(mediaUrl.split('/').pop().split('?')[0]) || 'attachment'
+      msg = { document: { url: mediaUrl }, mimetype: 'application/octet-stream', fileName, caption: body || '' }
+    }
+
+    const result = await s.socket.sendMessage(jid, msg)
+    return result?.key?.id
+  },
+
   /** Check if a phone number has WhatsApp via Baileys onWhatsApp. */
   async checkNumber(sessionId, phone) {
     const s = sessions.get(sessionId)
