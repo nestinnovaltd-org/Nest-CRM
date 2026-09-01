@@ -11,19 +11,45 @@ const router = Router()
 // GET /api/whatsapp/campaigns
 router.get('/', async (req, res) => {
   try {
-    const { data, error } = await withOrg(
+    // Fetch campaigns (no implicit FK join — schema doesn't define FK constraints)
+    const { data: campaigns, error } = await withOrg(
       supabase.from('whatsapp_campaigns')
-        .select('*, whatsapp_sessions(session_name, status), whatsapp_templates(name)')
+        .select('*')
         .order('created_at', { ascending: false }),
       req
     )
     if (error) throw error
-    res.json({ campaigns: data || [] })
+
+    if (!campaigns || campaigns.length === 0) {
+      return res.json({ campaigns: [] })
+    }
+
+    // Fetch related session and template names separately
+    const sessionIds  = [...new Set(campaigns.map(c => c.session_id).filter(Boolean))]
+    const templateIds = [...new Set(campaigns.map(c => c.template_id).filter(Boolean))]
+
+    const [sessRes, tmplRes] = await Promise.all([
+      sessionIds.length  ? supabase.from('whatsapp_sessions').select('id, session_name, status, phone_number').in('id', sessionIds)  : { data: [] },
+      templateIds.length ? supabase.from('whatsapp_templates').select('id, name').in('id', templateIds) : { data: [] }
+    ])
+
+    const sessMap = Object.fromEntries((sessRes.data || []).map(s => [s.id, s]))
+    const tmplMap = Object.fromEntries((tmplRes.data || []).map(t => [t.id, t]))
+
+    // Merge into campaign objects (same shape as PostgREST join would return)
+    const merged = campaigns.map(c => ({
+      ...c,
+      whatsapp_sessions:  c.session_id  ? (sessMap[c.session_id]  || null) : null,
+      whatsapp_templates: c.template_id ? (tmplMap[c.template_id] || null) : null,
+    }))
+
+    res.json({ campaigns: merged })
   } catch (err) {
     logger.error({ err }, 'GET /campaigns error')
     res.status(500).json({ error: 'Failed to fetch campaigns' })
   }
 })
+
 
 // POST /api/whatsapp/campaigns — Create campaign
 router.post('/', async (req, res) => {
@@ -62,14 +88,24 @@ router.post('/:id/start', async (req, res) => {
     const owned = await verifyOrgOwnership('whatsapp_campaigns', req.params.id, req.user.org_id)
     if (!owned) return res.status(404).json({ error: 'Campaign not found' })
 
+    // Fetch campaign without FK join (schema has no FK constraints)
     const { data: campaign, error: fetchErr } = await supabase
       .from('whatsapp_campaigns')
-      .select('*, whatsapp_templates(body, variables), whatsapp_sessions(status)')
-      .eq('id', req.params.id).single()
+      .select('*')
+      .eq('id', req.params.id)
+      .single()
 
     if (fetchErr || !campaign) {
       return res.status(404).json({ error: 'Campaign not found' })
     }
+
+    // Manually fetch template and session
+    const [{ data: template }, { data: session }] = await Promise.all([
+      supabase.from('whatsapp_templates').select('id, body, variables').eq('id', campaign.template_id).single(),
+      supabase.from('whatsapp_sessions').select('id, status').eq('id', campaign.session_id).single()
+    ])
+    campaign.whatsapp_templates = template || null
+    campaign.whatsapp_sessions  = session  || null
 
     if (!['DRAFT', 'PAUSED', 'SCHEDULED'].includes(campaign.status)) {
       return res.status(400).json({ error: `Cannot start campaign with status: ${campaign.status}` })
@@ -164,11 +200,18 @@ router.post('/:id/resume', async (req, res) => {
 
     const { data: campaign } = await supabase
       .from('whatsapp_campaigns')
-      .select('session_id, whatsapp_sessions(status)')
+      .select('session_id')
       .eq('id', req.params.id).single()
 
+    // Manually fetch session status
+    const { data: sessionRow } = await supabase
+      .from('whatsapp_sessions')
+      .select('status')
+      .eq('id', campaign.session_id)
+      .single()
+
     const liveStatus = sessionManager.getStatus(campaign.session_id)
-    const dbStatus   = campaign.whatsapp_sessions?.status
+    const dbStatus   = sessionRow?.status
     const isConnected = liveStatus === 'CONNECTED' || dbStatus === 'CONNECTED'
     if (!isConnected) {
       return res.status(400).json({ error: 'Cannot resume: session is not connected' })

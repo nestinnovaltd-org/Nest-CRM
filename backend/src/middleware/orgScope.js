@@ -22,10 +22,10 @@ export function withOrg(query, req) {
 export async function verifyOrgOwnership(table, id, orgId) {
   const { data, error } = await supabase
     .from(table)
-    .select('id, org_id')
+    .select('id')
     .eq('id', id)
-    .single()
+    .eq('org_id', orgId)
+    .maybeSingle()
 
-  if (error || !data) return false
-  return data.org_id === orgId
+  return !error && !!data
 }
