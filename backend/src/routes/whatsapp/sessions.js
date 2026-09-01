@@ -63,7 +63,7 @@ router.post('/', async (req, res) => {
 
 // GET /api/whatsapp/sessions/:id/qr — Poll for QR code
 router.get('/:id/qr', async (req, res) => {
-  const owned = await verifyOrgOwnership('whatsapp_sessions', req.params.id, req.user.org_id)
+  const owned = await verifyOrgOwnership('whatsapp_sessions', req.params.id, req.user)
   if (!owned) return res.status(404).json({ error: 'Session not found' })
 
   const qr = sessionManager.getQR(req.params.id)
@@ -74,7 +74,7 @@ router.get('/:id/qr', async (req, res) => {
 
 // GET /api/whatsapp/sessions/:id/status
 router.get('/:id/status', async (req, res) => {
-  const owned = await verifyOrgOwnership('whatsapp_sessions', req.params.id, req.user.org_id)
+  const owned = await verifyOrgOwnership('whatsapp_sessions', req.params.id, req.user)
   if (!owned) return res.status(404).json({ error: 'Session not found' })
 
   const { data } = await supabase
@@ -88,7 +88,7 @@ router.get('/:id/status', async (req, res) => {
 
 // POST /api/whatsapp/sessions/:id/reconnect
 router.post('/:id/reconnect', async (req, res) => {
-  const owned = await verifyOrgOwnership('whatsapp_sessions', req.params.id, req.user.org_id)
+  const owned = await verifyOrgOwnership('whatsapp_sessions', req.params.id, req.user)
   if (!owned) return res.status(404).json({ error: 'Session not found' })
 
   sessionManager.startSession(req.params.id, req.user.org_id).catch(err =>
@@ -99,7 +99,7 @@ router.post('/:id/reconnect', async (req, res) => {
 
 // POST /api/whatsapp/sessions/:id/disconnect
 router.post('/:id/disconnect', async (req, res) => {
-  const owned = await verifyOrgOwnership('whatsapp_sessions', req.params.id, req.user.org_id)
+  const owned = await verifyOrgOwnership('whatsapp_sessions', req.params.id, req.user)
   if (!owned) return res.status(404).json({ error: 'Session not found' })
 
   await sessionManager.disconnectSession(req.params.id)
@@ -108,7 +108,7 @@ router.post('/:id/disconnect', async (req, res) => {
 
 // DELETE /api/whatsapp/sessions/:id
 router.delete('/:id', async (req, res) => {
-  const owned = await verifyOrgOwnership('whatsapp_sessions', req.params.id, req.user.org_id)
+  const owned = await verifyOrgOwnership('whatsapp_sessions', req.params.id, req.user)
   if (!owned) return res.status(404).json({ error: 'Session not found' })
 
   await sessionManager.disconnectSession(req.params.id)

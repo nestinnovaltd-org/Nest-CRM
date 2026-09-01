@@ -48,7 +48,7 @@ router.post('/', async (req, res) => {
 // PUT /api/whatsapp/templates/:id
 router.put('/:id', async (req, res) => {
   try {
-    const owned = await verifyOrgOwnership('whatsapp_templates', req.params.id, req.user.org_id)
+    const owned = await verifyOrgOwnership('whatsapp_templates', req.params.id, req.user)
     if (!owned) return res.status(404).json({ error: 'Template not found' })
 
     const { name, body, variables, media_url, media_type } = req.body
@@ -70,7 +70,7 @@ router.put('/:id', async (req, res) => {
 // DELETE /api/whatsapp/templates/:id (soft delete → ARCHIVED)
 router.delete('/:id', async (req, res) => {
   try {
-    const owned = await verifyOrgOwnership('whatsapp_templates', req.params.id, req.user.org_id)
+    const owned = await verifyOrgOwnership('whatsapp_templates', req.params.id, req.user)
     if (!owned) return res.status(404).json({ error: 'Template not found' })
 
     await supabase.from('whatsapp_templates').update({ status: 'ARCHIVED' }).eq('id', req.params.id)

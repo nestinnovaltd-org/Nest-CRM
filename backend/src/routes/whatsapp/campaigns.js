@@ -85,7 +85,7 @@ router.post('/', async (req, res) => {
 // POST /api/whatsapp/campaigns/:id/start
 router.post('/:id/start', async (req, res) => {
   try {
-    const owned = await verifyOrgOwnership('whatsapp_campaigns', req.params.id, req.user.org_id)
+    const owned = await verifyOrgOwnership('whatsapp_campaigns', req.params.id, req.user)
     if (!owned) return res.status(404).json({ error: 'Campaign not found' })
 
     // Fetch campaign without FK join (schema has no FK constraints)
@@ -178,7 +178,7 @@ router.post('/:id/start', async (req, res) => {
 // POST /api/whatsapp/campaigns/:id/pause
 router.post('/:id/pause', async (req, res) => {
   try {
-    const owned = await verifyOrgOwnership('whatsapp_campaigns', req.params.id, req.user.org_id)
+    const owned = await verifyOrgOwnership('whatsapp_campaigns', req.params.id, req.user)
     if (!owned) return res.status(404).json({ error: 'Campaign not found' })
 
     await supabase.from('whatsapp_campaigns').update({
@@ -195,7 +195,7 @@ router.post('/:id/pause', async (req, res) => {
 // POST /api/whatsapp/campaigns/:id/resume
 router.post('/:id/resume', async (req, res) => {
   try {
-    const owned = await verifyOrgOwnership('whatsapp_campaigns', req.params.id, req.user.org_id)
+    const owned = await verifyOrgOwnership('whatsapp_campaigns', req.params.id, req.user)
     if (!owned) return res.status(404).json({ error: 'Campaign not found' })
 
     const { data: campaign } = await supabase
@@ -249,7 +249,7 @@ router.post('/:id/resume', async (req, res) => {
 // POST /api/whatsapp/campaigns/:id/stop
 router.post('/:id/stop', async (req, res) => {
   try {
-    const owned = await verifyOrgOwnership('whatsapp_campaigns', req.params.id, req.user.org_id)
+    const owned = await verifyOrgOwnership('whatsapp_campaigns', req.params.id, req.user)
     if (!owned) return res.status(404).json({ error: 'Campaign not found' })
 
     // Cancel all QUEUED recipients
@@ -268,9 +268,9 @@ router.post('/:id/stop', async (req, res) => {
 })
 
 // GET /api/whatsapp/campaigns/:id — Campaign detail with recipient stats
-router.get('/:id', async (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
-    const owned = await verifyOrgOwnership('whatsapp_campaigns', req.params.id, req.user.org_id)
+    const owned = await verifyOrgOwnership('whatsapp_campaigns', req.params.id, req.user)
     if (!owned) return res.status(404).json({ error: 'Campaign not found' })
 
     const { data } = await supabase

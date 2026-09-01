@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { supabase }  from '../../utils/supabase.js'
 import { logger }    from '../../utils/logger.js'
-import { withOrg }   from '../../middleware/orgScope.js'
+import { withOrg, isSuperAdmin } from '../../middleware/orgScope.js'
 import { sessionManager } from '../../services/whatsapp/sessionManager.js'
 
 const router = Router()
@@ -12,13 +12,28 @@ router.get('/', async (req, res) => {
     const { page = 1, limit = 30, ai_status } = req.query
     const offset = (Number(page) - 1) * Number(limit)
 
-    let query = withOrg(
-      supabase.from('whatsapp_conversations')
-        .select('*, whatsapp_sessions(session_name)', { count: 'exact' })
-        .order('last_message_at', { ascending: false })
-        .range(offset, offset + Number(limit) - 1),
-      req
-    )
+    let query = supabase.from('whatsapp_conversations')
+      .select('*, whatsapp_sessions(session_name)', { count: 'exact' })
+      .eq('org_id', req.user.org_id)
+      .order('last_message_at', { ascending: false })
+      .range(offset, offset + Number(limit) - 1)
+
+    if (!isSuperAdmin(req.user)) {
+      // Non-super admins only see conversations assigned to them or tied to their own sessions
+      const { data: mySessions } = await supabase
+        .from('whatsapp_sessions')
+        .select('id')
+        .eq('org_id', req.user.org_id)
+        .eq('user_id', req.user.id)
+
+      const mySessIds = (mySessions || []).map(s => s.id)
+      if (mySessIds.length > 0) {
+        query = query.or(`assigned_to.eq.${req.user.id},session_id.in.(${mySessIds.join(',')})`)
+      } else {
+        query = query.eq('assigned_to', req.user.id)
+      }
+    }
+
     if (ai_status) query = query.eq('ai_status', ai_status)
 
     const { data, count, error } = await query
@@ -29,6 +44,7 @@ router.get('/', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch conversations' })
   }
 })
+
 
 // GET /api/whatsapp/conversations/:id/messages
 router.get('/:id/messages', async (req, res) => {
