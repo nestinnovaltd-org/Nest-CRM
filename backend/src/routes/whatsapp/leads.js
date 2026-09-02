@@ -18,8 +18,13 @@ router.get('/', async (req, res) => {
     let query = supabase
       .from('leads')
       .select('id, name, phone, second_phone, email, company, status, assigned_to, created_at', { count: 'exact' })
-      .eq('org_id', req.user.org_id)
       .neq('status', 'Released')
+
+    if (req.user.org_id) {
+      query = query.or(`org_id.eq.${req.user.org_id},and(org_id.is.null,assigned_to.eq.${req.user.id}),and(org_id.is.null,owner_id.eq.${req.user.id})`)
+    } else {
+      query = query.or(`assigned_to.eq.${req.user.id},owner_id.eq.${req.user.id}`)
+    }
 
     const isAdmin = req.user.role === 'Admin' || req.user.role === 'MD' || req.user.role === 'System Admin' || req.user.account_type === 'super_admin'
 

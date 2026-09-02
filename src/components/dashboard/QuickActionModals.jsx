@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { User, Phone, MapPin, Calendar, CreditCard, MessageSquare } from 'lucide-react';
 
 export const QuickLeadModal = ({ isOpen, onClose }) => {
-  const { user } = useAuth();
+  const { user, currentTenant } = useAuth();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     fullName: '',
@@ -19,12 +19,28 @@ export const QuickLeadModal = ({ isOpen, onClose }) => {
     e.preventDefault();
     setLoading(true);
     try {
+      const isSA = user?.account_type === 'super_admin';
+      const resolvedOrgId = (isSA && currentTenant?.type === 'org')
+        ? currentTenant?.id
+        : (user?.org_id || null);
+
+      const resolvedOwnerId = (isSA && currentTenant?.type === 'individual')
+        ? currentTenant?.id
+        : (user?.uid || user?.id);
+
       await supabase.from('leads').insert({
-        ...formData,
+        name: formData.fullName,
+        phone: formData.phone,
+        company: formData.projectName,
         status: 'Fresh Lead',
         priority: 'Medium',
-        assigned_to: user.uid,
-        created_by: user.name || user.full_name || user.fullName,
+        source: formData.source || 'Quick Add',
+        assigned_to: resolvedOwnerId,
+        assigned_to_name: user?.full_name || user?.fullName || user?.name || 'Admin',
+        owner_id: resolvedOwnerId,
+        owner_name: user?.full_name || user?.fullName || user?.name || 'Admin',
+        org_id: resolvedOrgId,
+        created_by: user?.name || user?.full_name || user?.fullName || 'Admin',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       });

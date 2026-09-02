@@ -85,7 +85,7 @@ const checkPhoneDuplicateInTeam = async (phoneNumber, user, allUsers, teams) => 
 
 const AddLeadPage = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, currentTenant } = useAuth();
   const [users, setUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -128,8 +128,8 @@ const AddLeadPage = () => {
     if (user && !formData.assignedTo) {
       setFormData(prev => ({
         ...prev,
-        assignedTo: user.uid,
-        assignedToName: user.fullName || user.name
+        assignedTo: user.uid || user.id,
+        assignedToName: user.full_name || user.fullName || user.name || 'Admin'
       }));
     }
   }, [user]);
@@ -304,6 +304,15 @@ const AddLeadPage = () => {
         });
       }
 
+      const isSA = user?.account_type === 'super_admin';
+      const resolvedOrgId = (isSA && currentTenant?.type === 'org')
+        ? currentTenant?.id
+        : (user?.org_id || null);
+
+      const resolvedOwnerId = (isSA && currentTenant?.type === 'individual')
+        ? currentTenant?.id
+        : (user?.uid || user?.id);
+
       const codeCleaned = formData.countryCode.replace(/[^\d]/g, '');
       const fullPhone = `${codeCleaned}${cleanedPhone}`;
       const secondPhoneCleaned = formData.secondPhone ? `${codeCleaned}${cleanPhoneNumber(formData.secondPhone)}` : '';
@@ -320,10 +329,11 @@ const AddLeadPage = () => {
         location: formData.location,
         area: formData.area,
         address: formData.address || '',
-        assigned_to: formData.assignedTo,
-        assigned_to_name: formData.assignedToName,
-        owner_id: user.uid,
-        owner_name: user.full_name || user.fullName || user.name || 'Admin',
+        assigned_to: formData.assignedTo || resolvedOwnerId,
+        assigned_to_name: formData.assignedToName || user?.full_name || user?.fullName || user?.name || 'Admin',
+        owner_id: resolvedOwnerId,
+        owner_name: user?.full_name || user?.fullName || user?.name || 'Admin',
+        org_id: resolvedOrgId,
         priority: formData.priority,
         source: formData.source,
         status: formData.nextCallDate ? 'Follow Up' : 'Fresh Lead',

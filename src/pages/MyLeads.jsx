@@ -1986,17 +1986,18 @@ const MyLeads = () => {
       let query = supabase.from('leads').select('*').neq('status', 'Released');
 
       // Tenant isolation filter
+      const currentUserId = user.uid || user.id;
       if (user.account_type === 'super_admin') {
         if (currentTenant?.type === 'org') {
-          query = query.eq('org_id', currentTenant.id);
+          query = query.or(`org_id.eq.${currentTenant.id},and(org_id.is.null,owner_id.eq.${currentUserId})`);
         } else if (currentTenant?.type === 'individual') {
           query = query.eq('owner_id', currentTenant.id);
         }
       } else {
         if (user.org_id) {
-          query = query.eq('org_id', user.org_id);
+          query = query.or(`org_id.eq.${user.org_id},and(org_id.is.null,owner_id.eq.${currentUserId})`);
         } else {
-          query = query.eq('owner_id', user.uid || user.id);
+          query = query.eq('owner_id', currentUserId);
         }
       }
 
