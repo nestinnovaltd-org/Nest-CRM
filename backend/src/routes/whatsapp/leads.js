@@ -19,7 +19,7 @@ router.get('/', async (req, res) => {
     let query
 
     if (mine === 'true') {
-      // ── mine=true: only leads assigned to the current user ────────────────
+      // ── mine=true: only leads assigned to or owned by current user ────────────────
       const { data: selfUser } = await supabase
         .from('users').select('id, uid, full_name, name').eq('id', req.user.id).maybeSingle()
 
@@ -30,22 +30,27 @@ router.get('/', async (req, res) => {
       ].filter(Boolean)))
 
       const conditions = []
-      myUids.forEach(u => {
-        conditions.push(`assigned_to.eq."${u}"`)
-        conditions.push(`owner_id.eq."${u}"`)
-      })
-      myNames.forEach(n => {
-        conditions.push(`assigned_to.eq."${n}"`)
-        conditions.push(`owner_id.eq."${n}"`)
-      })
+      if (myUids.length > 0) {
+        conditions.push(`assigned_to.in.(${myUids.join(',')})`)
+        conditions.push(`owner_id.in.(${myUids.join(',')})`)
+      }
+      if (myNames.length > 0) {
+        const escapedNames = myNames.map(n => `"${n.replace(/"/g, '""')}"`).join(',')
+        conditions.push(`assigned_to_name.in.(${escapedNames})`)
+      }
 
-      const orFilter = conditions.length > 0 ? conditions.join(',') : `assigned_to.eq."${req.user.id}"`
+      const orFilter = conditions.length > 0 ? conditions.join(',') : `assigned_to.eq.${req.user.id}`
 
       query = supabase
         .from('leads')
         .select('id, name, phone, second_phone, email, company, status, assigned_to, created_at', { count: 'exact' })
         .neq('status', 'Released')
-        .or(orFilter)
+
+      if (req.user.org_id) {
+        query = query.or(`org_id.eq.${req.user.org_id},and(org_id.is.null,assigned_to.eq.${req.user.id})`)
+      }
+
+      query = query.or(orFilter)
 
     } else if (isAdmin) {
       // ── Admin/MD: all leads in the org ────────────────────────────────────
