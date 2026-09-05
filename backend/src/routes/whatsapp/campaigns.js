@@ -300,11 +300,16 @@ async function _getEligibleLeads(campaign, orgId) {
 
   // If specific lead_ids are passed (from lead selection), fetch them directly
   if (filter.lead_ids && Array.isArray(filter.lead_ids) && filter.lead_ids.length > 0) {
-    const { data: explicitLeads } = await supabase
+    let query = supabase
       .from('leads')
-      .select('id, name, phone, company, email')
-      .eq('org_id', orgId)
+      .select('id, name, phone, second_phone, company, email')
       .in('id', filter.lead_ids)
+
+    if (orgId) {
+      query = query.or(`org_id.eq.${orgId},and(org_id.is.null,assigned_to.eq.${campaign.user_id})`)
+    }
+
+    const { data: explicitLeads } = await query
 
     if (!explicitLeads || explicitLeads.length === 0) return []
 
@@ -317,6 +322,7 @@ async function _getEligibleLeads(campaign, orgId) {
     const optedOutSet = new Set((statuses || []).filter(s => s.opted_out).map(s => s.lead_id))
 
     return explicitLeads
+      .map(l => ({ ...l, phone: l.phone || l.second_phone }))
       .filter(l => l.phone && !optedOutSet.has(l.id))
       .map(l => ({
         ...l,
@@ -326,9 +332,12 @@ async function _getEligibleLeads(campaign, orgId) {
 
   let query = supabase
     .from('leads')
-    .select('id, name, phone, company, email')
-    .eq('org_id', orgId)
+    .select('id, name, phone, second_phone, company, email')
     .neq('status', 'Released')
+
+  if (orgId) {
+    query = query.or(`org_id.eq.${orgId},and(org_id.is.null,assigned_to.eq.${campaign.user_id})`)
+  }
 
   // Fetch the creator's profile to scope campaign leads if they are not admin
   if (campaign.user_id) {
@@ -384,16 +393,12 @@ async function _getEligibleLeads(campaign, orgId) {
     }
   }
 
-  if (filter.lead_ids && Array.isArray(filter.lead_ids) && filter.lead_ids.length > 0) {
-    query = query.in('id', filter.lead_ids)
-  }
-
   if (filter.status)      query = query.eq('status', filter.status)
   if (filter.source)      query = query.eq('source', filter.source)
   if (filter.assigned_to) query = query.eq('assigned_to', filter.assigned_to)
   if (filter.company)     query = query.eq('company', filter.company)
 
-  const limitCount = (filter.lead_ids && filter.lead_ids.length) || campaign.daily_limit || 200
+  const limitCount = campaign.daily_limit || 2000
   const { data: leads } = await query.limit(limitCount)
   if (!leads || leads.length === 0) return []
 
@@ -412,6 +417,7 @@ async function _getEligibleLeads(campaign, orgId) {
 
   // Map and return leads as WHATSAPP_AVAILABLE by default if not opted out
   return leads
+    .map(l => ({ ...l, phone: l.phone || l.second_phone }))
     .filter(l => l.phone && !optedOutSet.has(l.id))
     .map(l => ({
       ...l,

@@ -45,21 +45,15 @@ router.get('/logs', async (req, res) => {
     } = req.query
     const offset = (Number(page) - 1) * Number(limit)
 
-    // ── Step 1: fetch messages with lead + session + campaign join ─────────
+    // ── Step 1: fetch messages directly ────────────────────────────────────
     let query = supabase
       .from('whatsapp_messages')
-      .select(`
-        id, org_id, lead_id, session_id, campaign_id,
-        direction, message_source, message_body,
-        status, provider_message_id,
-        sent_at, delivered_at, read_at, failed_at,
-        is_ai_generated, created_at,
-        leads ( id, name, phone, company, status ),
-        whatsapp_sessions ( id, session_name, phone_number ),
-        whatsapp_campaigns ( id, name )
-      `, { count: 'exact' })
-      .eq('org_id', req.user.org_id)
+      .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
+
+    if (req.user?.org_id) {
+      query = query.or(`org_id.eq.${req.user.org_id},org_id.is.null`)
+    }
 
     if (direction)   query = query.eq('direction', direction)
     if (status)      query = query.eq('status', status)
@@ -73,37 +67,62 @@ router.get('/logs', async (req, res) => {
     const { data: messages, count, error } = await query
     if (error) throw error
 
-    // ── Step 2: shape the response ─────────────────────────────────────────
-    let logs = (messages || []).map(m => ({
-      id:                 m.id,
-      direction:          m.direction,
-      message_source:     m.message_source,
-      message_body:       m.message_body,
-      status:             m.status,
-      provider_message_id: m.provider_message_id,
-      is_ai_generated:    m.is_ai_generated || false,
-      // timestamps
-      created_at:  m.created_at,
-      sent_at:     m.sent_at,
-      delivered_at: m.delivered_at,
-      read_at:     m.read_at,
-      failed_at:   m.failed_at,
-      // lead info
-      lead_id:     m.lead_id,
-      lead_name:   m.leads?.name || '—',
-      lead_phone:  m.leads?.phone || '—',
-      lead_company: m.leads?.company || '—',
-      lead_status: m.leads?.status || '—',
-      // session (sender) info
-      session_id:      m.session_id,
-      session_name:    m.whatsapp_sessions?.session_name || '—',
-      session_phone:   m.whatsapp_sessions?.phone_number || '—',
-      // campaign info
-      campaign_id:   m.campaign_id,
-      campaign_name: m.whatsapp_campaigns?.name || '—'
-    }))
+    if (!messages || messages.length === 0) {
+      return res.json({ logs: [], total: 0 })
+    }
 
-    // ── Step 3: client-side search (lead name / phone / body) ─────────────
+    // ── Step 2: fetch related entities manually (no FK constraint in schema) ─
+    const leadIds = Array.from(new Set(messages.map(m => m.lead_id).filter(Boolean)))
+    const sessionIds = Array.from(new Set(messages.map(m => m.session_id).filter(Boolean)))
+    const campaignIds = Array.from(new Set(messages.map(m => m.campaign_id).filter(Boolean)))
+
+    const [{ data: leadsData }, { data: sessionsData }, { data: campaignsData }] = await Promise.all([
+      leadIds.length ? supabase.from('leads').select('id, name, phone, second_phone, company, status').in('id', leadIds) : { data: [] },
+      sessionIds.length ? supabase.from('whatsapp_sessions').select('id, session_name, phone_number').in('id', sessionIds) : { data: [] },
+      campaignIds.length ? supabase.from('whatsapp_campaigns').select('id, name').in('id', campaignIds) : { data: [] }
+    ])
+
+    const leadMap = new Map((leadsData || []).map(l => [l.id, l]))
+    const sessionMap = new Map((sessionsData || []).map(s => [s.id, s]))
+    const campaignMap = new Map((campaignsData || []).map(c => [c.id, c]))
+
+    // ── Step 3: shape the response ─────────────────────────────────────────
+    let logs = messages.map(m => {
+      const lead = leadMap.get(m.lead_id) || {}
+      const sess = sessionMap.get(m.session_id) || {}
+      const camp = campaignMap.get(m.campaign_id) || {}
+
+      return {
+        id:                  m.id,
+        direction:           m.direction,
+        message_source:      m.message_source,
+        message_body:        m.message_body,
+        status:              m.status,
+        provider_message_id:  m.provider_message_id,
+        is_ai_generated:     m.is_ai_generated || false,
+        // timestamps
+        created_at:   m.created_at,
+        sent_at:      m.sent_at,
+        delivered_at: m.delivered_at,
+        read_at:      m.read_at,
+        failed_at:    m.failed_at,
+        // lead info
+        lead_id:      m.lead_id,
+        lead_name:    lead.name || '—',
+        lead_phone:   lead.phone || lead.second_phone || '—',
+        lead_company: lead.company || '—',
+        lead_status:  lead.status || '—',
+        // session (sender) info
+        session_id:   m.session_id,
+        session_name: sess.session_name || '—',
+        session_phone: sess.phone_number || '—',
+        // campaign info
+        campaign_id:   m.campaign_id,
+        campaign_name: camp.name || '—'
+      }
+    })
+
+    // ── Step 4: client-side search (lead name / phone / body / campaign) ───
     if (search) {
       const q = search.toLowerCase()
       logs = logs.filter(l =>
@@ -115,7 +134,7 @@ router.get('/logs', async (req, res) => {
       )
     }
 
-    res.json({ logs, total: count })
+    res.json({ logs, total: count || logs.length })
   } catch (err) {
     logger.error({ err }, 'GET /messages/logs error')
     res.status(500).json({ error: 'Failed to fetch logs' })
