@@ -12,18 +12,19 @@ const BASE = import.meta.env.VITE_WA_BACKEND_URL || 'http://localhost:3001'
 /**
  * Fetch helper — injects auth header, throws on non-2xx.
  */
-async function apiFetch(path, options = {}, isRetry = false) {
+async function apiFetch(path, options = {}) {
   // Get fresh session token from Supabase client
   let { data: { session } } = await supabase.auth.getSession()
 
-  if (session?.access_token) {
+  if (session) {
     try {
       // Decode JWT payload to check expiry
       const payload = JSON.parse(atob(session.access_token.split('.')[1]))
       const exp = payload.exp * 1000
       if (Date.now() > exp - 60000) { // Expired or expiring in 60s
         console.log('Session token expired or expiring soon, refreshing...')
-        const { data: { session: refreshedSession } } = await supabase.auth.refreshSession()
+        const { data: { session: refreshedSession }, error } = await supabase.auth.refreshSession()
+        if (error) throw error
         if (refreshedSession) {
           session = refreshedSession
         }
@@ -31,42 +32,18 @@ async function apiFetch(path, options = {}, isRetry = false) {
     } catch (err) {
       console.error('Error refreshing session in apiFetch:', err)
     }
-  } else {
-    // Attempt refresh if session is missing
-    const { data: { session: refreshedSession } } = await supabase.auth.refreshSession().catch(() => ({ data: {} }))
-    if (refreshedSession) {
-      session = refreshedSession
-    }
   }
 
   const token = session?.access_token || ''
 
-  const headers = {
-    Authorization: token ? `Bearer ${token}` : '',
-    ...(options.headers || {})
-  }
-
-  if (!(options.body instanceof FormData) && !headers['Content-Type']) {
-    headers['Content-Type'] = 'application/json'
-  }
-
   const res = await fetch(`${BASE}${path}`, {
     ...options,
-    headers
-  })
-
-  // If 401 Unauthorized, force refresh session & retry once
-  if (res.status === 401 && !isRetry) {
-    console.warn('API returned 401 Unauthorized. Attempting session refresh & retry...')
-    try {
-      const { data: { session: newSession }, error: refreshErr } = await supabase.auth.refreshSession()
-      if (!refreshErr && newSession) {
-        return apiFetch(path, options, true)
-      }
-    } catch (e) {
-      console.error('Session refresh failed during retry:', e)
+    headers: {
+      'Content-Type':  'application/json',
+      Authorization:   token ? `Bearer ${token}` : '',
+      ...(options.headers || {})
     }
-  }
+  })
 
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
@@ -132,14 +109,12 @@ export const waMessages = {
 
 // ─── AI ───────────────────────────────────────────────────────────────────────
 export const waAI = {
-  getSettings:        (sessionId) => apiFetch('/api/whatsapp/ai/settings' + (sessionId ? `?session_id=${sessionId}` : '')),
-  updateSettings:     (data)      => apiFetch('/api/whatsapp/ai/settings', { method: 'PUT', body: JSON.stringify(data) }),
-  getLogs:            (params)    => apiFetch('/api/whatsapp/ai/logs?' + new URLSearchParams(params || {}).toString()),
-  extractLeadsFromPdf:(formData)  => apiFetch('/api/whatsapp/ai/extract-leads-pdf', { method: 'POST', body: formData }),
+  getSettings:    (sessionId) => apiFetch('/api/whatsapp/ai/settings' + (sessionId ? `?session_id=${sessionId}` : '')),
+  updateSettings: (data)      => apiFetch('/api/whatsapp/ai/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  getLogs:        (params)    => apiFetch('/api/whatsapp/ai/logs?' + new URLSearchParams(params || {}).toString()),
 }
 
 // ─── Health ───────────────────────────────────────────────────────────────────
 export const waHealth = {
   check: () => apiFetch('/api/whatsapp/health'),
 }
-
