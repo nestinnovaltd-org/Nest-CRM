@@ -170,14 +170,52 @@ worker.on('failed', async (job, err) => {
   logger.error({ jobId: job?.id, campaignId: job?.data?.campaignId, err: err.message, event: 'job_failed' }, 'Message job failed')
 
   if (job?.data?.recipientId) {
+    const now = new Date().toISOString()
     await supabase
       .from('whatsapp_campaign_recipients')
       .update({
         status:        'FAILED',
         error_message: err.message.slice(0, 500),
-        updated_at:    new Date().toISOString()
+        updated_at:    now
       })
       .eq('id', job.data.recipientId)
+
+    // Fetch recipient to insert message log and update lead WA status
+    const { data: recipient } = await supabase
+      .from('whatsapp_campaign_recipients')
+      .select('*')
+      .eq('id', job.data.recipientId)
+      .maybeSingle()
+
+    if (recipient) {
+      await supabase.from('whatsapp_messages').insert({
+        org_id:         job.data.orgId,
+        lead_id:        recipient.lead_id,
+        session_id:     job.data.sessionId,
+        campaign_id:    job.data.campaignId,
+        direction:      'OUTBOUND',
+        message_source: 'CAMPAIGN',
+        message_body:   recipient.message_body,
+        status:         'FAILED',
+        error_message:  err.message.slice(0, 500),
+        created_at:     now
+      })
+
+      if (recipient.lead_id) {
+        await supabase
+          .from('whatsapp_lead_status')
+          .upsert({
+            lead_id:          recipient.lead_id,
+            org_id:           job.data.orgId,
+            phone_number:     recipient.phone_number,
+            normalized_phone: recipient.phone_number,
+            whatsapp_status:  'WHATSAPP_NOT_AVAILABLE',
+            check_error:      err.message.slice(0, 500),
+            last_checked_at:  now,
+            updated_at:       now
+          }, { onConflict: 'lead_id' })
+      }
+    }
 
     await supabase.rpc('increment_campaign_failed', { campaign_id: job.data.campaignId })
   }

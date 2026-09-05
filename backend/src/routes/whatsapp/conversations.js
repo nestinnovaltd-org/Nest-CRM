@@ -102,7 +102,7 @@ router.post('/:id/reply', async (req, res) => {
     res.json({ message: 'Sent', provider_id: providerId })
   } catch (err) {
     logger.error({ err }, 'POST /conversations/:id/reply error')
-    res.status(500).json({ error: 'Failed to send reply' })
+    res.status(500).json({ error: err.message || 'Failed to send reply' })
   }
 })
 

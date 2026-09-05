@@ -148,6 +148,85 @@ export const sessionManager = {
       }
     })
 
+    // ─── Message status updates (delivery/read receipts & errors) ──────────
+    socket.ev.on('messages.update', async (updates) => {
+      for (const { key, update } of updates) {
+        const providerId = key?.id
+        if (!providerId || !update) continue
+
+        const statusNum = update.status
+        const now = new Date().toISOString()
+
+        // Baileys WAMessageStatus enum: 0/ERROR = Failed, 3/DELIVERY_ACK = Delivered, 4/READ = Read
+        if (statusNum === 0 || statusNum === 'ERROR') {
+          logger.warn({ providerId, sessionId, event: 'message_delivery_failed' }, 'Message delivery failed on WhatsApp')
+
+          // Update whatsapp_messages
+          const { data: existingMsg } = await supabase
+            .from('whatsapp_messages')
+            .update({ status: 'FAILED', error_message: 'Delivery failed on WhatsApp', updated_at: now })
+            .eq('provider_message_id', providerId)
+            .select('campaign_id, lead_id')
+            .maybeSingle()
+
+          if (existingMsg?.campaign_id) {
+            // Update recipient status and campaign counters
+            const { data: recipient } = await supabase
+              .from('whatsapp_campaign_recipients')
+              .select('status')
+              .eq('campaign_id', existingMsg.campaign_id)
+              .eq('lead_id', existingMsg.lead_id)
+              .maybeSingle()
+
+            if (recipient && recipient.status !== 'FAILED') {
+              await supabase
+                .from('whatsapp_campaign_recipients')
+                .update({ status: 'FAILED', error_message: 'Delivery failed on WhatsApp', updated_at: now })
+                .eq('campaign_id', existingMsg.campaign_id)
+                .eq('lead_id', existingMsg.lead_id)
+
+              const { data: camp } = await supabase
+                .from('whatsapp_campaigns')
+                .select('sent_count, failed_count')
+                .eq('id', existingMsg.campaign_id)
+                .maybeSingle()
+
+              if (camp) {
+                await supabase
+                  .from('whatsapp_campaigns')
+                  .update({
+                    sent_count: Math.max((camp.sent_count || 0) - 1, 0),
+                    failed_count: (camp.failed_count || 0) + 1,
+                    updated_at: now
+                  })
+                  .eq('id', existingMsg.campaign_id)
+              }
+            }
+          }
+        } else if (statusNum === 3 || statusNum === 'DELIVERY_ACK') {
+          await supabase
+            .from('whatsapp_messages')
+            .update({ status: 'DELIVERED', delivered_at: now, updated_at: now })
+            .eq('provider_message_id', providerId)
+
+          await supabase
+            .from('whatsapp_campaign_recipients')
+            .update({ status: 'DELIVERED', delivered_at: now, updated_at: now })
+            .eq('provider_message_id', providerId)
+        } else if (statusNum === 4 || statusNum === 'READ') {
+          await supabase
+            .from('whatsapp_messages')
+            .update({ status: 'READ', read_at: now, updated_at: now })
+            .eq('provider_message_id', providerId)
+
+          await supabase
+            .from('whatsapp_campaign_recipients')
+            .update({ status: 'READ', read_at: now, updated_at: now })
+            .eq('provider_message_id', providerId)
+        }
+      }
+    })
+
     return { status: 'starting' }
   },
 
@@ -157,8 +236,17 @@ export const sessionManager = {
     if (!s || s.status !== 'CONNECTED') {
       throw new Error(`Session ${sessionId} not connected`)
     }
-    const jid = `${phone.replace('+', '')}@s.whatsapp.net`
-    const result = await s.socket.sendMessage(jid, { text: body })
+    const cleanPhone = String(phone).replace(/[^\d]/g, '')
+    const jid = `${cleanPhone}@s.whatsapp.net`
+
+    // Verify recipient exists on WhatsApp before attempting send
+    const [onWa] = await s.socket.onWhatsApp(jid).catch(() => [])
+    if (!onWa || !onWa.exists) {
+      throw new Error(`Phone number ${phone} is not registered on WhatsApp`)
+    }
+
+    const targetJid = onWa.jid || jid
+    const result = await s.socket.sendMessage(targetJid, { text: body })
     return result?.key?.id
   },
 
@@ -168,7 +256,16 @@ export const sessionManager = {
     if (!s || s.status !== 'CONNECTED') {
       throw new Error(`Session ${sessionId} not connected`)
     }
-    const jid = `${phone.replace('+', '')}@s.whatsapp.net`
+    const cleanPhone = String(phone).replace(/[^\d]/g, '')
+    const jid = `${cleanPhone}@s.whatsapp.net`
+
+    // Verify recipient exists on WhatsApp before attempting send
+    const [onWa] = await s.socket.onWhatsApp(jid).catch(() => [])
+    if (!onWa || !onWa.exists) {
+      throw new Error(`Phone number ${phone} is not registered on WhatsApp`)
+    }
+
+    const targetJid = onWa.jid || jid
     const mt  = (mediaType || 'image').toLowerCase()
 
     // Download media buffer first to ensure URL is valid and accessible
@@ -191,7 +288,7 @@ export const sessionManager = {
       msg = { document: buffer, mimetype: 'application/octet-stream', fileName, caption: body || '' }
     }
 
-    const result = await s.socket.sendMessage(jid, msg)
+    const result = await s.socket.sendMessage(targetJid, msg)
     return result?.key?.id
   },
 
@@ -202,7 +299,8 @@ export const sessionManager = {
     if (!s || s.status !== 'CONNECTED') {
       throw new Error(`Session ${sessionId} not connected`)
     }
-    const jid    = `${phone.replace('+', '')}@s.whatsapp.net`
+    const cleanPhone = String(phone).replace(/[^\d]/g, '')
+    const jid    = `${cleanPhone}@s.whatsapp.net`
     const result = await s.socket.onWhatsApp(jid)
     return Array.isArray(result) && result.length > 0 && result[0]?.exists === true
   },

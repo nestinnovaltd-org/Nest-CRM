@@ -565,6 +565,20 @@ async function _processCampaignDirectly(campaignId, sessionId, orgId) {
           })
           .eq('id', recipient.id)
 
+        // Insert FAILED message record into whatsapp_messages so Message Logs screen shows it as FAILED
+        await supabase.from('whatsapp_messages').insert({
+          org_id: orgId,
+          lead_id: recipient.lead_id,
+          session_id: sessionId,
+          campaign_id: campaignId,
+          direction: 'OUTBOUND',
+          message_source: 'CAMPAIGN',
+          message_body: recipient.message_body,
+          status: 'FAILED',
+          error_message: sendErr.message.slice(0, 500),
+          created_at: now
+        })
+
         const { data: currentCampaign } = await supabase
           .from('whatsapp_campaigns')
           .select('failed_count')
@@ -578,6 +592,22 @@ async function _processCampaignDirectly(campaignId, sessionId, orgId) {
             updated_at: now
           })
           .eq('id', campaignId)
+
+        // Update lead's WhatsApp status to WHATSAPP_NOT_AVAILABLE if number doesn't exist on WA
+        if (recipient.lead_id) {
+          await supabase
+            .from('whatsapp_lead_status')
+            .upsert({
+              lead_id: recipient.lead_id,
+              org_id: orgId,
+              phone_number: recipient.phone_number,
+              normalized_phone: recipient.phone_number,
+              whatsapp_status: 'WHATSAPP_NOT_AVAILABLE',
+              check_error: sendErr.message.slice(0, 500),
+              last_checked_at: now,
+              updated_at: now
+            }, { onConflict: 'lead_id' })
+        }
       }
 
       // 8. Apply safety delay between messages
