@@ -26,18 +26,37 @@ app.set('trust proxy', 1)
 // ─── CORS ────────────────────────────────────────────────────────────────────
 const allowedOrigins = (process.env.ALLOWED_ORIGIN || '').split(',').map(o => o.trim()).filter(Boolean)
 
+const isOriginAllowed = (origin) => {
+  if (!origin) return true
+  if (allowedOrigins.length === 0 || allowedOrigins.includes('*')) return true
+  if (allowedOrigins.includes(origin)) return true
+  
+  // Allow any vercel deployment app or matching origin
+  if (origin.endsWith('.vercel.app')) return true
+  
+  return allowedOrigins.some(allowed => {
+    if (allowed.includes('*')) {
+      const pattern = new RegExp('^' + allowed.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$')
+      return pattern.test(origin)
+    }
+    return allowed === origin
+  })
+}
+
 app.use(cors({
   origin: (origin, cb) => {
-    // Allow requests with no origin (server-to-server, curl, Postman)
-    if (!origin) return cb(null, true)
-    if (allowedOrigins.includes(origin)) return cb(null, true)
+    if (isOriginAllowed(origin)) {
+      return cb(null, true)
+    }
     logger.warn({ origin }, 'CORS: rejected origin')
-    cb(new Error('Not allowed by CORS'))
+    cb(null, false)
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }))
+
+app.options('*', cors())
 
 // ─── Body parsing ─────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '2mb' }))
