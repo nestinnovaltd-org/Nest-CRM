@@ -20,26 +20,26 @@ router.get('/', async (req, res) => {
 
     if (mine === 'true') {
       // ── mine=true: only leads assigned to the current user ────────────────
-      // Fresh query — no org filter to avoid conflicting .or() chains
       const { data: selfUser } = await supabase
-        .from('users').select('id, uid, full_name, name').eq('id', req.user.id).single()
+        .from('users').select('id, uid, full_name, name').eq('id', req.user.id).maybeSingle()
 
       // Collect ALL identifiers for this user:
-      // - Supabase UUID (id)
-      // - Legacy Firebase UID (uid column)
-      // - Full name string (some leads store assigned_to as a name, not UUID)
       const myUids = Array.from(new Set([req.user.id, selfUser?.uid].filter(Boolean)))
       const myNames = Array.from(new Set([
         selfUser?.full_name, selfUser?.name, req.user.full_name, req.user.name
       ].filter(Boolean)))
 
-      // Build OR filter combining UUID-based and name-based assignment
-      const uidFilter = `assigned_to.in.(${myUids.join(',')}),owner_id.in.(${myUids.join(',')})`
-      const nameFilter = myNames.length > 0
-        ? myNames.map(n => `assigned_to.eq.${n}`).join(',')
-        : null
+      const conditions = []
+      myUids.forEach(u => {
+        conditions.push(`assigned_to.eq."${u}"`)
+        conditions.push(`owner_id.eq."${u}"`)
+      })
+      myNames.forEach(n => {
+        conditions.push(`assigned_to.eq."${n}"`)
+        conditions.push(`owner_id.eq."${n}"`)
+      })
 
-      const orFilter = nameFilter ? `${uidFilter},${nameFilter}` : uidFilter
+      const orFilter = conditions.length > 0 ? conditions.join(',') : `assigned_to.eq."${req.user.id}"`
 
       query = supabase
         .from('leads')

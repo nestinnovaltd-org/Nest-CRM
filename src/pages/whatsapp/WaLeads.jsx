@@ -47,6 +47,7 @@ function LeadStatusBadge({ status }) {
 export default function WaLeads() {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const [viewScope, setViewScope] = useState('all') // 'all' or 'mine'
   const [leads, setLeads]       = useState([])
   const [sessions, setSessions] = useState([])
   const [total, setTotal]       = useState(0)
@@ -62,8 +63,7 @@ export default function WaLeads() {
   const load = useCallback(async () => {
     setLoading(true)
     const [leadsRes, sessRes] = await Promise.all([
-      // mine=true → only leads assigned to the current user (matches /leads/mine)
-      waLeads.list({ page, limit: 500, mine: 'true' }).catch(() => ({ leads: [], total: 0 })),
+      waLeads.list({ page, limit: 500, mine: viewScope === 'mine' ? 'true' : 'false' }).catch(() => ({ leads: [], total: 0 })),
       waSessions.list().catch(() => ({ sessions: [] }))
     ])
     const fetchedLeads = leadsRes.leads || []
@@ -72,7 +72,7 @@ export default function WaLeads() {
     setTotal(leadsRes.total || 0)
     setSessions((sessRes.sessions || []).filter(s => s.status === 'CONNECTED'))
     setLoading(false)
-  }, [page])
+  }, [page, viewScope])
 
   useEffect(() => { load() }, [load])
 
@@ -245,8 +245,25 @@ export default function WaLeads() {
         )}
 
         <div className="wa-card">
-          {/* Search + select all */}
+          {/* Search + scope toggle + select all */}
           <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 4, background: 'rgba(255,255,255,0.04)', padding: 3, borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)' }}>
+              <button
+                className={`wa-btn ${viewScope === 'all' ? 'wa-btn-primary' : 'wa-btn-secondary'}`}
+                style={{ fontSize: '0.78rem', padding: '5px 12px', borderRadius: 6 }}
+                onClick={() => setViewScope('all')}
+              >
+                All Workspace Leads
+              </button>
+              <button
+                className={`wa-btn ${viewScope === 'mine' ? 'wa-btn-primary' : 'wa-btn-secondary'}`}
+                style={{ fontSize: '0.78rem', padding: '5px 12px', borderRadius: 6 }}
+                onClick={() => setViewScope('mine')}
+              >
+                My Leads
+              </button>
+            </div>
+
             <div style={{ position: 'relative', flex: 1, minWidth: 200 }}>
               <Search size={16} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#6b7280' }} />
               <input className="wa-form-input" style={{ paddingLeft: 32 }} placeholder="Search by name, phone, company, status…" value={search} onChange={e => setSearch(e.target.value)} />
