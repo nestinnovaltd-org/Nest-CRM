@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { supabase } from '../../lib/supabase';
 import {
   LayoutDashboard, Building2, BookOpen, Users, CheckSquare,
   CreditCard, LogOut, Menu, X, Bell, Settings, Shield,
@@ -38,50 +37,12 @@ const sections = ['OVERVIEW', 'MANAGEMENT', 'CRM WORKSPACE', 'SYSTEM'];
 
 export default function SuperAdminLayout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { user, logout, currentTenant, setCurrentTenant } = useAuth();
+  const { user, logout, currentTenant } = useAuth();
   const navigate = useNavigate();
-
-  const [tenants, setTenants] = useState([]);
-  const [loadingTenants, setLoadingTenants] = useState(true);
-
-  const fetchTenants = async () => {
-    try {
-      const orgsRes = await supabase
-        .from('organizations')
-        .select('id, name, theme_color')
-        .eq('status', 'approved');
-
-      const orgList = (orgsRes.data || []).map(org => ({
-        id: org.id,
-        name: org.name,
-        theme_color: org.theme_color,
-        type: 'org'
-      }));
-
-      setTenants(orgList);
-    } catch (error) {
-      console.error('Error fetching tenants:', error);
-    } finally {
-      setLoadingTenants(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchTenants();
-  }, []);
 
   const handleLogout = async () => {
     await logout();
     navigate('/login');
-  };
-
-  const handleTenantChange = (e) => {
-    const val = e.target.value;
-    if (!val) return;
-    const selected = tenants.find(t => t.id === val);
-    if (selected) {
-      setCurrentTenant({ type: selected.type, id: selected.id, name: selected.name, theme_color: selected.theme_color });
-    }
   };
 
   return (
@@ -150,27 +111,13 @@ export default function SuperAdminLayout({ children }) {
             <Menu size={22} />
           </button>
 
-          <div className="sa-tenant-selector-wrap">
-            <span className="sa-tenant-label">Viewing Workspace:</span>
-            <select
-              className="sa-tenant-select"
-              value={currentTenant?.id || ''}
-              onChange={handleTenantChange}
-              disabled={loadingTenants}
-            >
-              {loadingTenants ? (
-                <option>Loading workspaces...</option>
-              ) : (
-                <>
-                  <optgroup label="Organizations">
-                    {tenants.filter(t => t.type === 'org').map(t => (
-                      <option key={t.id} value={t.id}>🏢 {t.name}</option>
-                    ))}
-                  </optgroup>
-                </>
-              )}
-            </select>
-          </div>
+          {/* Current workspace indicator — read-only, clickable to switch */}
+          {currentTenant?.name && (
+            <div className="sa-workspace-indicator">
+              <Building2 size={14} />
+              <span>{currentTenant.name}</span>
+            </div>
+          )}
 
           <div className="sa-topbar-right">
             <button className="sa-topbar-btn">

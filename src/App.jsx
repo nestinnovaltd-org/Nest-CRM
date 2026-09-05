@@ -38,6 +38,7 @@ import OrganizationManagement from "./pages/superadmin/OrganizationManagement"
 import BookDemoLeads from "./pages/superadmin/BookDemoLeads"
 import UserApprovals from "./pages/superadmin/UserApprovals"
 import MyOrganization from "./pages/MyOrganization"
+import WorkspaceSelect from "./pages/superadmin/WorkspaceSelect"
 
 // ── WhatsApp Module Pages (lazy-loaded to keep initial bundle small) ──────────
 import WaDashboard     from "./pages/whatsapp/WaDashboard"
@@ -68,7 +69,7 @@ const SuperAdminRoute = ({ children }) => {
 const LoginRoute = ({ children }) => {
   const { user, loading, isSuperAdmin } = useAuth()
   if (loading) return <AppLoader />
-  if (user) return <Navigate to={isSuperAdmin() ? "/super-admin/dashboard" : "/dashboard"} replace />
+  if (user) return <Navigate to={isSuperAdmin() ? "/select-workspace" : "/dashboard"} replace />
   return children
 }
 
@@ -82,6 +83,7 @@ function App() {
           <Route path="/login" element={<LoginRoute><LoginPage /></LoginRoute>} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
 
+          <Route path="/select-workspace" element={<SuperAdminRoute><WorkspaceSelect /></SuperAdminRoute>} />
           <Route path="/super-admin/dashboard" element={<SuperAdminRoute><SuperAdminDashboard /></SuperAdminRoute>} />
           <Route path="/super-admin/organizations" element={<SuperAdminRoute><OrganizationManagement /></SuperAdminRoute>} />
           <Route path="/super-admin/book-demo-leads" element={<SuperAdminRoute><BookDemoLeads /></SuperAdminRoute>} />

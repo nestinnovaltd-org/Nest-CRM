@@ -1,7 +1,9 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Users, Search, RefreshCw, CheckCircle, XCircle, Send, Tag } from 'lucide-react'
 import { waLeads, waSessions, waCampaigns } from '../../services/whatsappApi'
+import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../context/AuthContext'
 import { CreateModal } from './WaCampaigns'
 import WaLayout from './WaLayout'
 import './whatsapp.css'
@@ -44,6 +46,7 @@ function LeadStatusBadge({ status }) {
 
 export default function WaLeads() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [leads, setLeads]       = useState([])
   const [sessions, setSessions] = useState([])
   const [total, setTotal]       = useState(0)
@@ -54,21 +57,59 @@ export default function WaLeads() {
   const [checking, setChecking]   = useState(false)
   const [loading, setLoading]     = useState(true)
   const [showCreateCampaign, setShowCreateCampaign] = useState(false)
+  const leadsRef = useRef([])
 
   const load = useCallback(async () => {
     setLoading(true)
     const [leadsRes, sessRes] = await Promise.all([
-      // mine=true → only leads assigned to the current user
-      waLeads.list({ page, limit: 100, mine: 'true' }).catch(() => ({ leads: [], total: 0 })),
+      // mine=true → only leads assigned to the current user (matches /leads/mine)
+      waLeads.list({ page, limit: 500, mine: 'true' }).catch(() => ({ leads: [], total: 0 })),
       waSessions.list().catch(() => ({ sessions: [] }))
     ])
-    setLeads(leadsRes.leads || [])
+    const fetchedLeads = leadsRes.leads || []
+    setLeads(fetchedLeads)
+    leadsRef.current = fetchedLeads
     setTotal(leadsRes.total || 0)
     setSessions((sessRes.sessions || []).filter(s => s.status === 'CONNECTED'))
     setLoading(false)
   }, [page])
 
   useEffect(() => { load() }, [load])
+
+  // ── Real-time: update WA status inline when check worker updates the DB ───
+  useEffect(() => {
+    if (!user?.uid && !user?.id) return
+
+    const channel = supabase
+      .channel('wa-leads-status-live')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'whatsapp_lead_status' },
+        (payload) => {
+          const updated = payload.new
+          if (!updated?.lead_id) return
+          setLeads(prev => prev.map(lead => {
+            if (lead.id !== updated.lead_id) return lead
+            return {
+              ...lead,
+              whatsapp_lead_status: {
+                whatsapp_status:  updated.opted_out ? 'WHATSAPP_NOT_AVAILABLE' : (updated.whatsapp_status || 'NOT_CHECKED'),
+                normalized_phone: updated.normalized_phone || lead.phone,
+                whatsapp_link:    updated.whatsapp_link || '',
+                last_checked_at:  updated.last_checked_at || null,
+                opted_out:        updated.opted_out || false,
+                check_error:      updated.check_error || null
+              }
+            }
+          }))
+        }
+      )
+      .subscribe()
+
+    return () => supabase.removeChannel(channel)
+  }, [user?.id])
+
+
 
   // Filtered view (client-side search)
   const filtered = leads.filter(l => {

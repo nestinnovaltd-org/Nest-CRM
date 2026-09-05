@@ -14,48 +14,42 @@ router.get('/', async (req, res) => {
     const { status, page = 1, limit = 50, mine } = req.query
     const offset = (Number(page) - 1) * Number(limit)
 
-    // Fetch leads first to avoid PGRST200 join error
-    let query = supabase
-      .from('leads')
-      .select('id, name, phone, second_phone, email, company, status, assigned_to, created_at', { count: 'exact' })
-      .neq('status', 'Released')
+    const isAdmin = ['Admin', 'MD', 'System Admin'].includes(req.user.role) || req.user.account_type === 'super_admin'
 
-    if (req.user.org_id) {
-      query = query.or(`org_id.eq.${req.user.org_id},and(org_id.is.null,assigned_to.eq.${req.user.id}),and(org_id.is.null,owner_id.eq.${req.user.id})`)
-    } else {
-      query = query.or(`assigned_to.eq.${req.user.id},owner_id.eq.${req.user.id}`)
-    }
+    let query
 
-    const isAdmin = req.user.role === 'Admin' || req.user.role === 'MD' || req.user.role === 'System Admin' || req.user.account_type === 'super_admin'
-
-    // mine=true: only show leads assigned directly to current user (for WaLeads page)
     if (mine === 'true') {
+      // ── mine=true: only leads assigned to the current user ────────────────
+      // Fresh query — no org filter to avoid conflicting .or() chains
       const { data: selfUser } = await supabase
-        .from('users')
-        .select('id, uid')
-        .eq('id', req.user.id)
-        .single()
-      const myIds = [req.user.id, ...(selfUser?.uid ? [selfUser.uid] : [])].filter(Boolean)
-      query = query.or(`assigned_to.in.(${myIds.join(',')}),owner_id.in.(${myIds.join(',')})`)
-    } else if (!isAdmin) {
-      // Fetch all users in the same org (include uid for legacy Firebase UID support)
-      const { data: allUsers } = await supabase
-        .from('users')
-        .select('id, uid, full_name, name, reports_to')
-        .eq('org_id', req.user.org_id)
+        .from('users').select('id, uid').eq('id', req.user.id).single()
+      const myIds = Array.from(new Set([req.user.id, selfUser?.uid].filter(Boolean)))
 
-      // Fetch current user's own uid (legacy Firebase UID) to match old leads
-      const { data: selfUser } = await supabase
-        .from('users')
-        .select('id, uid')
-        .eq('id', req.user.id)
-        .single()
-      
-      // Fetch all teams in the same org
-      const { data: teams } = await supabase
-        .from('teams')
-        .select('*')
-        .eq('org_id', req.user.org_id)
+      query = supabase
+        .from('leads')
+        .select('id, name, phone, second_phone, email, company, status, assigned_to, created_at', { count: 'exact' })
+        .neq('status', 'Released')
+        .or(`assigned_to.in.(${myIds.join(',')}),owner_id.in.(${myIds.join(',')})`)
+
+    } else if (isAdmin) {
+      // ── Admin/MD: all leads in the org ────────────────────────────────────
+      query = supabase
+        .from('leads')
+        .select('id, name, phone, second_phone, email, company, status, assigned_to, created_at', { count: 'exact' })
+        .neq('status', 'Released')
+      if (req.user.org_id) {
+        query = query.or(`org_id.eq.${req.user.org_id},and(org_id.is.null,assigned_to.eq.${req.user.id})`)
+      } else {
+        query = query.or(`assigned_to.eq.${req.user.id},owner_id.eq.${req.user.id}`)
+      }
+
+    } else {
+      // ── Regular employee: own + subordinates + team members ───────────────
+      const [{ data: allUsers }, { data: selfUser }, { data: teams }] = await Promise.all([
+        supabase.from('users').select('id, uid, full_name, name, reports_to').eq('org_id', req.user.org_id),
+        supabase.from('users').select('id, uid').eq('id', req.user.id).single(),
+        supabase.from('teams').select('*').eq('org_id', req.user.org_id)
+      ])
 
       const currentUserName = req.user.full_name || ''
       const managedTeams = (teams || []).filter(t => {
@@ -64,9 +58,7 @@ router.get('/', async (req, res) => {
       })
 
       const teamMemberNames = new Set()
-      managedTeams.forEach(t => {
-        if (t.members) t.members.forEach(m => teamMemberNames.add(m))
-      })
+      managedTeams.forEach(t => { if (t.members) t.members.forEach(m => teamMemberNames.add(m)) })
 
       const teamMemberUids = (allUsers || [])
         .filter(u => teamMemberNames.has(u.full_name || u.name))
@@ -74,12 +66,19 @@ router.get('/', async (req, res) => {
 
       const allowedUids = Array.from(new Set([
         req.user.id,
-        // Include legacy Firebase UID for current user if it exists
         ...(selfUser?.uid ? [selfUser.uid] : []),
         ...(allUsers || []).filter(u => u.reports_to === currentUserName).flatMap(u => [u.id, u.uid].filter(Boolean)),
         ...teamMemberUids
       ]))
 
+      query = supabase
+        .from('leads')
+        .select('id, name, phone, second_phone, email, company, status, assigned_to, created_at', { count: 'exact' })
+        .neq('status', 'Released')
+
+      if (req.user.org_id) {
+        query = query.or(`org_id.eq.${req.user.org_id},and(org_id.is.null,assigned_to.eq.${req.user.id})`)
+      }
       if (allowedUids.length > 0) {
         query = query.or(`assigned_to.in.(${allowedUids.join(',')}),owner_id.in.(${allowedUids.join(',')})`)
       } else {
@@ -102,37 +101,27 @@ router.get('/', async (req, res) => {
         .from('whatsapp_lead_status')
         .select('lead_id, whatsapp_status, check_error, last_checked_at, opted_out, whatsapp_link, normalized_phone')
         .in('lead_id', leadIds)
-      
-      if (statuses) {
-        statuses.forEach(s => {
-          statusMap[s.lead_id] = s
-        })
-      }
+      if (statuses) statuses.forEach(s => { statusMap[s.lead_id] = s })
     }
 
     // Merge status
     const mergedLeads = (leads || []).map(lead => {
-      const existingStatus = statusMap[lead.id] || {}
+      const s = statusMap[lead.id] || {}
       return {
         ...lead,
         whatsapp_lead_status: {
-          whatsapp_status: existingStatus.opted_out 
-            ? 'WHATSAPP_NOT_AVAILABLE' 
-            : (existingStatus.whatsapp_status || 'NOT_CHECKED'),
-          normalized_phone: existingStatus.normalized_phone || lead.phone,
-          whatsapp_link: existingStatus.whatsapp_link || '',
-          last_checked_at: existingStatus.last_checked_at || null,
-          opted_out: existingStatus.opted_out || false,
-          check_error: existingStatus.check_error || null
+          whatsapp_status:   s.opted_out ? 'WHATSAPP_NOT_AVAILABLE' : (s.whatsapp_status || 'NOT_CHECKED'),
+          normalized_phone:  s.normalized_phone || lead.phone,
+          whatsapp_link:     s.whatsapp_link || '',
+          last_checked_at:   s.last_checked_at || null,
+          opted_out:         s.opted_out || false,
+          check_error:       s.check_error || null
         }
       }
     })
 
-    // If status filter is passed (e.g. WHATSAPP_AVAILABLE), filter the list
     let filteredLeads = mergedLeads
-    if (status) {
-      filteredLeads = mergedLeads.filter(l => l.whatsapp_lead_status.whatsapp_status === status)
-    }
+    if (status) filteredLeads = mergedLeads.filter(l => l.whatsapp_lead_status.whatsapp_status === status)
 
     res.json({ leads: filteredLeads, total: count, page: Number(page), limit: Number(limit) })
   } catch (err) {
@@ -140,6 +129,7 @@ router.get('/', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch leads' })
   }
 })
+
 
 // POST /api/whatsapp/leads/check — Enqueue WA availability checks
 router.post('/check', async (req, res) => {

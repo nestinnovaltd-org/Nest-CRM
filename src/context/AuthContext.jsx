@@ -35,7 +35,22 @@ export const BILLING_PACKAGES = {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [currentTenant, setCurrentTenant] = useState(null);
+
+  // Persist workspace selection across page refreshes
+  const [currentTenant, setCurrentTenantState] = useState(() => {
+    try {
+      const saved = localStorage.getItem('nestcrm_tenant');
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
+
+  const setCurrentTenant = (tenant) => {
+    setCurrentTenantState(tenant);
+    try {
+      if (tenant) localStorage.setItem('nestcrm_tenant', JSON.stringify(tenant));
+      else localStorage.removeItem('nestcrm_tenant');
+    } catch { /* ignore storage errors */ }
+  };
 
   const fetchUserProfile = async (supabaseUser) => {
     try {
@@ -110,10 +125,7 @@ export const AuthProvider = ({ children }) => {
           }
         }
 
-        // Set default tenant to Nest CRM Org
-        if (nestOrg && !currentTenant) {
-          setCurrentTenant({ type: 'org', id: nestOrg.id, name: nestOrg.name, theme_color: nestOrg.theme_color });
-        }
+        // Do NOT auto-set tenant here — Super Admin will choose on WorkspaceSelect page
       }
 
       let orgData = null;
@@ -322,7 +334,12 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const logout = async () => { try { await supabase.auth.signOut(); } catch (e) { console.error(e); } };
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut();
+      setCurrentTenant(null); // also clears localStorage via the wrapper
+    } catch (e) { console.error(e); }
+  };
 
   const isSuperAdmin = () => user?.account_type === 'super_admin' || user?.id === SUPER_ADMIN_UID;
   const isOrgAdmin = () => user?.account_type === 'org_admin';
