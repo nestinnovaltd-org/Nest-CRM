@@ -109,6 +109,31 @@ export default function WaLeads() {
     return () => supabase.removeChannel(channel)
   }, [user?.id])
 
+  // ── Real-time: reload when a new lead is added/updated ────────────────────
+  // This keeps WaLeads in sync with /leads/mine without manual refresh
+  useEffect(() => {
+    if (!user?.id) return
+
+    const leadsChannel = supabase
+      .channel('wa-leads-list-live')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'leads' },
+        () => { load() }   // new lead added → re-fetch my leads
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'leads' },
+        (payload) => {
+          // Only re-fetch if the update touches assigned_to (reassignment)
+          if (payload.old?.assigned_to !== payload.new?.assigned_to) load()
+        }
+      )
+      .subscribe()
+
+    return () => supabase.removeChannel(leadsChannel)
+  }, [user?.id, load])
+
 
 
   // Filtered view (client-side search)
