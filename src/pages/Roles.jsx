@@ -34,7 +34,7 @@ import './Roles.css';
 import { SYSTEM_MODULES as modules } from '../constants/modules';
 
 const RolesPage = () => {
-  const { user, currentTenant } = useAuth();
+  const { user, currentTenant, refreshRolePermissions } = useAuth();
   const [roles, setRoles] = useState([]);
   const [selectedRole, setSelectedRole] = useState(null);
   const [users, setUsers] = useState([]);
@@ -265,6 +265,8 @@ const RolesPage = () => {
         if (error) throw error;
         setHasChanges(false);
         toast.success('Role permissions saved successfully!');
+        // Refresh permissions for the currently logged-in user in real-time
+        await refreshRolePermissions();
       } else {
         // Build full merged permissions object
         const userRole = roles.find(r => r.name.toLowerCase() === selectedUser.role?.toLowerCase());

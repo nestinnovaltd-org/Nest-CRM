@@ -137,9 +137,18 @@ export const AuthProvider = ({ children }) => {
       const subscriptionStatus = profile.subscription_status || 'active';
 
       if (profile.role && profile.role !== 'Super Admin') {
+        // Try exact ID match first, then fall back to name match
         const roleId = profile.role.toLowerCase().replace(/\s+/g, '_');
-        const { data: roleData } = await supabase
+        let { data: roleData } = await supabase
           .from('roles').select('permissions').eq('id', roleId).single();
+        if (!roleData) {
+          // Fallback: match by name (case-insensitive)
+          const { data: roleByName } = await supabase
+            .from('roles').select('permissions')
+            .ilike('name', profile.role)
+            .maybeSingle();
+          roleData = roleByName;
+        }
         if (roleData) profile.rolePermissions = roleData.permissions;
       }
 
@@ -183,6 +192,54 @@ export const AuthProvider = ({ children }) => {
     );
     return () => subscription.unsubscribe();
   }, [currentTenant]);
+
+  // ── Real-time: re-fetch profile when current user's DB row changes ────────
+  // This handles role assignments & permission updates from the Roles page
+  // so the sidebar refreshes without requiring a re-login.
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const userChannel = supabase
+      .channel(`auth-user-watch-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'users', filter: `id=eq.${user.id}` },
+        async () => {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) await fetchUserProfile(session.user);
+        }
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(userChannel);
+  }, [user?.id]);
+
+  // ── Real-time: re-fetch rolePermissions when any role is updated ──────────
+  // Handles the case where an admin edits role permissions in Roles page
+  // while this user is already logged in.
+  useEffect(() => {
+    if (!user?.role || user?.account_type === 'super_admin') return;
+
+    const roleChannel = supabase
+      .channel(`auth-role-watch-${user.role}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'roles' },
+        async (payload) => {
+          // Only refresh if it's the role that applies to this user
+          const roleName = user.role || '';
+          const roleId = roleName.toLowerCase().replace(/\s+/g, '_');
+          if (payload.new?.id === roleId || payload.new?.name?.toLowerCase() === roleName.toLowerCase()) {
+            if (payload.new?.permissions) {
+              setUser(prev => prev ? { ...prev, rolePermissions: payload.new.permissions } : prev);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(roleChannel);
+  }, [user?.role, user?.account_type]);
 
   useEffect(() => {
     let themeColor = '#26E264'; // Default CRM accent color (Radium Green)
@@ -289,22 +346,28 @@ export const AuthProvider = ({ children }) => {
     const dbAction = actionMap[action] || action;
 
     // ── Step 1: Org-level module gate ──────────────────────────────────────
+    // If the user has role-based permissions that explicitly include this module,
+    // bypass the billing/org gate — the role grants the access.
+    const roleGrantsModule = user.rolePermissions && user.rolePermissions[module] !== undefined;
+
     if (isIndividual()) {
       const allowed = getIndividualModules(user.subscription_package || 'free_trial');
-      if (!allowed.includes(module)) return false;
+      if (!allowed.includes(module) && !roleGrantsModule) return false;
     } else if (isOrgAdmin() || isOrgEmployee()) {
-      const org = user.org;
-      const hasCustomModules = org && Array.isArray(org.tags) && org.tags.some(t => t.startsWith('module:'));
-      if (hasCustomModules) {
-        const prefix = `module:${module}:`;
-        const moduleTags = org.tags.filter(t => t.startsWith(prefix));
-        if (moduleTags.length === 0) return false;
-        if (['create', 'update', 'delete'].includes(dbAction)) {
-          if (!moduleTags.includes(`${prefix}write`)) return false;
+      if (!roleGrantsModule) {
+        const org = user.org;
+        const hasCustomModules = org && Array.isArray(org.tags) && org.tags.some(t => t.startsWith('module:'));
+        if (hasCustomModules) {
+          const prefix = `module:${module}:`;
+          const moduleTags = org.tags.filter(t => t.startsWith(prefix));
+          if (moduleTags.length === 0) return false;
+          if (['create', 'update', 'delete'].includes(dbAction)) {
+            if (!moduleTags.includes(`${prefix}write`)) return false;
+          }
+        } else {
+          const allowed = getOrgModules(user.org?.billing_package || 'starter');
+          if (!allowed.includes(module)) return false;
         }
-      } else {
-        const allowed = getOrgModules(user.org?.billing_package || 'starter');
-        if (!allowed.includes(module)) return false;
       }
     }
 
@@ -326,12 +389,9 @@ export const AuthProvider = ({ children }) => {
 
       const modulePerms = userOverrides[module];
 
-      // Org employees can never delete regardless of overrides
-      if (isOrgEmployee() && dbAction === 'delete') return false;
-
       if (subModule) {
-        // Sub-module specific check
-        return modulePerms[subModule]?.[dbAction] === true;
+        const val = modulePerms[subModule]?.[dbAction];
+        return val === true;
       }
       // Any sub-module grants the action
       return Object.values(modulePerms).some(p => p?.[dbAction] === true);
@@ -340,7 +400,6 @@ export const AuthProvider = ({ children }) => {
     // ── Step 3: Role-based permissions (no explicit override) ─────────────
     if (user.rolePermissions && user.rolePermissions[module]) {
       const modulePerms = user.rolePermissions[module];
-      if (isOrgEmployee() && dbAction === 'delete') return false;
       if (subModule) {
         return modulePerms[subModule]?.[dbAction] === true;
       }
@@ -355,11 +414,35 @@ export const AuthProvider = ({ children }) => {
   };
 
 
+  // Refresh role-level permissions for the currently logged-in user.
+  // Call this after saving role permissions in Roles.jsx so the UI
+  // reflects the new access without requiring a re-login.
+  const refreshRolePermissions = async () => {
+    if (!user || !user.role || user.role === 'Super Admin' || isSuperAdmin()) return;
+    try {
+      const roleId = user.role.toLowerCase().replace(/\s+/g, '_');
+      let { data: roleData } = await supabase
+        .from('roles').select('permissions').eq('id', roleId).single();
+      if (!roleData) {
+        const { data: roleByName } = await supabase
+          .from('roles').select('permissions')
+          .ilike('name', user.role)
+          .maybeSingle();
+        roleData = roleByName;
+      }
+      if (roleData) {
+        setUser(prev => ({ ...prev, rolePermissions: roleData.permissions }));
+      }
+    } catch (e) {
+      console.error('refreshRolePermissions error:', e);
+    }
+  };
+
   return (
     <AuthContext.Provider value={{
       user, loading, login, logout, hasPermission,
       isSuperAdmin, isOrgAdmin, isOrgEmployee, isIndividual, isOrganizationMember,
-      SUPER_ADMIN_UID, currentTenant, setCurrentTenant
+      SUPER_ADMIN_UID, currentTenant, setCurrentTenant, refreshRolePermissions
     }}>
       {children}
     </AuthContext.Provider>
