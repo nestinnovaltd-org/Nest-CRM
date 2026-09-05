@@ -43,10 +43,12 @@ import {
   ChevronLeft,
   ChevronRight,
   Trash2,
-  X
+  X,
+  Sparkles
 } from 'lucide-react';
 import { WhatsAppIcon } from '../components/ui/Icons';
 import { waLeads, waSessions, waCampaigns, waTemplates } from '../services/whatsappApi';
+import PdfAiExtractModal from '../components/PdfAiExtractModal';
 import './whatsapp/whatsapp.css';
 import './Leads.css';
 
@@ -1874,6 +1876,7 @@ const MyLeads = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [draggedLeadId, setDraggedLeadId] = useState(null);
   const [isBulkUploadModalOpen, setIsBulkUploadModalOpen] = useState(false);
+  const [isPdfAiModalOpen, setIsPdfAiModalOpen] = useState(false);
   const [updateModal, setUpdateModal] = useState({
     isOpen: false,
     lead: null,
@@ -2425,6 +2428,7 @@ const MyLeads = () => {
             <div className="header-actions">
               <Button variant="secondary" icon={Download} onClick={handleExport}>Export</Button>
               <Button variant="secondary" icon={Upload} onClick={() => setIsBulkUploadModalOpen(true)}>Bulk Upload</Button>
+              <Button variant="secondary" icon={Sparkles} onClick={() => setIsPdfAiModalOpen(true)}>AI PDF Import</Button>
               <Button 
                 variant="secondary" 
                 icon={WhatsAppIcon} 
@@ -2727,6 +2731,15 @@ const MyLeads = () => {
           projects={filteredProjects}
           onConfirm={handleSaveInterests}
         />
+
+      <PdfAiExtractModal
+        isOpen={isPdfAiModalOpen}
+        onClose={() => setIsPdfAiModalOpen(false)}
+        user={user}
+        allUsers={allUsers}
+        teams={teams}
+        onImportSuccess={() => fetchLeads()}
+      />
 
       <BulkUploadModal 
         isOpen={isBulkUploadModalOpen}

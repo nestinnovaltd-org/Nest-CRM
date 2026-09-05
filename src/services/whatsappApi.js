@@ -36,13 +36,18 @@ async function apiFetch(path, options = {}) {
 
   const token = session?.access_token || ''
 
+  const headers = {
+    Authorization: token ? `Bearer ${token}` : '',
+    ...(options.headers || {})
+  }
+
+  if (!(options.body instanceof FormData) && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json'
+  }
+
   const res = await fetch(`${BASE}${path}`, {
     ...options,
-    headers: {
-      'Content-Type':  'application/json',
-      Authorization:   token ? `Bearer ${token}` : '',
-      ...(options.headers || {})
-    }
+    headers
   })
 
   const body = await res.json().catch(() => ({}))
@@ -109,12 +114,14 @@ export const waMessages = {
 
 // ─── AI ───────────────────────────────────────────────────────────────────────
 export const waAI = {
-  getSettings:    (sessionId) => apiFetch('/api/whatsapp/ai/settings' + (sessionId ? `?session_id=${sessionId}` : '')),
-  updateSettings: (data)      => apiFetch('/api/whatsapp/ai/settings', { method: 'PUT', body: JSON.stringify(data) }),
-  getLogs:        (params)    => apiFetch('/api/whatsapp/ai/logs?' + new URLSearchParams(params || {}).toString()),
+  getSettings:        (sessionId) => apiFetch('/api/whatsapp/ai/settings' + (sessionId ? `?session_id=${sessionId}` : '')),
+  updateSettings:     (data)      => apiFetch('/api/whatsapp/ai/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  getLogs:            (params)    => apiFetch('/api/whatsapp/ai/logs?' + new URLSearchParams(params || {}).toString()),
+  extractLeadsFromPdf:(formData)  => apiFetch('/api/whatsapp/ai/extract-leads-pdf', { method: 'POST', body: formData }),
 }
 
 // ─── Health ───────────────────────────────────────────────────────────────────
 export const waHealth = {
   check: () => apiFetch('/api/whatsapp/health'),
 }
+

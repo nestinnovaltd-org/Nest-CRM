@@ -1,9 +1,16 @@
 import { Router } from 'express'
+import multer from 'multer'
 import { supabase } from '../../utils/supabase.js'
 import { logger }   from '../../utils/logger.js'
 import { withOrg }  from '../../middleware/orgScope.js'
+import { extractLeadsFromPdfBuffer } from '../../services/ai/leadExtractor.js'
 
 const router = Router()
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 } // 20MB max file size
+})
 
 // GET /api/whatsapp/ai/settings
 router.get('/settings', async (req, res) => {
@@ -69,4 +76,32 @@ router.get('/logs', async (req, res) => {
   }
 })
 
+// POST /api/whatsapp/ai/extract-leads-pdf — Upload PDF and extract leads via AI
+router.post('/extract-leads-pdf', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No PDF file uploaded' })
+    }
+
+    if (req.file.mimetype !== 'application/pdf' && !req.file.originalname.toLowerCase().endsWith('.pdf')) {
+      return res.status(400).json({ error: 'Invalid file type. Please upload a PDF file.' })
+    }
+
+    logger.info({ filename: req.file.originalname, size: req.file.size, orgId: req.user.org_id }, 'Processing PDF lead extraction request')
+
+    const leads = await extractLeadsFromPdfBuffer(req.file.buffer)
+
+    return res.json({
+      success: true,
+      filename: req.file.originalname,
+      count: leads.length,
+      leads
+    })
+  } catch (err) {
+    logger.error({ err }, 'POST /api/whatsapp/ai/extract-leads-pdf error')
+    return res.status(500).json({ error: err.message || 'Failed to extract leads from PDF' })
+  }
+})
+
 export default router
+
