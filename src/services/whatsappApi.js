@@ -12,25 +12,30 @@ const BASE = import.meta.env.VITE_WA_BACKEND_URL || 'http://localhost:3001'
 /**
  * Fetch helper — injects auth header, throws on non-2xx.
  */
-async function apiFetch(path, options = {}) {
+async function apiFetch(path, options = {}, isRetry = false) {
   // Get fresh session token from Supabase client
   let { data: { session } } = await supabase.auth.getSession()
 
-  if (session) {
+  if (session?.access_token) {
     try {
       // Decode JWT payload to check expiry
       const payload = JSON.parse(atob(session.access_token.split('.')[1]))
       const exp = payload.exp * 1000
       if (Date.now() > exp - 60000) { // Expired or expiring in 60s
         console.log('Session token expired or expiring soon, refreshing...')
-        const { data: { session: refreshedSession }, error } = await supabase.auth.refreshSession()
-        if (error) throw error
+        const { data: { session: refreshedSession } } = await supabase.auth.refreshSession()
         if (refreshedSession) {
           session = refreshedSession
         }
       }
     } catch (err) {
       console.error('Error refreshing session in apiFetch:', err)
+    }
+  } else {
+    // Attempt refresh if session is missing
+    const { data: { session: refreshedSession } } = await supabase.auth.refreshSession().catch(() => ({ data: {} }))
+    if (refreshedSession) {
+      session = refreshedSession
     }
   }
 
@@ -49,6 +54,19 @@ async function apiFetch(path, options = {}) {
     ...options,
     headers
   })
+
+  // If 401 Unauthorized, force refresh session & retry once
+  if (res.status === 401 && !isRetry) {
+    console.warn('API returned 401 Unauthorized. Attempting session refresh & retry...')
+    try {
+      const { data: { session: newSession }, error: refreshErr } = await supabase.auth.refreshSession()
+      if (!refreshErr && newSession) {
+        return apiFetch(path, options, true)
+      }
+    } catch (e) {
+      console.error('Session refresh failed during retry:', e)
+    }
+  }
 
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
