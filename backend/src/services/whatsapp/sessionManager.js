@@ -18,18 +18,30 @@ const MAX_RECONNECT_ATTEMPTS = 5
 // In-memory session store: sessionId → { socket, qrDataUri, status, reconnectCount }
 const sessions = new Map()
 
-// Helper to ensure session directory is writable
-function ensureDirectoryWritable(dir) {
-  try {
-    fs.mkdirSync(dir, { recursive: true })
-    const testFile = path.join(dir, `.write_test_${Date.now()}`)
-    fs.writeFileSync(testFile, 'test')
-    fs.unlinkSync(testFile)
-  } catch (err) {
-    const errMsg = `CRITICAL: WhatsApp session directory '${dir}' is not writable. Please check permissions for site user 'hijibusy-api'. Error: ${err.message}`
-    logger.error({ err, path: dir }, errMsg)
-    throw new Error(errMsg)
+// Helper to ensure session directory is writable with robust fallback
+function getWritableSessionBase() {
+  const candidates = [
+    process.env.WHATSAPP_SESSION_PATH,
+    '/var/www/crm/whatsapp-sessions',
+    path.join(process.cwd(), 'whatsapp-sessions'),
+    '/tmp/whatsapp-sessions'
+  ].filter(Boolean)
+
+  for (const dir of candidates) {
+    try {
+      fs.mkdirSync(dir, { recursive: true })
+      const testFile = path.join(dir, `.write_test_${Date.now()}`)
+      fs.writeFileSync(testFile, 'test')
+      fs.unlinkSync(testFile)
+      return dir
+    } catch (err) {
+      logger.warn({ path: dir, err: err.message }, 'Candidate session directory not writable')
+    }
   }
+
+  const fallback = path.join(process.cwd(), 'whatsapp-sessions')
+  fs.mkdirSync(fallback, { recursive: true })
+  return fallback
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -40,41 +52,51 @@ export const sessionManager = {
    * If new, generates QR. Updates DB status throughout.
    */
   async startSession(sessionId, orgId) {
-    if (sessions.has(sessionId)) {
-      const s = sessions.get(sessionId)
-      if (s.status === 'CONNECTED') return { status: 'already_connected' }
-    }
+    try {
+      if (sessions.has(sessionId)) {
+        const s = sessions.get(sessionId)
+        if (s.status === 'CONNECTED') return { status: 'already_connected' }
+      }
 
-    logger.info({ sessionId, orgId, event: 'session_start' }, 'Starting WhatsApp session')
+      logger.info({ sessionId, orgId, event: 'session_start' }, 'Starting WhatsApp session')
 
-    ensureDirectoryWritable(SESSION_BASE)
+      const sessionBase = getWritableSessionBase()
+      const sessionPath = path.join(sessionBase, sessionId)
+      fs.mkdirSync(sessionPath, { recursive: true })
 
-    const sessionPath = path.join(SESSION_BASE, sessionId)
-    fs.mkdirSync(sessionPath, { recursive: true })
+      await _updateDbStatus(sessionId, 'CONNECTING')
 
-    await _updateDbStatus(sessionId, 'CONNECTING')
+      let version = [2, 3000, 1015901307]
+      try {
+        const v = await fetchLatestBaileysVersion().catch(() => null)
+        if (v?.version) version = v.version
+      } catch (e) {
+        logger.warn({ err: e }, 'Using default Baileys version fallback')
+      }
 
-    const { version } = await fetchLatestBaileysVersion()
-    const { state, saveCreds } = await useMultiFileAuthState(sessionPath)
+      const { state, saveCreds } = await useMultiFileAuthState(sessionPath)
 
-    const socket = makeWASocket({
-      version,
-      auth:          state,
-      printQRInTerminal: false,
-      logger:        logger.child({ sessionId }),
-      browser:       ['Nest CRM', 'Chrome', '124.0.0'],
-      connectTimeoutMs: 60_000,
-      defaultQueryTimeoutMs: 60_000,
-      keepAliveIntervalMs:   25_000
-    })
+      const socket = makeWASocket({
+        version,
+        auth:          state,
+        printQRInTerminal: false,
+        logger:        logger.child({ sessionId }),
+        browser:       ['Nest CRM', 'Chrome', '124.0.0'],
+        connectTimeoutMs: 60_000,
+        defaultQueryTimeoutMs: 60_000,
+        keepAliveIntervalMs:   25_000
+      })
 
-    sessions.set(sessionId, {
-      socket,
-      orgId,
-      status:          'CONNECTING',
-      qrDataUri:       null,
-      reconnectCount:  0
-    })
+      // Save credentials whenever auth state updates
+      socket.ev.on('creds.update', saveCreds)
+
+      sessions.set(sessionId, {
+        socket,
+        orgId,
+        status:          'CONNECTING',
+        qrDataUri:       null,
+        reconnectCount:  0
+      })
 
     // ─── Connection updates ───────────────────────────────────────────────────
     socket.ev.on('connection.update', async (update) => {
@@ -149,6 +171,11 @@ export const sessionManager = {
     })
 
     return { status: 'starting' }
+    } catch (err) {
+      logger.error({ err, sessionId }, 'Error in startSession')
+      await _updateDbStatus(sessionId, 'ERROR').catch(() => {})
+      throw err
+    }
   },
 
   /** Send a text message via a specific session. */
