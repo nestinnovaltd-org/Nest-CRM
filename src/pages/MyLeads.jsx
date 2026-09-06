@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { Link, useParams } from 'react-router-dom';
@@ -159,27 +159,61 @@ const cleanPhoneNumber = (phone) => {
   return val;
 };
 
+const parseCSVText = (text) => {
+  if (!text) return { headers: [], rows: [] };
+  const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+  if (lines.length === 0) return { headers: [], rows: [] };
+
+  const parseLine = (line) => {
+    const values = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        values.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    values.push(current.trim());
+    return values;
+  };
+
+  const headers = parseLine(lines[0]);
+  const rows = lines.slice(1).map(parseLine);
+  return { headers, rows };
+};
+
 const checkMultiplePhonesDuplicateInTeam = async (cleanedPhones, user, allUsers, teams) => {
   const duplicatesMap = new Map();
-  if (cleanedPhones.length === 0) return duplicatesMap;
+  if (!cleanedPhones || cleanedPhones.length === 0) return duplicatesMap;
 
   // Gather team member UIDs
-  const currentUserName = user.fullName || user.name || '';
-  const userTeams = teams.filter(team => 
-    (team.members && team.members.includes(currentUserName)) || 
-    (team.teamLeads && team.teamLeads.includes(currentUserName)) || 
-    team.teamLead === currentUserName
-  );
+  const currentUserName = user?.full_name || user?.fullName || user?.name || '';
+  const userTeams = (teams || []).filter(team => {
+    const leads = team.team_leads || team.teamLeads || (team.team_lead ? [team.team_lead] : []);
+    const members = team.members || [];
+    return members.includes(currentUserName) || leads.includes(currentUserName);
+  });
 
   const teamMemberNames = new Set([currentUserName]);
   userTeams.forEach(team => {
     if (team.members) team.members.forEach(m => teamMemberNames.add(m));
-    if (team.teamLeads) team.teamLeads.forEach(l => teamMemberNames.add(l));
-    if (team.teamLead) teamMemberNames.add(team.teamLead);
+    const leads = team.team_leads || team.teamLeads || (team.team_lead ? [team.team_lead] : []);
+    leads.forEach(l => teamMemberNames.add(l));
   });
 
-  const teamMemberUids = allUsers
-    .filter(u => teamMemberNames.has(u.fullName || u.name))
+  const teamMemberUids = (allUsers || [])
+    .filter(u => teamMemberNames.has(u.full_name || u.fullName || u.name))
     .map(u => u.uid || u.id)
     .filter(Boolean);
   
@@ -203,9 +237,9 @@ const checkMultiplePhonesDuplicateInTeam = async (cleanedPhones, user, allUsers,
   const chunkSize = 30;
   for (let i = 0; i < searchFormats.length; i += chunkSize) {
     const chunk = searchFormats.slice(i, i + chunkSize);
-    const { data: matchedLeads } = await supabase.from('leads').select('*').in('phone', chunk);
+    const { data: matchedLeads, error } = await supabase.from('leads').select('*').in('phone', chunk);
 
-    if (matchedLeads && matchedLeads.length > 0) {
+    if (!error && matchedLeads && matchedLeads.length > 0) {
       matchedLeads.forEach(leadData => {
         const assignee = leadData.assigned_to || leadData.assignedTo;
         const owner = leadData.owner_id || leadData.ownerId;
@@ -232,6 +266,15 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
   const [importSummary, setImportSummary] = useState(null);
   const [invalidLeads, setInvalidLeads] = useState([]);
 
+  const handleClose = () => {
+    setFile(null);
+    setIsUploading(false);
+    setUploadProgress(0);
+    setImportSummary(null);
+    setInvalidLeads([]);
+    onClose();
+  };
+
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
     if (selectedFile && selectedFile.name.endsWith('.csv')) {
@@ -250,7 +293,7 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
       'Email', 'Priority', 'Description', 'Next Call Date'
     ];
     const csvContent = headers.join(',') + '\n' + 
-      'John Doe,1712345678,1812345678,Manager,Alpha Project,Facebook,Fresh Lead,Dhaka,Gulshan,Gulshan-2 Dhaka,john@example.com,High,Interested in 3BHK,2026-08-25';
+      'John Doe,01712345678,01812345678,Manager,Alpha Project,Facebook,Fresh Lead,Dhaka,Gulshan,Gulshan-2 Dhaka,john@example.com,High,Interested in 3BHK,2026-08-25';
     
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
@@ -269,17 +312,14 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
     reader.onload = async (e) => {
       try {
         const text = e.target.result;
-        const rows = text.split('\n').map(row => row.split(',').map(cell => cell.trim()));
+        const { headers, rows: dataRows } = parseCSVText(text);
         
-        if (rows.length < 2) {
+        if (!headers || headers.length === 0 || dataRows.length === 0) {
           alert('CSV file is empty or invalid.');
           setIsUploading(false);
           return;
         }
 
-        const headers = rows[0];
-        const dataRows = rows.slice(1).filter(row => row.length === headers.length && row.some(cell => cell !== ''));
-        
         setUploadProgress(35);
 
         // First pass: parse and validate format
@@ -290,31 +330,78 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
         const tempInvalidLeads = [];
 
         dataRows.forEach((row, index) => {
+          if (row.length === 0 || row.every(cell => !cell)) return;
+
           const obj = {};
           let rawPhone = '';
+
           headers.forEach((header, colIndex) => {
-            const value = row[colIndex];
-            const h = header.toLowerCase();
+            const value = row[colIndex] || '';
+            const h = header.toLowerCase().trim();
             
-            if (h.includes('customer name')) obj.name = value;
-            else if (h.includes('profession')) obj.designation = value;
-            else if (h.includes('second number') || h.includes('alt number') || h.includes('alternative number') || h.includes('second phone') || h.includes('alt phone')) {
+            if (
+              h.includes('second') || 
+              h.includes('alt') || 
+              h.includes('alternative') || 
+              h.includes('secondary')
+            ) {
               obj.second_phone_raw = value;
             }
-            else if (h.includes('number')) {
+            else if (
+              h.includes('number') || 
+              h.includes('phone') || 
+              h.includes('mobile') || 
+              h.includes('contact') ||
+              h.includes('cell')
+            ) {
               rawPhone = value;
             }
-            else if (h.includes('project')) obj.company = value;
-            else if (h.includes('lead source')) obj.source = value;
-            else if (h.includes('lead status')) obj.status = value;
-            else if (h.includes('location')) obj.location = value;
-            else if (h.includes('area')) obj.area = value;
-            else if (h.includes('address')) obj.address = value;
-            else if (h.includes('email')) obj.email = value;
-            else if (h.includes('priority')) obj.priority = value;
-            else if (h.includes('description') || h.includes('summary')) obj.description = value;
-            else if (h.includes('coment')) obj.comments = value;
-            else if (h.includes('next call') || h.includes('follow-up') || h.includes('followup')) {
+            else if (h.includes('name')) {
+              obj.name = value;
+            }
+            else if (h.includes('profession') || h.includes('designation') || h.includes('job') || h.includes('role') || h.includes('title')) {
+              obj.designation = value;
+            }
+            else if (h.includes('project') || h.includes('company') || h.includes('org') || h.includes('business')) {
+              obj.company = value;
+            }
+            else if (h.includes('source')) {
+              obj.source = value;
+            }
+            else if (h.includes('status')) {
+              obj.status = value;
+            }
+            else if (h.includes('location') || h.includes('city')) {
+              obj.location = value;
+            }
+            else if (h.includes('area')) {
+              obj.area = value;
+            }
+            else if (h.includes('address')) {
+              obj.address = value;
+            }
+            else if (h.includes('email')) {
+              obj.email = value;
+            }
+            else if (h.includes('priority')) {
+              obj.priority = value;
+            }
+            else if (
+              h.includes('description') || 
+              h.includes('summary') || 
+              h.includes('note') || 
+              h.includes('remark') || 
+              h.includes('comment')
+            ) {
+              obj.description = value;
+            }
+            else if (
+              h.includes('next call') || 
+              h.includes('follow-up') || 
+              h.includes('followup') || 
+              h.includes('follow up') || 
+              h.includes('next date')
+            ) {
               obj.nextFollowUp = value;
               obj.nextFollowUpDate = value;
             }
@@ -365,7 +452,7 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
 
         setUploadProgress(65);
 
-        // Second pass: check duplicates in team context via Firestore
+        // Second pass: check duplicates in team context
         let duplicatesMap = new Map();
         if (validCleanedPhones.length > 0) {
           duplicatesMap = await checkMultiplePhonesDuplicateInTeam(validCleanedPhones, user, allUsers, teams);
@@ -389,12 +476,10 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
               errorMsg: `Duplicate in team (Lead: "${dup.leadName}")`
             });
           } else {
-            // Delete temp helper property
             const importObj = { ...row };
             delete importObj.cleanedPhone;
             delete importObj.rowNum;
             
-            // Add default fields
             importObj.createdAt = new Date().toISOString();
             importObj.lastAction = 'Imported';
             importObj.status = importObj.nextFollowUp ? 'Follow Up' : 'Fresh Lead';
@@ -403,10 +488,17 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
           }
         });
 
+        setUploadProgress(85);
+
+        let importedCount = 0;
+        if (finalImportData.length > 0 && onImport) {
+          importedCount = await onImport(finalImportData);
+        }
+
         setUploadProgress(100);
         setIsUploading(false);
 
-        const successCount = finalImportData.length;
+        const successCount = typeof importedCount === 'number' ? importedCount : finalImportData.length;
         const failedCount = dataRows.length - successCount;
 
         setImportSummary({
@@ -417,10 +509,6 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
         });
 
         setInvalidLeads(tempInvalidLeads);
-
-        if (successCount > 0) {
-          onImport(finalImportData);
-        }
       } catch (err) {
         console.error("Error parsing bulk upload:", err);
         alert("An error occurred while parsing the CSV file.");
@@ -452,7 +540,6 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
 
     setUploadProgress(40);
 
-    // Validate the corrected phones locally
     invalidLeads.forEach((lead) => {
       const cleaned = cleanPhoneNumber(lead.phone);
       if (!cleaned.startsWith('1') || cleaned.length !== 10) {
@@ -479,7 +566,6 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
 
     setUploadProgress(70);
 
-    // Check duplicates in team context via Firestore
     let duplicatesMap = new Map();
     if (validCleanedPhones.length > 0) {
       duplicatesMap = await checkMultiplePhonesDuplicateInTeam(validCleanedPhones, user, allUsers, teams);
@@ -501,7 +587,6 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
         delete importObj.originalPhone;
         delete importObj.rowNum;
 
-        // Add default fields
         importObj.createdAt = new Date().toISOString();
         importObj.lastAction = 'Imported';
         importObj.status = importObj.nextFollowUp ? 'Follow Up' : 'Fresh Lead';
@@ -510,20 +595,24 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
       }
     });
 
+    setUploadProgress(85);
+
+    let importedCount = 0;
+    if (importData.length > 0 && onImport) {
+      importedCount = await onImport(importData);
+    }
+
     setUploadProgress(100);
     setIsUploading(false);
 
-    if (importData.length > 0) {
-      onImport(importData);
-    }
-
     setInvalidLeads(stillInvalidLeads);
 
-    // Update summary stats
+    const actualAdded = typeof importedCount === 'number' ? importedCount : importData.length;
+
     setImportSummary(prev => {
-      const newSuccess = (prev?.success || 0) + importData.length;
+      const newSuccess = (prev?.success || 0) + actualAdded;
       const newFailed = stillInvalidLeads.length;
-      const newErrors = stillInvalidLeads.map(l => `Row ${l.rowNum}: ${l.errorMsg}`);
+      const newErrors = stillInvalidLeads.map(l => `Row ${l.rowNum || ''}: ${l.errorMsg}`);
       return {
         total: prev?.total || 0,
         success: newSuccess,
@@ -534,7 +623,7 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Bulk Upload Leads (CSV)" className="glass-modal">
+    <Modal isOpen={isOpen} onClose={handleClose} title="Bulk Upload Leads (CSV)" className="glass-modal">
       <div className="bulk-upload-container">
         {!importSummary ? (
           <>
@@ -571,7 +660,7 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
             {isUploading && (
               <div className="upload-progress-section">
                 <div className="progress-header">
-                  <span>Processing {file.name}...</span>
+                  <span>Processing {file?.name || 'file'}...</span>
                   <span>{uploadProgress}%</span>
                 </div>
                 <div className="progress-bar-v2">
@@ -581,7 +670,7 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
             )}
 
             <div className="modal-footer-v5 mt-6">
-              <button className="btn-ghost-v2" onClick={onClose}>Cancel</button>
+              <button className="btn-ghost-v2" onClick={handleClose}>Cancel</button>
               <Button 
                 variant="primary" 
                 onClick={handleUpload} 
@@ -695,7 +784,7 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
             )}
 
             <div className="modal-footer-v5" style={{ display: 'flex', gap: '12px', borderTop: '1px solid var(--border)', paddingTop: '16px', marginTop: '4px' }}>
-              <Button variant="secondary" className="w-full" onClick={onClose}>Done & Close</Button>
+              <Button variant="secondary" className="w-full" onClick={handleClose}>Done & Close</Button>
             </div>
           </div>
         )}
@@ -1977,88 +2066,88 @@ const MyLeads = () => {
     fetchUsers();
   }, []);
 
-  useEffect(() => {
+  const fetchLeads = useCallback(async () => {
     if (!user || allUsers.length === 0) return;
 
     const isAdmin = user.role === 'Admin' || user.role === 'MD' || user.role === 'System Admin' || user.account_type === 'super_admin';
 
-    const fetchLeads = async () => {
-      let query = supabase.from('leads').select('*').neq('status', 'Released');
+    let query = supabase.from('leads').select('*').neq('status', 'Released');
 
-      // Tenant isolation filter
-      const currentUserId = user.uid || user.id;
-      if (user.account_type === 'super_admin') {
-        if (currentTenant?.type === 'org') {
-          query = query.or(`org_id.eq.${currentTenant.id},and(org_id.is.null,owner_id.eq.${currentUserId})`);
-        } else if (currentTenant?.type === 'individual') {
-          query = query.eq('owner_id', currentTenant.id);
-        }
+    // Tenant isolation filter
+    const currentUserId = user.uid || user.id;
+    if (user.account_type === 'super_admin') {
+      if (currentTenant?.type === 'org') {
+        query = query.or(`org_id.eq.${currentTenant.id},and(org_id.is.null,owner_id.eq.${currentUserId})`);
+      } else if (currentTenant?.type === 'individual') {
+        query = query.eq('owner_id', currentTenant.id);
+      }
+    } else {
+      if (user.org_id) {
+        query = query.or(`org_id.eq.${user.org_id},and(org_id.is.null,owner_id.eq.${currentUserId})`);
       } else {
-        if (user.org_id) {
-          query = query.or(`org_id.eq.${user.org_id},and(org_id.is.null,owner_id.eq.${currentUserId})`);
-        } else {
-          query = query.eq('owner_id', currentUserId);
+        query = query.eq('owner_id', currentUserId);
+      }
+    }
+
+    if (!isAdmin) {
+      const currentUserName = user.full_name || user.fullName || user.name || '';
+      const managedTeams = teams.filter(t => {
+        const leads = t.team_leads || t.teamLeads || (t.team_lead ? [t.team_lead] : []);
+        return leads.includes(currentUserName);
+      });
+      const teamMemberNames = new Set();
+      managedTeams.forEach(t => { if (t.members) t.members.forEach(m => teamMemberNames.add(m)); });
+      const teamMemberUids = allUsers.filter(u => teamMemberNames.has(u.full_name || u.fullName || u.name)).map(u => u.uid || u.id).filter(Boolean);
+      const allowedUids = Array.from(new Set([
+        user.uid || user.id,
+        ...allUsers.filter(u => (u.reports_to || u.reportsTo) === currentUserName).map(u => u.uid || u.id).filter(Boolean),
+        ...teamMemberUids
+      ]));
+      query = query.or(`assigned_to.in.(${allowedUids.join(',')}),owner_id.in.(${allowedUids.join(',')})`);
+    }
+
+    const { data, error } = await query;
+    if (error) { console.error('Error fetching leads:', error); setIsLoading(false); return; }
+
+    // Fetch whatsapp statuses in a separate query to bypass the missing foreign key relationship cache constraint
+    let whatsappStatusMap = {};
+    if (data && data.length > 0) {
+      try {
+        const leadIds = data.map(l => l.id);
+        const { data: statusData, error: statusErr } = await supabase
+          .from('whatsapp_lead_status')
+          .select('lead_id, whatsapp_status, check_error, last_checked_at')
+          .in('lead_id', leadIds);
+        
+        if (!statusErr && statusData) {
+          statusData.forEach(row => {
+            whatsappStatusMap[row.lead_id] = row;
+          });
         }
+      } catch (e) {
+        console.error('Error fetching whatsapp lead statuses:', e);
       }
+    }
 
-      if (!isAdmin) {
-        const currentUserName = user.full_name || user.fullName || user.name || '';
-        const managedTeams = teams.filter(t => {
-          const leads = t.team_leads || t.teamLeads || (t.team_lead ? [t.team_lead] : []);
-          return leads.includes(currentUserName);
-        });
-        const teamMemberNames = new Set();
-        managedTeams.forEach(t => { if (t.members) t.members.forEach(m => teamMemberNames.add(m)); });
-        const teamMemberUids = allUsers.filter(u => teamMemberNames.has(u.full_name || u.fullName || u.name)).map(u => u.uid || u.id).filter(Boolean);
-        const allowedUids = Array.from(new Set([
-          user.uid || user.id,
-          ...allUsers.filter(u => (u.reports_to || u.reportsTo) === currentUserName).map(u => u.uid || u.id).filter(Boolean),
-          ...teamMemberUids
-        ]));
-        query = query.or(`assigned_to.in.(${allowedUids.join(',')}),owner_id.in.(${allowedUids.join(',')})`);
-      }
+    let leadsList = (data || []).map(row => ({
+      ...row,
+      ownerId: row.owner_id,
+      assignedTo: row.assigned_to,
+      assignedToName: row.assigned_to_name,
+      phoneWhatsapp: row.phone_whatsapp,
+      secondPhoneWhatsapp: row.second_phone_whatsapp,
+      nextFollowUp: row.next_follow_up,
+      nextFollowUpDate: row.next_follow_up_date,
+      whatsapp_lead_status: whatsappStatusMap[row.id] || null,
+      age: row.created_at ? formatDateToDDMMYYYY(row.created_at) : 'Just now'
+    }));
 
-      const { data, error } = await query;
-      if (error) { console.error('Error fetching leads:', error); setIsLoading(false); return; }
+    leadsList.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    setLeads(leadsList);
+    setIsLoading(false);
+  }, [user, allUsers, currentTenant, teams]);
 
-      // Fetch whatsapp statuses in a separate query to bypass the missing foreign key relationship cache constraint
-      let whatsappStatusMap = {};
-      if (data && data.length > 0) {
-        try {
-          const leadIds = data.map(l => l.id);
-          const { data: statusData, error: statusErr } = await supabase
-            .from('whatsapp_lead_status')
-            .select('lead_id, whatsapp_status, check_error, last_checked_at')
-            .in('lead_id', leadIds);
-          
-          if (!statusErr && statusData) {
-            statusData.forEach(row => {
-              whatsappStatusMap[row.lead_id] = row;
-            });
-          }
-        } catch (e) {
-          console.error('Error fetching whatsapp lead statuses:', e);
-        }
-      }
-
-      let leadsList = (data || []).map(row => ({
-        ...row,
-        ownerId: row.owner_id,
-        assignedTo: row.assigned_to,
-        assignedToName: row.assigned_to_name,
-        phoneWhatsapp: row.phone_whatsapp,
-        secondPhoneWhatsapp: row.second_phone_whatsapp,
-        nextFollowUp: row.next_follow_up,
-        nextFollowUpDate: row.next_follow_up_date,
-        whatsapp_lead_status: whatsappStatusMap[row.id] || null,
-        age: row.created_at ? formatDateToDDMMYYYY(row.created_at) : 'Just now'
-      }));
-
-      leadsList.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-      setLeads(leadsList);
-      setIsLoading(false);
-    };
-
+  useEffect(() => {
     fetchLeads();
     const ch = supabase.channel('myleads-channel')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'leads' }, () => {
@@ -2072,7 +2161,7 @@ const MyLeads = () => {
     return () => {
       ch.unsubscribe();
     };
-  }, [user, allUsers, currentTenant, teams]);
+  }, [fetchLeads]);
 
   const handleDragStart = (e, leadId) => {
     setDraggedLeadId(leadId);
@@ -2736,14 +2825,13 @@ const MyLeads = () => {
         teams={teams}
         onImport={async (data) => {
           try {
-            
             const importPromises = data.map(lead => {
               const history = [
                 {
                   date: new Date().toISOString(),
                   note: 'Lead imported via CSV.',
                   type: 'System',
-                  createdBy: user?.fullName || 'Admin'
+                  createdBy: user?.full_name || user?.fullName || 'Admin'
                 }
               ];
               if (lead.nextFollowUp) {
@@ -2751,7 +2839,7 @@ const MyLeads = () => {
                   date: new Date().toISOString(),
                   note: `Initial follow-up scheduled for ${lead.nextFollowUp}.`,
                   type: 'Follow-up',
-                  createdBy: user?.fullName || 'Admin'
+                  createdBy: user?.full_name || user?.fullName || 'Admin'
                 });
               }
 
@@ -2763,10 +2851,10 @@ const MyLeads = () => {
 
               const resolvedOwnerId = (isSA && currentTenant?.type === 'individual')
                 ? currentTenant.id
-                : user.uid || user.id;
+                : (user?.uid || user?.id);
 
               const dbPayload = {
-                name:                  lead.name || '',
+                name:                  lead.name || 'Unnamed Lead',
                 company:               lead.company || '',
                 designation:           lead.designation || '',
                 phone:                 normalizePhoneForDb(lead.phone || ''),
@@ -2778,9 +2866,9 @@ const MyLeads = () => {
                 area:                  lead.area || '',
                 address:               lead.address || '',
                 assigned_to:           resolvedOwnerId,
-                assigned_to_name:      user.full_name || user.fullName || user.name || 'Admin',
+                assigned_to_name:      user?.full_name || user?.fullName || user?.name || 'Admin',
                 owner_id:              resolvedOwnerId,
-                owner_name:            user.full_name || user.fullName || user.name || 'Admin',
+                owner_name:            user?.full_name || user?.fullName || user?.name || 'Admin',
                 priority:              lead.priority || 'Medium',
                 source:                lead.source || 'CSV Import',
                 status:                lead.nextFollowUp ? 'Follow Up' : 'Fresh Lead',
@@ -2814,6 +2902,9 @@ const MyLeads = () => {
 
             toast.success(`Successfully imported ${insertedLeads.length} leads!`);
 
+            // Refetch leads immediately so UI table updates without page refresh
+            await fetchLeads();
+
             if (insertedIds.length > 0) {
               try {
                 const sessionsRes = await waSessions.list();
@@ -2828,15 +2919,17 @@ const MyLeads = () => {
                   });
                 } else {
                   console.info('No active WhatsApp session connected. Automatic check skipped.');
-                  toast.error('No connected WhatsApp session found. WhatsApp status checks could not be initiated.');
                 }
               } catch (sessionErr) {
                 console.error('Error initiating automatic WhatsApp check:', sessionErr);
               }
             }
+
+            return insertedLeads.length;
           } catch (error) {
             console.error('Import error:', error);
             toast.error('Failed to import leads to database.');
+            return 0;
           }
         }}
       />
