@@ -106,11 +106,11 @@ const LandingPage = () => {
       <svg width="0" height="0" style={{ position: 'absolute', pointerEvents: 'none' }}>
         <defs>
           <linearGradient id="lp-icon-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#26E264" />
-            <stop offset="100%" stopColor="#00F0FF" />
+            <stop offset="0%" stopColor="#7C3AED" />
+            <stop offset="100%" stopColor="#3B82F6" />
           </linearGradient>
           <linearGradient id="lp-icon-gradient-light" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#60A5FA" />
+            <stop offset="0%" stopColor="#A855F7" />
             <stop offset="100%" stopColor="#2563EB" />
           </linearGradient>
         </defs>
@@ -153,11 +153,11 @@ const LandingPage = () => {
               {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
             {user ? (
-              <Link to="/dashboard" className="lp-btn lp-btn-primary mobile-full-width" style={{ padding: '12px 32px', fontSize: '1rem' }}>Dashboard &rarr;</Link>
+              <Link to="/dashboard" className="lp-btn lp-btn-primary mobile-full-width">Dashboard &rarr;</Link>
             ) : (
               <>
-                <Link to="/login" className="lp-btn lp-btn-outline mobile-full-width" style={{ padding: '12px 32px', fontSize: '1rem' }}>Login</Link>
-                <Link to="/login" className="lp-btn lp-btn-primary mobile-full-width" style={{ padding: '12px 32px', fontSize: '1rem' }}>Start Free Trial</Link>
+                <Link to="/login" className="lp-btn lp-btn-outline mobile-full-width">Login</Link>
+                <Link to="/login" className="lp-btn lp-btn-primary mobile-full-width">Start Free Trial</Link>
               </>
             )}
 
@@ -192,7 +192,7 @@ const LandingPage = () => {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8, delay: 0.3 }}
               >
-                Close More Deals with a Smarter Real Estate CRM
+                Close More Deals with a <span className="hero-headline-gradient">Smarter Real Estate CRM</span>
               </motion.h1>
 
               <motion.p
@@ -225,6 +225,27 @@ const LandingPage = () => {
               transition={{ duration: 1.2, delay: 0.6 }}
             >
               <div className="mockup-glow"></div>
+
+              <div className="hero-floating-stat top-right">
+                <div className="hero-stat-badge radium">
+                  <TrendingUp size={18} />
+                </div>
+                <div>
+                  <div className="hero-stat-label">Conversion Rate</div>
+                  <div className="hero-stat-val">+38.4%</div>
+                </div>
+              </div>
+
+              <div className="hero-floating-stat bottom-left">
+                <div className="hero-stat-badge">
+                  <Sparkles size={18} />
+                </div>
+                <div>
+                  <div className="hero-stat-label">Active Pipeline</div>
+                  <div className="hero-stat-val">$2.4M Deals</div>
+                </div>
+              </div>
+
               <div className="hero-mockup-wrapper">
                 <img 
                   src={isDarkMode ? "/landing/dashboard-preview.png?v=1.0.4" : "/landing/dashboard-preview-light.png?v=1.0.2"} 
@@ -861,11 +882,11 @@ const LandingPage = () => {
           <div style={{ textAlign: 'center' }}>
             <motion.h2 variants={fadeIn} initial="initial" whileInView="whileInView" className="lp-section-title">Trusted by Industry Leaders</motion.h2>
           </div>
-          <div style={{ marginTop: '60px', display: 'flex', justifyContent: 'center', gap: '40px', opacity: 0.5 }}>
-            {/* Logos could go here */}
-            <span style={{ fontSize: '1.5rem', fontWeight: 700 }}>ESTATE CORP</span>
-            <span style={{ fontSize: '1.5rem', fontWeight: 700 }}>PRIME REALTY</span>
-            <span style={{ fontSize: '1.5rem', fontWeight: 700 }}>LUX HOMES</span>
+          <div className="trust-logos-row">
+            <div className="trust-logo-item"><Building2 size={18} style={{ color: '#A855F7' }} /> ESTATE CORP</div>
+            <div className="trust-logo-item"><Award size={18} style={{ color: '#3B82F6' }} /> PRIME REALTY</div>
+            <div className="trust-logo-item"><Shield size={18} style={{ color: '#A855F7' }} /> LUX HOMES</div>
+            <div className="trust-logo-item"><Layers size={18} style={{ color: '#3B82F6' }} /> METRO APEX</div>
           </div>
         </div>
       </section>
@@ -982,9 +1003,11 @@ const LandingPage = () => {
 
 const ValuePropItem = ({ icon, title, desc }) => (
   <motion.div className="prop-item" variants={{ initial: { opacity: 0, y: 20 }, whileInView: { opacity: 1, y: 0 } }}>
-    <div style={{ color: 'var(--lp-gold)', marginBottom: '16px' }}>{icon}</div>
-    <h3>{title}</h3>
-    <p>{desc}</p>
+    <div className="prop-icon-wrap">{icon}</div>
+    <div>
+      <h3>{title}</h3>
+      <p>{desc}</p>
+    </div>
   </motion.div>
 );
 
@@ -1013,10 +1036,10 @@ const PriceCard = ({ plan, price, popular, features }) => (
       {price.replace('$', '')}
       {price !== 'Custom' && <span className="period">/mo</span>}
     </div>
-    <ul className="price-features" style={{ listStyle: 'none', padding: 0, margin: '20px 0 40px 0', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <ul className="price-features">
       {features.map((f, i) => (
-        <li key={i} className="price-feature-item" style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '0.9rem', color: 'var(--lp-text-muted)', transition: 'all 0.2s' }}>
-          <CheckCircle2 size={16} className="lp-gold" /> {f}
+        <li key={i} className="price-feature-item">
+          <CheckCircle2 size={16} /> {f}
         </li>
       ))}
     </ul>

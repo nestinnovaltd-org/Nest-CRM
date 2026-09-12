@@ -24,13 +24,25 @@ const PORT = process.env.PORT || 3001
 app.set('trust proxy', 1)
 
 // ─── CORS ────────────────────────────────────────────────────────────────────
-const allowedOrigins = (process.env.ALLOWED_ORIGIN || '').split(',').map(o => o.trim()).filter(Boolean)
+const defaultOrigins = [
+  'https://nestcrm.nestinnova.com',
+  'http://nestcrm.nestinnova.com',
+  'https://nest-crm-gamma.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:3000'
+]
+const envOrigins = (process.env.ALLOWED_ORIGIN || '').split(',').map(o => o.trim()).filter(Boolean)
+const allowedOrigins = [...new Set([...defaultOrigins, ...envOrigins])]
 
 app.use(cors({
   origin: (origin, cb) => {
     // Allow requests with no origin (server-to-server, curl, Postman)
     if (!origin) return cb(null, true)
-    if (allowedOrigins.includes(origin)) return cb(null, true)
+    if (
+      allowedOrigins.includes(origin) ||
+      origin.endsWith('.nestinnova.com') ||
+      origin.endsWith('.vercel.app')
+    ) return cb(null, true)
     logger.warn({ origin }, 'CORS: rejected origin')
     cb(new Error('Not allowed by CORS'))
   },

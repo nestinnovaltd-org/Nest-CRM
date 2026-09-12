@@ -7,7 +7,7 @@ This guide describes how to deploy the WhatsApp automation & AI backend to your 
 ## Environment Specifications
 
 * **Domain**: `https://api.hijibusy.com`
-* **Vercel Frontend**: `https://nest-crm-gamma.vercel.app`
+* **Vercel Frontend**: `https://nestcrm.nestinnova.com` (also supports `https://nest-crm-gamma.vercel.app`)
 * **Node.js Site Directory**: `/home/hijibusy-api/htdocs/api.hijibusy.com`
 * **Site User**: `hijibusy-api`
 * **Internal Port**: `3001` (external HTTPS is proxied by Nginx to `127.0.0.1:3001`)

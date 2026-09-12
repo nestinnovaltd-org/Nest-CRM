@@ -42,11 +42,15 @@ export default function BookDemo() {
 
   return (
     <div className="bd-page">
+      <div className="bd-bg-layers">
+        <div className="bd-purple-glow"></div>
+        <div className="bd-blue-glow"></div>
+      </div>
+
       {/* Header */}
       <nav className="bd-nav">
         <Link to="/" className="bd-logo">
           <img src="/Nest%20CRM%20Logo%20without%20background.png" alt="Nest CRM" className="bd-logo-img" />
-          <span className="bd-logo-text">Nest CRM</span>
         </Link>
         <div className="bd-nav-links">
           <Link to="/login" className="bd-nav-link">Login</Link>
@@ -87,13 +91,13 @@ export default function BookDemo() {
             <div className="bd-pkg-label">Available Plans</div>
             <div className="bd-pkg-list">
               {[
-                { name: 'Starter', price: '$49', users: '10 users', color: '#10B981' },
-                { name: 'Professional', price: '$99', users: '25 users', color: '#3B82F6', popular: true },
-                { name: 'Enterprise', price: '$199', users: 'Unlimited', color: '#F59E0B' },
+                { name: 'Starter Space', price: '$49', users: '10 users' },
+                { name: 'Professional', price: '$99', users: '25 users', popular: true },
+                { name: 'Enterprise', price: '$199', users: 'Unlimited' },
               ].map(p => (
-                <div key={p.name} className={`bd-pkg-card ${p.popular ? 'popular' : ''}`} style={{ borderColor: p.popular ? p.color : '' }}>
-                  {p.popular && <span className="bd-pkg-popular" style={{ background: p.color }}>Most Popular</span>}
-                  <span className="bd-pkg-name" style={{ color: p.color }}>{p.name}</span>
+                <div key={p.name} className={`bd-pkg-card ${p.popular ? 'popular' : ''}`}>
+                  {p.popular && <span className="bd-pkg-popular">Most Popular</span>}
+                  <span className="bd-pkg-name">{p.name}</span>
                   <span className="bd-pkg-price">{p.price}<span>/mo</span></span>
                   <span className="bd-pkg-users">{p.users}</span>
                 </div>
@@ -107,7 +111,7 @@ export default function BookDemo() {
           {submitted ? (
             <div className="bd-success">
               <div className="bd-success-icon">
-                <CheckCircle size={48} color="#10B981" />
+                <CheckCircle size={40} />
               </div>
               <h2>Request Submitted!</h2>
               <p>We've received your demo request. Our team will contact you within <strong>24 hours</strong> to schedule your personalized demo.</p>
@@ -153,14 +157,13 @@ export default function BookDemo() {
                   <label>Interested Plan</label>
                   <div className="bd-plan-options">
                     {[
-                      { id: 'starter', label: 'Starter', price: '$49/mo', color: '#10B981' },
-                      { id: 'professional', label: 'Professional', price: '$99/mo', color: '#3B82F6' },
-                      { id: 'enterprise', label: 'Enterprise', price: '$199/mo', color: '#F59E0B' },
+                      { id: 'starter', label: 'Starter Space', price: '$49/mo' },
+                      { id: 'professional', label: 'Professional', price: '$99/mo' },
+                      { id: 'enterprise', label: 'Enterprise', price: '$199/mo' },
                     ].map(p => (
-                      <label key={p.id} className={`bd-plan-opt ${form.plan_interest === p.id ? 'selected' : ''}`}
-                        style={{ borderColor: form.plan_interest === p.id ? p.color : '', background: form.plan_interest === p.id ? `${p.color}15` : '' }}>
+                      <label key={p.id} className={`bd-plan-opt ${form.plan_interest === p.id ? 'selected' : ''}`}>
                         <input type="radio" name="plan_interest" value={p.id} checked={form.plan_interest === p.id} onChange={handleChange} style={{ display: 'none' }} />
-                        <span className="bd-plan-name" style={{ color: form.plan_interest === p.id ? p.color : '' }}>{p.label}</span>
+                        <span className="bd-plan-name">{p.label}</span>
                         <span className="bd-plan-price">{p.price}</span>
                       </label>
                     ))}
