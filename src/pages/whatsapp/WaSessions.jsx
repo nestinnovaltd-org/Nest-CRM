@@ -22,12 +22,21 @@ function StatusBadge({ status }) {
 function QRModal({ session, onClose }) {
   const [qr, setQr]       = useState(null)
   const [status, setStatus] = useState('...')
+  const [error, setError]   = useState('')
 
   useEffect(() => {
     const poll = async () => {
-      const res = await waSessions.getQR(session.id).catch(() => null)
-      if (res) { setQr(res.qr); setStatus(res.status) }
-      if (res?.status === 'CONNECTED') { onClose(); return }
+      try {
+        const res = await waSessions.getQR(session.id)
+        if (res) {
+          setQr(res.qr)
+          setStatus(res.status)
+          setError('')
+        }
+        if (res?.status === 'CONNECTED') { onClose(); return }
+      } catch (err) {
+        setError(err.message || 'Failed to fetch QR')
+      }
     }
     poll()
     const interval = setInterval(poll, 3000)
@@ -44,6 +53,11 @@ function QRModal({ session, onClose }) {
         <div className="wa-info-box wa-info-box-yellow" style={{ marginBottom: 16, fontSize: '0.8rem' }}>
           Open WhatsApp → Linked Devices → Link a Device → Scan this QR
         </div>
+        {error && (
+          <div style={{ color: '#ef4444', fontSize: '0.8rem', padding: '8px 12px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '6px', border: '1px solid rgba(239, 68, 68, 0.2)', marginBottom: 12 }}>
+            ⚠ {error}
+          </div>
+        )}
         {qr ? (
           <div className="wa-qr-box">
             <img src={qr} alt="WhatsApp QR Code" />
@@ -60,12 +74,20 @@ function QRModal({ session, onClose }) {
 function CreateModal({ onCreate, onClose }) {
   const [name, setName]   = useState('')
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!name.trim()) return
     setSaving(true)
-    try { await onCreate(name.trim()) } finally { setSaving(false) }
+    setError('')
+    try {
+      await onCreate(name.trim())
+    } catch (err) {
+      setError(err.message || 'Failed to create session')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -83,6 +105,11 @@ function CreateModal({ onCreate, onClose }) {
           <div className="wa-info-box wa-info-box-yellow" style={{ fontSize: '0.8rem' }}>
             Each session links one WhatsApp number. Give it a descriptive name.
           </div>
+          {error && (
+            <div style={{ color: '#ef4444', fontSize: '0.8rem', padding: '8px 12px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '6px', border: '1px solid rgba(239, 68, 68, 0.2)' }}>
+              ⚠ {error}
+            </div>
+          )}
           <div className="wa-modal-footer">
             <button type="button" className="wa-btn wa-btn-secondary" onClick={onClose}>Cancel</button>
             <button type="submit" className="wa-btn wa-btn-primary" disabled={saving || !name.trim()}>

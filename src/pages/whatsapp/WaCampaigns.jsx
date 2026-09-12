@@ -51,9 +51,17 @@ export function CreateModal({ onSave, onClose, preSelectedLeadIds = [] }) {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const toggleLeadSelect = (id) => {
-    setSelectedLeadIds(prev => 
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    )
+    setError('')
+    setSelectedLeadIds(prev => {
+      if (prev.includes(id)) {
+        return prev.filter(x => x !== id)
+      }
+      if (prev.length >= 40) {
+        setError('Maximum 40 leads can be selected per campaign (24-hour limit: 40 messages).')
+        return prev
+      }
+      return [...prev, id]
+    })
   }
 
   const filteredLeadsList = allLeads.filter(l => {
@@ -62,12 +70,27 @@ export function CreateModal({ onSave, onClose, preSelectedLeadIds = [] }) {
   })
 
   const selectAllFilteredLeads = () => {
+    setError('')
     const filteredIds = filteredLeadsList.map(l => l.id)
-    const allSelected = filteredIds.every(id => selectedLeadIds.includes(id))
-    if (allSelected) {
+    const allSelected = filteredIds.slice(0, 40).every(id => selectedLeadIds.includes(id))
+    if (allSelected && selectedLeadIds.length > 0) {
       setSelectedLeadIds(prev => prev.filter(id => !filteredIds.includes(id)))
     } else {
-      setSelectedLeadIds(prev => Array.from(new Set([...prev, ...filteredIds])))
+      setSelectedLeadIds(prev => {
+        const next = [...prev]
+        let hit = false
+        for (const id of filteredIds) {
+          if (next.length >= 40) {
+            hit = true
+            break
+          }
+          if (!next.includes(id)) next.push(id)
+        }
+        if (hit || next.length >= 40) {
+          setError('Selected 40 leads (maximum 24-hour limit: 40 messages per user).')
+        }
+        return next
+      })
     }
   }
 
@@ -81,6 +104,10 @@ export function CreateModal({ onSave, onClose, preSelectedLeadIds = [] }) {
         setError('Please select at least one target lead.')
         return
       }
+      if (selectedLeadIds.length > 40) {
+        setError('Maximum 40 leads can be selected per campaign (24-hour limit: 40 messages).')
+        return
+      }
       lead_filter = { lead_ids: selectedLeadIds }
     } else if (targetType === 'status') {
       if (!selectedStatus) {
@@ -92,7 +119,7 @@ export function CreateModal({ onSave, onClose, preSelectedLeadIds = [] }) {
 
     setSaving(true)
     try {
-      await onSave({ ...form, lead_filter })
+      await onSave({ ...form, daily_limit: 40, lead_filter })
     } catch (err) {
       setError(err.message || 'Failed to create campaign')
     } finally {
@@ -132,7 +159,7 @@ export function CreateModal({ onSave, onClose, preSelectedLeadIds = [] }) {
 
           {/* Target Audience Section */}
           <div className="wa-form-group" style={{ background: 'rgba(255,255,255,0.03)', padding: 12, borderRadius: 8, border: '1px solid rgba(255,255,255,0.08)' }}>
-            <label className="wa-form-label" style={{ fontWeight: 600, color: 'var(--primary, #25d366)', marginBottom: 8, display: 'block' }}>🎯 Target Audience / Leads</label>
+            <label className="wa-form-label" style={{ fontWeight: 600, color: 'var(--primary, #25d366)', marginBottom: 8, display: 'block' }}>🎯 Target Audience / Leads (Max 40/24h)</label>
             
             <div style={{ display: 'flex', gap: 14, marginBottom: 10, flexWrap: 'wrap' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', cursor: 'pointer' }}>
@@ -145,9 +172,15 @@ export function CreateModal({ onSave, onClose, preSelectedLeadIds = [] }) {
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.82rem', cursor: 'pointer' }}>
                 <input type="radio" name="targetType" value="selected" checked={targetType === 'selected'} onChange={() => setTargetType('selected')} />
-                Select Specific Leads ({selectedLeadIds.length})
+                Select Specific Leads ({selectedLeadIds.length}/40)
               </label>
             </div>
+
+            {(targetType === 'all' || targetType === 'status') && (
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', background: 'rgba(59, 130, 246, 0.1)', padding: '6px 10px', borderRadius: '6px', marginBottom: '8px' }}>
+                ℹ️ <strong>24-Hour Safety Limit:</strong> A maximum of 40 messages will be processed within any 24-hour window per user.
+              </div>
+            )}
 
             {targetType === 'status' && (
               <select className="wa-form-select" value={selectedStatus} onChange={e => setSelectedStatus(e.target.value)} required>
@@ -173,7 +206,7 @@ export function CreateModal({ onSave, onClose, preSelectedLeadIds = [] }) {
                     style={{ fontSize: '0.8rem', padding: '6px 10px' }}
                   />
                   <button type="button" className="wa-btn wa-btn-secondary" style={{ fontSize: '0.75rem', padding: '4px 10px', whitespace: 'nowrap' }} onClick={selectAllFilteredLeads}>
-                    Select All ({filteredLeadsList.length})
+                    Select Up to 40 ({Math.min(filteredLeadsList.length, 40)})
                   </button>
                 </div>
 
@@ -195,8 +228,8 @@ export function CreateModal({ onSave, onClose, preSelectedLeadIds = [] }) {
                     ))
                   )}
                 </div>
-                <div style={{ fontSize: '0.75rem', color: '#25d366' }}>
-                  ✓ Selected <strong>{selectedLeadIds.length}</strong> lead(s) for this campaign
+                <div style={{ fontSize: '0.75rem', color: selectedLeadIds.length >= 40 ? '#f59e0b' : '#25d366' }}>
+                  ✓ Selected <strong>{selectedLeadIds.length}/40</strong> lead(s) for this campaign (24h limit: Max 40)
                 </div>
               </div>
             )}

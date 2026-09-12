@@ -1244,12 +1244,22 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
             <th style={{ width: '40px' }}>
               <input 
                 type="checkbox" 
-                checked={leads.length > 0 && leads.every(l => selectedLeadIds.has(l.id))}
+                checked={leads.length > 0 && leads.slice(0, 40).every(l => selectedLeadIds.has(l.id))}
                 onChange={(e) => {
                   if (e.target.checked) {
                     setSelectedLeadIds(prev => {
                       const next = new Set(prev);
-                      leads.forEach(l => next.add(l.id));
+                      let limitHit = false;
+                      for (const l of leads) {
+                        if (next.size >= 40) {
+                          limitHit = true;
+                          break;
+                        }
+                        next.add(l.id);
+                      }
+                      if (limitHit || next.size >= 40) {
+                        toast.info('Selected 40 leads (maximum limit for WhatsApp campaigns in 24 hours).');
+                      }
                       return next;
                     });
                   } else {
@@ -1261,6 +1271,7 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
                   }
                 }}
                 style={{ cursor: 'pointer' }}
+                title="Select up to 40 leads (24h limit)"
               />
             </th>
             <th>Lead Name</th>
@@ -1283,8 +1294,15 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
                   onChange={() => {
                     setSelectedLeadIds(prev => {
                       const next = new Set(prev);
-                      if (next.has(lead.id)) next.delete(lead.id);
-                      else next.add(lead.id);
+                      if (next.has(lead.id)) {
+                        next.delete(lead.id);
+                      } else {
+                        if (next.size >= 40) {
+                          toast.warning('Maximum 40 leads can be selected per campaign (24-hour limit).');
+                          return prev;
+                        }
+                        next.add(lead.id);
+                      }
                       return next;
                     });
                   }}
@@ -1498,8 +1516,15 @@ const GridView = ({ leads, onAddUpdate, onAssign, onStatusChange, onEditInterest
               onChange={() => {
                 setSelectedLeadIds(prev => {
                   const next = new Set(prev);
-                  if (next.has(lead.id)) next.delete(lead.id);
-                  else next.add(lead.id);
+                  if (next.has(lead.id)) {
+                    next.delete(lead.id);
+                  } else {
+                    if (next.size >= 40) {
+                      toast.warning('Maximum 40 leads can be selected per campaign (24-hour limit).');
+                      return prev;
+                    }
+                    next.add(lead.id);
+                  }
                   return next;
                 });
               }}
@@ -1858,7 +1883,7 @@ const WaCampaignCreateModal = ({ selectedCount, onSave, onClose }) => {
   const [templates, setTemplates] = useState([])
   const [form, setForm] = useState({
     name: '', session_id: '', template_id: '',
-    daily_limit: 200, min_delay_seconds: 10, max_delay_seconds: 25,
+    daily_limit: 40, min_delay_seconds: 10, max_delay_seconds: 25,
     consent_confirmed: false
   })
   const [saving, setSaving] = useState(false)
@@ -1878,8 +1903,9 @@ const WaCampaignCreateModal = ({ selectedCount, onSave, onClose }) => {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!form.consent_confirmed) return alert('You must confirm consent to proceed.')
+    if (selectedCount > 40) return alert('Maximum 40 leads can be selected per campaign (24-hour limit).')
     setSaving(true)
-    try { await onSave(form) } finally { setSaving(false) }
+    try { await onSave({ ...form, daily_limit: 40 }) } finally { setSaving(false) }
   }
 
   return (
@@ -1911,9 +1937,9 @@ const WaCampaignCreateModal = ({ selectedCount, onSave, onClose }) => {
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <div className="wa-form-group">
-              <label className="wa-form-label">Daily Limit</label>
-              <input className="wa-form-input" type="number" min={10} max={500} value={form.daily_limit} onChange={e => set('daily_limit', e.target.value)} />
-              <span style={{ fontSize: '0.7rem', color: '#6b7280' }}>Max 500/day</span>
+              <label className="wa-form-label">24h Message Limit</label>
+              <input className="wa-form-input" type="number" value={40} disabled style={{ opacity: 0.85, cursor: 'not-allowed', background: 'rgba(255,255,255,0.05)' }} />
+              <span style={{ fontSize: '0.7rem', color: '#25d366' }}>Fixed: 40 msgs / 24h per user</span>
             </div>
             <div className="wa-form-group">
               <label className="wa-form-label">Min Delay (sec)</label>
@@ -2951,7 +2977,7 @@ const MyLeads = () => {
           boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5), 0 8px 10px -6px rgba(0,0,0,0.5)'
         }}>
           <span style={{ fontSize: '0.9rem', color: '#f3f4f6', fontWeight: 500 }}>
-            {selectedLeadIds.size} {selectedLeadIds.size === 1 ? 'lead' : 'leads'} selected
+            {selectedLeadIds.size}/40 {selectedLeadIds.size === 1 ? 'lead' : 'leads'} selected (24h Limit: Max 40)
           </span>
           <div style={{ display: 'flex', gap: '12px' }}>
             <button 

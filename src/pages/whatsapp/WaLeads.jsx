@@ -144,13 +144,28 @@ export default function WaLeads() {
 
   const toggleSelect = (id) => setSelected(prev => {
     const next = new Set(prev)
-    next.has(id) ? next.delete(id) : next.add(id)
+    if (next.has(id)) {
+      next.delete(id)
+    } else {
+      if (next.size >= 40) {
+        alert('Maximum 40 leads can be selected per campaign (24-hour limit: 40 messages).')
+        return prev
+      }
+      next.add(id)
+    }
     return next
   })
 
   const selectAll = () => {
-    if (selected.size === filtered.length) setSelected(new Set())
-    else setSelected(new Set(filtered.map(l => l.id)))
+    if (selected.size > 0) {
+      setSelected(new Set())
+    } else {
+      const top40 = filtered.slice(0, 40).map(l => l.id)
+      setSelected(new Set(top40))
+      if (filtered.length > 40) {
+        alert('Selected 40 leads (maximum 24-hour limit: 40 messages per user).')
+      }
+    }
   }
 
   const handleCheckBulk = async () => {
@@ -193,7 +208,7 @@ export default function WaLeads() {
           onClick={() => setShowCreateCampaign(true)}
           style={{ background: 'linear-gradient(135deg, #25d366, #128c7e)', color: '#fff', fontWeight: 600 }}
         >
-          <Send size={15} /> Create Campaign ({selected.size} leads)
+          <Send size={15} /> Create Campaign ({selected.size}/40 leads)
         </button>
       )}
       <select className="wa-form-select" style={{ width: 'auto', padding: '8px 12px' }} value={sessionId} onChange={e => setSessionId(e.target.value)}>

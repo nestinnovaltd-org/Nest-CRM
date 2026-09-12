@@ -61,12 +61,19 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'name, session_id, template_id required' })
     }
 
+    // Enforce 40 leads max selection
+    if (lead_filter?.lead_ids && Array.isArray(lead_filter.lead_ids) && lead_filter.lead_ids.length > 40) {
+      return res.status(400).json({ error: 'Maximum 40 leads can be selected per campaign (24-hour limit: 40 messages).' })
+    }
+
+    const effectiveDailyLimit = Math.min(Number(daily_limit) || 40, 40)
+
     const { data, error } = await supabase
       .from('whatsapp_campaigns')
       .insert({
         org_id: req.user.org_id, user_id: req.user.id, name, session_id, template_id,
         lead_filter,
-        daily_limit:       daily_limit ? Number(daily_limit) : null,
+        daily_limit:       effectiveDailyLimit,
         min_delay_seconds: Number(min_delay_seconds) || 5,
         max_delay_seconds: Number(max_delay_seconds) || 15,
         start_time, consent_confirmed: true, status: 'DRAFT',
@@ -125,10 +132,42 @@ router.post('/:id/start', async (req, res) => {
       return res.status(400).json({ error: 'Consent not confirmed on this campaign' })
     }
 
+    // Enforce 24-hour message quota (max 40 messages per user in 24 hours)
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+    const { data: userCamps } = await supabase
+      .from('whatsapp_campaigns')
+      .select('id')
+      .eq('user_id', req.user.id)
+
+    const userCampIds = (userCamps || []).map(c => c.id)
+    let userSentLast24h = 0
+    if (userCampIds.length > 0) {
+      const { count } = await supabase
+        .from('whatsapp_campaign_recipients')
+        .select('id', { count: 'exact', head: true })
+        .in('campaign_id', userCampIds)
+        .eq('status', 'SENT')
+        .gte('sent_at', twentyFourHoursAgo)
+      userSentLast24h = count || 0
+    }
+
+    const remainingUserQuota = 40 - userSentLast24h
+    if (remainingUserQuota <= 0) {
+      return res.status(400).json({
+        error: '24-hour limit reached: Each user can send a maximum of 40 WhatsApp messages in 24 hours. Please try again after 24 hours.'
+      })
+    }
+
     // Fetch eligible leads based on lead_filter
-    const leads = await _getEligibleLeads(campaign, req.user.org_id)
+    let leads = await _getEligibleLeads(campaign, req.user.org_id)
     if (!leads || !leads.length) {
       return res.status(400).json({ error: 'No eligible leads found for this campaign' })
+    }
+
+    // Strictly cap to remaining quota (maximum 40 per 24 hours)
+    if (leads.length > remainingUserQuota) {
+      logger.info({ campaignId: campaign.id, total: leads.length, remainingUserQuota }, 'Capped campaign recipients to 24h quota')
+      leads = leads.slice(0, remainingUserQuota)
     }
 
     // Upsert recipients (ON CONFLICT DO NOTHING for duplicates)
@@ -398,7 +437,7 @@ async function _getEligibleLeads(campaign, orgId) {
   if (filter.assigned_to) query = query.eq('assigned_to', filter.assigned_to)
   if (filter.company)     query = query.eq('company', filter.company)
 
-  const limitCount = campaign.daily_limit || 2000
+  const limitCount = Math.min(Number(campaign.daily_limit) || 40, 40)
   const { data: leads } = await query.limit(limitCount)
   if (!leads || leads.length === 0) return []
 
@@ -457,13 +496,40 @@ async function _processCampaignDirectly(campaignId, sessionId, orgId) {
       // 1. Check campaign status
       const { data: campaign } = await supabase
         .from('whatsapp_campaigns')
-        .select('status, min_delay_seconds, max_delay_seconds, daily_limit')
+        .select('status, min_delay_seconds, max_delay_seconds, daily_limit, user_id')
         .eq('id', campaignId)
         .single()
 
       if (!campaign || campaign.status !== 'RUNNING') {
         logger.info({ campaignId, status: campaign?.status }, 'Campaign no longer RUNNING — stopping direct processing loop')
         break
+      }
+
+      // 24-hour user safety check during active loop
+      if (campaign?.user_id) {
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+        const { data: userCamps } = await supabase
+          .from('whatsapp_campaigns')
+          .select('id')
+          .eq('user_id', campaign.user_id)
+        const userCampIds = (userCamps || []).map(c => c.id)
+        if (userCampIds.length > 0) {
+          const { count: sent24h } = await supabase
+            .from('whatsapp_campaign_recipients')
+            .select('id', { count: 'exact', head: true })
+            .in('campaign_id', userCampIds)
+            .eq('status', 'SENT')
+            .gte('sent_at', twentyFourHoursAgo)
+          if ((sent24h || 0) >= 40) {
+            logger.warn({ campaignId, userId: campaign.user_id, sent24h }, 'User 24h limit of 40 reached. Pausing campaign.')
+            await supabase.from('whatsapp_campaigns').update({
+              status: 'PAUSED',
+              pause_reason: '24-hour safety limit reached (maximum 40 messages per user in 24 hours)',
+              paused_at: new Date().toISOString()
+            }).eq('id', campaignId)
+            break
+          }
+        }
       }
 
       // 2. Fetch next QUEUED recipient
