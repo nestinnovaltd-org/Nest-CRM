@@ -895,7 +895,7 @@ const renderWhatsAppBadge = (lead, isMini = false) => {
   );
 };
 
-const LeadCard = ({ lead, index, onDragStart, onAddUpdate, onAssign, onStatusChange, onEditInterests, onVerifyWhatsApp, showAssignment, activeTab, className = '' }) => {
+const LeadCard = ({ lead, index, onDragStart, onAddUpdate, onAssign, onStatusChange, onEditInterests, onVerifyWhatsApp, onDelete, showAssignment, activeTab, className = '' }) => {
   const [expandedHistory, setExpandedHistory] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const cleanPhone = lead.phone.replace(/[^\d+]/g, '');
@@ -1118,6 +1118,16 @@ const LeadCard = ({ lead, index, onDragStart, onAddUpdate, onAssign, onStatusCha
                   <WhatsAppIcon size={14} style={{ marginRight: '8px' }} />
                   Verify WhatsApp
                 </button>
+                {onDelete && (
+                  <button 
+                    className="dropdown-item"
+                    onClick={(e) => { e.stopPropagation(); onDelete(lead); setIsDropdownOpen(false); }}
+                    style={{ color: '#ef4444', fontWeight: '600' }}
+                  >
+                    <Trash2 size={14} style={{ marginRight: '8px' }} />
+                    Delete Lead
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1222,7 +1232,7 @@ const PortalDropdown = ({ children, triggerRef, onClose }) => {
   );
 };
 
-const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterests, onVerifyWhatsApp, showAssignment, activeTab, selectedLeadIds, setSelectedLeadIds }) => {
+const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterests, onVerifyWhatsApp, onDelete, showAssignment, activeTab, selectedLeadIds, setSelectedLeadIds }) => {
   const [activeDropdown, setActiveDropdown] = useState(null);
   const triggerRefs = useRef({});
 
@@ -1473,6 +1483,16 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
                                <WhatsAppIcon size={14} style={{ marginRight: '8px' }} />
                                Verify WhatsApp
                              </button>
+                             {onDelete && (
+                               <button 
+                                 className="dropdown-item"
+                                 onClick={() => { onDelete(lead); setActiveDropdown(null); }}
+                                 style={{ color: '#ef4444', fontWeight: '600' }}
+                               >
+                                 <Trash2 size={14} style={{ marginRight: '8px' }} />
+                                 Delete Lead
+                               </button>
+                             )}
                            </div>
                          </PortalDropdown>
                        )}
@@ -1488,7 +1508,7 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
   );
 };
 
-const GridView = ({ leads, onAddUpdate, onAssign, onStatusChange, onEditInterests, onVerifyWhatsApp, showAssignment, activeTab, selectedLeadIds, setSelectedLeadIds }) => {
+const GridView = ({ leads, onAddUpdate, onAssign, onStatusChange, onEditInterests, onVerifyWhatsApp, onDelete, showAssignment, activeTab, selectedLeadIds, setSelectedLeadIds }) => {
   return (
     <div className="leads-grid-view">
       {leads.map((lead, index) => (
@@ -1541,6 +1561,7 @@ const GridView = ({ leads, onAddUpdate, onAssign, onStatusChange, onEditInterest
             onStatusChange={onStatusChange}
             onEditInterests={onEditInterests}
             onVerifyWhatsApp={onVerifyWhatsApp}
+            onDelete={onDelete}
             showAssignment={showAssignment}
             activeTab={activeTab}
           />
@@ -2011,6 +2032,62 @@ const MyLeads = () => {
   const [allProjects, setAllProjects] = useState([]);
   const [selectedLeadIds, setSelectedLeadIds] = useState(new Set());
   const [showWaCampaignModal, setShowWaCampaignModal] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({
+    isOpen: false,
+    leadIds: [],
+    leadName: '',
+    isBulk: false
+  });
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleSingleDelete = (lead) => {
+    setDeleteModal({
+      isOpen: true,
+      leadIds: [lead.id],
+      leadName: lead.name,
+      isBulk: false
+    });
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedLeadIds.size === 0) return;
+    setDeleteModal({
+      isOpen: true,
+      leadIds: Array.from(selectedLeadIds),
+      leadName: '',
+      isBulk: true
+    });
+  };
+
+  const confirmDeleteLeads = async () => {
+    if (!deleteModal.leadIds || deleteModal.leadIds.length === 0) return;
+    setIsDeleting(true);
+    try {
+      const { error } = await supabase
+        .from('leads')
+        .delete()
+        .in('id', deleteModal.leadIds);
+
+      if (error) {
+        console.error('Error deleting lead(s):', error);
+        toast.error(error.message || 'Failed to delete lead(s)');
+      } else {
+        toast.success(
+          deleteModal.isBulk
+            ? `Successfully deleted ${deleteModal.leadIds.length} lead(s).`
+            : `Successfully deleted lead "${deleteModal.leadName}".`
+        );
+        setSelectedLeadIds(new Set());
+        setDeleteModal({ isOpen: false, leadIds: [], leadName: '', isBulk: false });
+        fetchLeads();
+      }
+    } catch (err) {
+      console.error('Error deleting lead(s):', err);
+      toast.error('An error occurred while deleting lead(s).');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   useEffect(() => {
     setSelectedLeadIds(new Set());
@@ -2538,6 +2615,16 @@ const MyLeads = () => {
           <div className="header-title-row">
             <h1>{userId ? `Leads for ${selectedUserName}` : 'My Lead Management'}</h1>
             <div className="header-actions">
+              {selectedLeadIds.size > 0 && (
+                <Button 
+                  variant="danger" 
+                  icon={Trash2} 
+                  onClick={handleBulkDelete}
+                  style={{ backgroundColor: '#ef4444', color: '#fff', borderColor: '#ef4444' }}
+                >
+                  Delete Selected ({selectedLeadIds.size})
+                </Button>
+              )}
               <Button variant="secondary" icon={Download} onClick={handleExport}>Export</Button>
               <Button variant="secondary" icon={Upload} onClick={() => setIsBulkUploadModalOpen(true)}>Bulk Upload</Button>
               <Button 
@@ -2713,6 +2800,7 @@ const MyLeads = () => {
               onAssign={(lead) => setAssignModal({ isOpen: true, lead })}
               onEditInterests={(lead) => setInterestsModal({ isOpen: true, lead })}
               onVerifyWhatsApp={handleVerifyWhatsApp}
+              onDelete={handleSingleDelete}
               showAssignment={activeTab === 'team'}
               activeTab={activeTab}
               selectedLeadIds={selectedLeadIds}
@@ -2726,6 +2814,7 @@ const MyLeads = () => {
               onStatusChange={(lead, newStatus) => setUpdateModal({ isOpen: true, lead, newStatus })}
               onEditInterests={(lead) => setInterestsModal({ isOpen: true, lead })}
               onVerifyWhatsApp={handleVerifyWhatsApp}
+              onDelete={handleSingleDelete}
               showAssignment={activeTab === 'team'}
               activeTab={activeTab}
               selectedLeadIds={selectedLeadIds}
@@ -2761,6 +2850,7 @@ const MyLeads = () => {
                             className="kanban-card"
                             onDragStart={handleDragStart}
                             onAddUpdate={handleAddUpdate}
+                            onDelete={handleSingleDelete}
                             showAssignment={activeTab === 'team'}
                             activeTab={activeTab}
                           />
@@ -2977,7 +3067,7 @@ const MyLeads = () => {
           boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5), 0 8px 10px -6px rgba(0,0,0,0.5)'
         }}>
           <span style={{ fontSize: '0.9rem', color: '#f3f4f6', fontWeight: 500 }}>
-            {selectedLeadIds.size}/40 {selectedLeadIds.size === 1 ? 'lead' : 'leads'} selected (24h Limit: Max 40)
+            {selectedLeadIds.size} {selectedLeadIds.size === 1 ? 'lead' : 'leads'} selected
           </span>
           <div style={{ display: 'flex', gap: '12px' }}>
             <button 
@@ -2986,6 +3076,26 @@ const MyLeads = () => {
               onClick={() => setSelectedLeadIds(new Set())}
             >
               Clear Selection
+            </button>
+            <button 
+              className="wa-btn" 
+              style={{ 
+                fontSize: '0.85rem', 
+                padding: '6px 16px', 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '6px',
+                backgroundColor: '#ef4444',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
+              onClick={handleBulkDelete}
+            >
+              <Trash2 size={16} />
+              Delete Marked Leads ({selectedLeadIds.size})
             </button>
             <button 
               className="wa-btn wa-btn-primary" 
@@ -3003,6 +3113,44 @@ const MyLeads = () => {
           onSave={handleCampaignSave}
           onClose={() => setShowWaCampaignModal(false)}
         />
+      )}
+      {deleteModal.isOpen && (
+        <Modal
+          isOpen={deleteModal.isOpen}
+          onClose={() => !isDeleting && setDeleteModal({ isOpen: false, leadIds: [], leadName: '', isBulk: false })}
+          title={deleteModal.isBulk ? "Delete Multiple Leads" : "Delete Lead"}
+        >
+          <div style={{ padding: '8px 0' }}>
+            <p style={{ color: 'var(--text-primary)', marginBottom: '16px', fontSize: '0.95rem', lineHeight: '1.5' }}>
+              {deleteModal.isBulk
+                ? `Are you sure you want to permanently delete ${deleteModal.leadIds.length} marked lead(s)?`
+                : `Are you sure you want to permanently delete the lead "${deleteModal.leadName}"?`
+              }
+              <br />
+              <span style={{ color: '#ef4444', fontSize: '0.85rem', display: 'block', marginTop: '8px', fontWeight: 600 }}>
+                This action cannot be undone.
+              </span>
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '24px' }}>
+              <Button
+                variant="secondary"
+                onClick={() => setDeleteModal({ isOpen: false, leadIds: [], leadName: '', isBulk: false })}
+                disabled={isDeleting}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                icon={Trash2}
+                onClick={confirmDeleteLeads}
+                disabled={isDeleting}
+                style={{ backgroundColor: '#ef4444', color: '#fff', borderColor: '#ef4444' }}
+              >
+                {isDeleting ? 'Deleting...' : 'Confirm Delete'}
+              </Button>
+            </div>
+          </div>
+        </Modal>
       )}
     </DashboardLayout>
   );
