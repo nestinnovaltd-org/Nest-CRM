@@ -13,6 +13,7 @@ import {
   Camera
 } from 'lucide-react';
 import Toast from '../components/ui/Toast';
+import { fetchLeadCategories } from '../services/leadCategoryService';
 import './AddLead.css';
 
 const cleanPhoneNumber = (phone) => {
@@ -88,12 +89,14 @@ const AddLeadPage = () => {
   const [users, setUsers] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [teams, setTeams] = useState([]);
+  const [categories, setCategories] = useState([]);
 
   // Form State: Required and optional lead fields
   const [formData, setFormData] = useState({
     image: null,
     company: '',
     contactPerson: '',
+    category: '',
     email: '',
     phone: '',
     phoneWhatsapp: false,
@@ -133,6 +136,9 @@ const AddLeadPage = () => {
 
       const { data: usersData } = await supabase.from('users').select('*').order('full_name', { ascending: true });
       setUsers(usersData || []);
+
+      const cats = await fetchLeadCategories();
+      setCategories(cats || []);
     };
 
     fetchData();
@@ -226,9 +232,10 @@ const AddLeadPage = () => {
 
       const history = [{
         date: new Date().toISOString(),
-        note: 'Lead created manually via platform.',
+        note: `Lead created manually via platform.${formData.category ? ` Category: ${formData.category}` : ''}`,
         type: 'System',
-        createdBy: user?.fullName || 'Admin'
+        category: formData.category || '',
+        createdBy: user?.full_name || user?.fullName || user?.name || 'Admin'
       }];
 
       const isSA = user?.account_type === 'super_admin';
@@ -250,6 +257,7 @@ const AddLeadPage = () => {
         name: displayName,
         company: formData.company?.trim(),
         contact_person: formData.contactPerson?.trim() || '',
+        category: formData.category || '',
         email: formData.email?.trim() || '',
         phone: fullPhone,
         phone_whatsapp: formData.phoneWhatsapp || false,
@@ -274,17 +282,21 @@ const AddLeadPage = () => {
         history: history
       };
 
-      let { data: newLead, error: leadError } = await supabase.from('leads').insert(leadPayload).select().single();
+      let currentPayload = { ...leadPayload };
+      let { data: newLead, error: leadError } = await supabase.from('leads').insert(currentPayload).select().single();
 
-      // Graceful fallback if city or contact_person columns are not yet in Supabase schema cache
-      if (leadError && (leadError.message?.includes('column') || leadError.code === 'PGRST204')) {
-        console.warn('Retrying lead insert with core columns:', leadError.message);
-        const fallbackPayload = { ...leadPayload };
-        delete fallbackPayload.city;
-        delete fallbackPayload.contact_person;
-        const retry = await supabase.from('leads').insert(fallbackPayload).select().single();
-        newLead = retry.data;
-        leadError = retry.error;
+      // Gracefully strip any missing column if PostgREST schema cache doesn't have it yet
+      while (leadError && (leadError.message?.includes('column') || leadError.code === 'PGRST204')) {
+        const match = leadError.message.match(/Could not find the '([^']+)' column/i);
+        if (match && match[1] && match[1] in currentPayload) {
+          console.warn(`Column '${match[1]}' not in 'leads' schema cache. Retrying...`);
+          delete currentPayload[match[1]];
+          const retry = await supabase.from('leads').insert(currentPayload).select().single();
+          newLead = retry.data;
+          leadError = retry.error;
+        } else {
+          break;
+        }
       }
 
       if (leadError) throw leadError;
@@ -529,6 +541,33 @@ const AddLeadPage = () => {
                     value={formData.email}
                     onChange={handleChange}
                   />
+                </div>
+
+                {/* Lead Category */}
+                <div className="form-group-v3 col-span-2">
+                  <label>
+                    Lead Category 
+                    <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '0.8rem' }}>(optional)</span>
+                  </label>
+                  <select 
+                    name="category"
+                    value={formData.category}
+                    onChange={handleChange}
+                    style={{
+                      width: '100%',
+                      background: 'var(--surface, #131722)',
+                      border: '1px solid var(--border, #2a2e39)',
+                      borderRadius: '8px',
+                      padding: '10px 14px',
+                      color: 'var(--text-primary, #ffffff)',
+                      fontSize: '0.875rem'
+                    }}
+                  >
+                    <option value="">Select Category (Optional)</option>
+                    {categories.map(c => (
+                      <option key={c.id || c.name} value={c.name}>{c.name}</option>
+                    ))}
+                  </select>
                 </div>
 
                 {/* City */}

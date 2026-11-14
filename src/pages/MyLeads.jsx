@@ -43,12 +43,19 @@ import {
   ChevronLeft,
   ChevronRight,
   Trash2,
-  X
+  X,
+  Folder,
+  FolderPlus,
+  Tag,
+  ArrowLeft,
+  Layers
 } from 'lucide-react';
 import { WhatsAppIcon } from '../components/ui/Icons';
 import { waLeads, waSessions, waCampaigns, waTemplates } from '../services/whatsappApi';
+import { fetchLeadCategories, createLeadCategory, deleteLeadCategory } from '../services/leadCategoryService';
 import './whatsapp/whatsapp.css';
 import './Leads.css';
+import './LeadCategories.css';
 
 const formatDateTime = (dateStr) => {
   if (!dateStr) return '';
@@ -259,8 +266,9 @@ const checkMultiplePhonesDuplicateInTeam = async (cleanedPhones, user, allUsers,
   return duplicatesMap;
 };
 
-const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) => {
+const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams, categories }) => {
   const [file, setFile] = useState(null);
+  const [defaultCategory, setDefaultCategory] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [importSummary, setImportSummary] = useState(null);
@@ -268,6 +276,7 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
 
   const handleClose = () => {
     setFile(null);
+    setDefaultCategory('');
     setIsUploading(false);
     setUploadProgress(0);
     setImportSummary(null);
@@ -292,13 +301,14 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
       'Company Name',
       'Contact Person',
       'Email Address',
+      'Category',
       'Phone Number',
       'Second Phone Number',
       'Location',
       'City'
     ];
     const csvContent = headers.join(',') + '\n' + 
-      'https://example.com/photo.jpg,Acme Corporation,John Doe,john@example.com,01712345678,01812345678,Road 11 Banani,Dhaka';
+      'https://example.com/photo.jpg,Acme Corporation,John Doe,john@example.com,Real Estate,01712345678,01812345678,Road 11 Banani,Dhaka';
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
@@ -378,12 +388,16 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
             else if (h.includes('photo') || h.includes('image') || h.includes('avatar') || h.includes('picture')) {
               obj.image = value;
             }
+            else if (h.includes('category') || h.includes('cat') || h.includes('group') || h.includes('segment')) {
+              obj.category = value;
+            }
           });
 
           // Unify fields matching form structure
           obj.company = obj.company || '';
           obj.contact_person = obj.contact_person || '';
           obj.name = obj.contact_person || obj.company || 'Lead';
+          obj.category = obj.category || defaultCategory || '';
           obj.email = obj.email || '';
           obj.location = obj.location || '';
           obj.city = obj.city || '';
@@ -633,11 +647,35 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
             <div className="upload-info-box">
               <div className="info-icon"><FileSpreadsheet size={18} /></div>
               <div className="info-content">
-                <p>Ensure your CSV matches the template fields: Photo, Company Name, Contact Person, Email Address, Phone Number, Second Phone Number, Location, City.</p>
+                <p>Ensure your CSV matches template fields: Photo, Company Name, Contact Person, Email Address, Category, Phone Number, Second Phone Number, Location, City.</p>
                 <a href="#" className="download-template" onClick={(e) => { e.preventDefault(); downloadTemplate(); }}>
                   Download CSV Template
                 </a>
               </div>
+            </div>
+
+            <div className="form-group" style={{ marginTop: '12px', marginBottom: '14px' }}>
+              <label style={{ display: 'block', fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                Assign Category to Imported Leads (Optional):
+              </label>
+              <select
+                value={defaultCategory}
+                onChange={(e) => setDefaultCategory(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '9px 12px',
+                  borderRadius: '8px',
+                  background: 'var(--surface, #11141c)',
+                  border: '1px solid var(--border, rgba(255,255,255,0.1))',
+                  color: 'var(--text-primary, #fff)',
+                  fontSize: '0.8125rem'
+                }}
+              >
+                <option value="">Auto-detect from CSV (or Uncategorized)</option>
+                {(categories || []).map(c => (
+                  <option key={c.id || c.name} value={c.name}>{c.name}</option>
+                ))}
+              </select>
             </div>
 
             {isUploading && (
@@ -1311,9 +1349,16 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
                   <span className="serial-number" style={{ marginRight: '8px' }}>{(index + 1).toString().padStart(2, '0')}.</span>
                   <div className="table-avatar">{lead.name[0]}</div>
                   <div className="name-details">
-                    <Link to={`/leads/${lead.id}`} className="table-name-link">
-                      <span className="name-text">{lead.name}</span>
-                    </Link>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <Link to={`/leads/${lead.id}`} className="table-name-link">
+                        <span className="name-text">{lead.name}</span>
+                      </Link>
+                      {lead.category && (
+                        <span className="category-badge-chip" title={`Category: ${lead.category}`}>
+                          📁 {lead.category}
+                        </span>
+                      )}
+                    </div>
                     {(showAssignment || activeTab === 'assigned') && (lead.assignedToName || lead.assignedByName) && (
                       <div className="assigned-to-link table-link">
                         <Link2 size={10} />
@@ -2119,6 +2164,71 @@ const MyLeads = () => {
   }, []);
   const [allUsers, setAllUsers] = useState([]);
   const [teams, setTeams] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState(null);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryColor, setNewCategoryColor] = useState('#3B82F6');
+  const [newCategoryDesc, setNewCategoryDesc] = useState('');
+  const [isCreatingCategory, setIsCreatingCategory] = useState(false);
+
+  useEffect(() => {
+    fetchLeadCategories().then(cats => setCategories(cats || []));
+  }, []);
+
+  const handleCreateCategory = async (e) => {
+    e.preventDefault();
+    if (!newCategoryName.trim()) {
+      toast.error('Please enter a category name');
+      return;
+    }
+    setIsCreatingCategory(true);
+    try {
+      const isSA = user?.account_type === 'super_admin';
+      const resolvedOrgId = (isSA && currentTenant?.type === 'org') ? currentTenant.id : (user?.org_id || null);
+      const resolvedOwnerId = (isSA && currentTenant?.type === 'individual') ? currentTenant.id : (user?.uid || user?.id);
+
+      const created = await createLeadCategory({
+        name: newCategoryName.trim(),
+        color: newCategoryColor,
+        description: newCategoryDesc,
+        org_id: resolvedOrgId,
+        owner_id: resolvedOwnerId
+      });
+
+      setCategories(prev => {
+        const filtered = prev.filter(c => c.name.toLowerCase() !== created.name.toLowerCase());
+        return [...filtered, created];
+      });
+
+      toast.success(`Category "${created.name}" created!`);
+      setNewCategoryName('');
+      setNewCategoryDesc('');
+      setNewCategoryColor('#3B82F6');
+      setShowCategoryModal(false);
+    } catch (err) {
+      console.error('Error creating category:', err);
+      toast.error('Failed to create category');
+    } finally {
+      setIsCreatingCategory(false);
+    }
+  };
+
+  const handleDeleteCategory = async (e, cat) => {
+    e.stopPropagation();
+    if (!window.confirm(`Are you sure you want to delete category "${cat.name}"?`)) return;
+    try {
+      await deleteLeadCategory(cat.id, cat.name);
+      setCategories(prev => prev.filter(c => c.name !== cat.name && c.id !== cat.id));
+      if (selectedCategory === cat.name) {
+        setSelectedCategory(null);
+      }
+      toast.success(`Category "${cat.name}" deleted.`);
+    } catch (err) {
+      console.error('Failed to delete category:', err);
+      toast.error('Failed to delete category');
+    }
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -2247,6 +2357,7 @@ const MyLeads = () => {
 
     let leadsList = (data || []).map(row => ({
       ...row,
+      category: row.category || (Array.isArray(row.history) && row.history.find(h => h.category)?.category) || '',
       ownerId: row.owner_id,
       assignedTo: row.assigned_to,
       assignedToName: row.assigned_to_name,
@@ -2458,6 +2569,44 @@ const MyLeads = () => {
   ) : false;
   const showTeamTab = isAdmin || isManager;
 
+  const categoryStats = React.useMemo(() => {
+    const currentUserId = user?.uid || user?.id;
+    const tabLeads = !user ? [] : leads.filter(l => {
+      if (userId) return l.assignedTo === userId;
+      if (activeTab === 'personal') return l.ownerId === currentUserId || (!l.ownerId && l.assignedTo === currentUserId);
+      if (activeTab === 'assigned') return l.assignedTo === currentUserId && l.ownerId && l.ownerId !== currentUserId;
+      return l.ownerId !== currentUserId && l.assignedTo !== currentUserId;
+    });
+
+    const stats = {};
+    (categories || []).forEach(cat => {
+      const catLeads = tabLeads.filter(l => (l.category || '').toLowerCase() === cat.name.toLowerCase());
+      stats[cat.name] = {
+        total: catLeads.length,
+        fresh: catLeads.filter(l => l.status === 'Fresh Lead').length,
+        followup: catLeads.filter(l => l.status === 'Follow Up').length,
+        deals: catLeads.filter(l => l.status === 'Deal Confirmed' || l.status === 'Under Negotiation').length
+      };
+    });
+
+    const uncategorizedLeads = tabLeads.filter(l => !l.category || l.category.trim() === '');
+    stats['UNCATEGORIZED'] = {
+      total: uncategorizedLeads.length,
+      fresh: uncategorizedLeads.filter(l => l.status === 'Fresh Lead').length,
+      followup: uncategorizedLeads.filter(l => l.status === 'Follow Up').length,
+      deals: uncategorizedLeads.filter(l => l.status === 'Deal Confirmed' || l.status === 'Under Negotiation').length
+    };
+
+    stats['ALL'] = {
+      total: tabLeads.length,
+      fresh: tabLeads.filter(l => l.status === 'Fresh Lead').length,
+      followup: tabLeads.filter(l => l.status === 'Follow Up').length,
+      deals: tabLeads.filter(l => l.status === 'Deal Confirmed' || l.status === 'Under Negotiation').length
+    };
+
+    return stats;
+  }, [leads, categories, user, activeTab, userId]);
+
   const filteredLeads = !user ? [] : leads
     .map(l => {
       const assignedUser = allUsers.find(u => u.id === l.assignedTo || u.uid === l.assignedTo);
@@ -2469,6 +2618,14 @@ const MyLeads = () => {
       };
     })
     .filter(l => {
+      if (selectedCategory && selectedCategory !== 'ALL') {
+        if (selectedCategory === 'UNCATEGORIZED') {
+          if (l.category && l.category.trim() !== '') return false;
+        } else {
+          if ((l.category || '').toLowerCase() !== selectedCategory.toLowerCase()) return false;
+        }
+      }
+
       const matchesSearch = (l.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
                            (l.phone || '').includes(searchTerm) ||
                            (l.company || '').toLowerCase().includes(searchTerm.toLowerCase());
@@ -2670,6 +2827,13 @@ const MyLeads = () => {
               >
                 Verify WhatsApp Status
               </Button>
+              <Button 
+                variant="outline" 
+                icon={FolderPlus} 
+                onClick={() => setShowCategoryModal(true)}
+              >
+                Add Category
+              </Button>
               {hasPermission('Lead Management', 'create') && (
                 <Link to="/leads/add">
                   <Button variant="primary" icon={Plus}>Add New Lead</Button>
@@ -2715,232 +2879,418 @@ const MyLeads = () => {
           </div>
         </div>
 
-        {/* Status Filters */}
-        <div className="leads-status-filter-bar">
-          <div className="leads-status-filter-label">
-            <Filter size={14} style={{ color: 'var(--primary)' }} />
-            <span>Filter Status:</span>
-          </div>
-          <div className="leads-status-filter-group">
-            {['All', ...statuses.filter(s => s.id !== 'Released').map(s => s.id)].map(status => {
-              // Counts are specific to the active tab (e.g. My Own Leads vs Assigned to Me)
-              const tabLeads = !user ? [] : leads.filter(l => {
-                if (userId) return l.assignedTo === userId;
-                const currentUserId = user.uid || user.id;
-                if (activeTab === 'personal') return l.ownerId === currentUserId || (!l.ownerId && l.assignedTo === currentUserId);
-                if (activeTab === 'assigned') return l.assignedTo === currentUserId && l.ownerId && l.ownerId !== currentUserId;
-                return l.ownerId !== currentUserId && l.assignedTo !== currentUserId;
-              });
-              const count = tabLeads.filter(l => status === 'All' || l.status === status).length;
-              
-              return (
-                <button
-                  key={status}
-                  onClick={() => { setStatusFilter(status); setCurrentPage(1); }}
-                  className={`status-pill-btn ${statusFilter === status ? 'active' : ''}`}
-                >
-                  <span>{status}</span>
-                  <span className="count-badge">{count}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="leads-toolbar">
-          <div className="toolbar-left" style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <div className="search-box">
-              <Search size={18} className="search-icon" />
-              <input 
-                type="text" 
-                placeholder="Search your leads..." 
-                value={searchTerm}
-                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-              />
+        {selectedCategory === null ? (
+          <div className="lead-categories-container">
+            <div className="lead-categories-header">
+              <div className="lead-categories-title-group">
+                <h2><Folder size={20} style={{ color: 'var(--primary)' }} /> Lead Categories</h2>
+                <p>Click on any category box below to view and manage its leads.</p>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <Button variant="outline" size="sm" icon={FolderPlus} onClick={() => setShowCategoryModal(true)}>
+                  Add Category
+                </Button>
+                <Button variant="primary" size="sm" onClick={() => setSelectedCategory('ALL')}>
+                  View All Leads ({categoryStats['ALL']?.total || 0})
+                </Button>
+              </div>
             </div>
 
-            <div className="fu-filter-select-wrapper">
-              <select 
-                value={selectedPriority} 
-                onChange={e => { setSelectedPriority(e.target.value); setCurrentPage(1); }}
-                className="fu-filter-select"
+            <div className="lead-categories-grid">
+              {/* All Leads Box */}
+              <div 
+                className="lead-category-box" 
+                onClick={() => setSelectedCategory('ALL')}
+                style={{ '--card-accent': 'var(--primary)', '--card-glow': 'rgba(0, 209, 255, 0.2)' }}
               >
-                <option value="All">All Priorities</option>
-                <option value="Normal">Normal</option>
-                <option value="High Priority">High Priority</option>
-                <option value="Urgent">Urgent</option>
-                <option value="Follow-up">Follow-up</option>
-              </select>
-            </div>
+                <div className="lead-category-top">
+                  <div className="category-icon-wrapper" style={{ background: 'rgba(0, 209, 255, 0.15)', color: 'var(--primary)' }}>
+                    <Layers size={22} />
+                  </div>
+                  <span className="category-lead-count-badge">
+                    {categoryStats['ALL']?.total || 0} Leads
+                  </span>
+                </div>
+                <div className="lead-category-info">
+                  <h3 className="lead-category-name">All Leads</h3>
+                  <p className="lead-category-desc">Complete overview of all leads across every category</p>
+                </div>
+                <div className="lead-category-footer">
+                  <div className="category-stats-pills">
+                    <span className="cat-pill fresh">{categoryStats['ALL']?.fresh || 0} Fresh</span>
+                    <span className="cat-pill followup">{categoryStats['ALL']?.followup || 0} Follow-up</span>
+                    <span className="cat-pill deal">{categoryStats['ALL']?.deals || 0} Deals</span>
+                  </div>
+                  <span style={{ color: 'var(--primary)', fontWeight: 600 }}>Explore →</span>
+                </div>
+              </div>
 
-            <div className="fu-filter-select-wrapper">
-              <select 
-                value={selectedWhatsAppStatus} 
-                onChange={e => { setSelectedWhatsAppStatus(e.target.value); setCurrentPage(1); }}
-                className="fu-filter-select"
-              >
-                <option value="All">All WhatsApp Status</option>
-                <option value="Verified">WhatsApp Verified Leads</option>
-                <option value="Unverified">WhatsApp Unverified</option>
-              </select>
-            </div>
-
-            <div className="fu-filter-select-wrapper">
-              <select 
-                value={selectedProject} 
-                onChange={e => { setSelectedProject(e.target.value); setCurrentPage(1); }}
-                className="fu-filter-select"
-              >
-                <option value="All">All Projects</option>
-                {filteredProjects.map(p => (
-                  <option key={p.id} value={p.projectName}>{p.projectName}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="toolbar-right">
-            <div className="view-toggle">
-              <button 
-                className={`toggle-btn ${viewMode === 'list' ? 'active' : ''}`}
-                onClick={() => setViewMode('list')}
-                title="List View"
-              >
-                <List size={18} />
-              </button>
-              <button 
-                className={`toggle-btn ${viewMode === 'grid' ? 'active' : ''}`}
-                onClick={() => setViewMode('grid')}
-                title="Grid View"
-              >
-                <Layout size={18} />
-              </button>
-              <button 
-                className={`toggle-btn kanban-toggle ${viewMode === 'kanban' ? 'active' : ''}`}
-                onClick={() => setViewMode('kanban')}
-                title="Kanban Board"
-              >
-                <GitMerge size={18} />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="leads-content-area">
-          {viewMode === 'list' ? (
-            <ListView 
-              leads={paginatedLeads} 
-              onAddUpdate={handleAddUpdate} 
-              onStatusChange={handleStatusChangeFromTable}
-              onAssign={(lead) => setAssignModal({ isOpen: true, lead })}
-              onEditInterests={(lead) => setInterestsModal({ isOpen: true, lead })}
-              onVerifyWhatsApp={handleVerifyWhatsApp}
-              onDelete={handleSingleDelete}
-              showAssignment={activeTab === 'team'}
-              activeTab={activeTab}
-              selectedLeadIds={selectedLeadIds}
-              setSelectedLeadIds={setSelectedLeadIds}
-            />
-          ) : viewMode === 'grid' ? (
-            <GridView 
-              leads={paginatedLeads} 
-              onAddUpdate={handleAddUpdate} 
-              onAssign={(lead) => setAssignModal({ isOpen: true, lead })}
-              onStatusChange={(lead, newStatus) => setUpdateModal({ isOpen: true, lead, newStatus })}
-              onEditInterests={(lead) => setInterestsModal({ isOpen: true, lead })}
-              onVerifyWhatsApp={handleVerifyWhatsApp}
-              onDelete={handleSingleDelete}
-              showAssignment={activeTab === 'team'}
-              activeTab={activeTab}
-              selectedLeadIds={selectedLeadIds}
-              setSelectedLeadIds={setSelectedLeadIds}
-            />
-          ) : (
-            <div className="kanban-board-container">
-              <div className="kanban-board">
-                {statuses.map(status => (
+              {/* Individual Category Boxes */}
+              {categories.map(cat => {
+                const stat = categoryStats[cat.name] || { total: 0, fresh: 0, followup: 0, deals: 0 };
+                return (
                   <div 
-                    key={status.id} 
-                    className="kanban-column"
-                    onDragOver={handleDragOver}
-                    onDrop={(e) => handleDrop(e, status.id)}
+                    key={cat.id || cat.name}
+                    className="lead-category-box"
+                    onClick={() => setSelectedCategory(cat.name)}
+                    style={{ '--card-accent': cat.color || '#3B82F6', '--card-glow': `${cat.color || '#3B82F6'}33` }}
                   >
-                    <div className="column-header" style={{ borderTop: `4px solid ${status.color}` }}>
-                      <div className="header-title-group">
-                        <span className="status-dot" style={{ backgroundColor: status.color }}></span>
-                        <h3>{status.title}</h3>
-                        <span className="count-pill" style={{ backgroundColor: `${status.color}15`, color: status.color }}>
-                          {filteredLeads.filter(l => l.status === status.id).length}
-                        </span>
+                    <div className="lead-category-top">
+                      <div className="category-icon-wrapper" style={{ background: `${cat.color || '#3B82F6'}22`, color: cat.color || '#3B82F6' }}>
+                        <Folder size={22} />
                       </div>
-                      <button className="col-action-btn"><MoreVertical size={16} /></button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span className="category-lead-count-badge">
+                          {stat.total} Leads
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteCategory(e, cat)}
+                          title="Delete Category"
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'var(--text-muted, #94a3b8)',
+                            cursor: 'pointer',
+                            padding: '4px',
+                            borderRadius: '4px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            transition: 'color 0.15s ease'
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted, #94a3b8)'}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </div>
-                    <div className="column-content custom-scrollbar">
-                      {filteredLeads
-                        .filter(l => l.status === status.id)
-                        .map(lead => (
-                          <LeadCard 
-                            key={lead.id} 
-                            lead={lead} 
-                            className="kanban-card"
-                            onDragStart={handleDragStart}
-                            onAddUpdate={handleAddUpdate}
-                            onDelete={handleSingleDelete}
-                            showAssignment={activeTab === 'team'}
-                            activeTab={activeTab}
-                          />
-                        ))}
+                    <div className="lead-category-info">
+                      <h3 className="lead-category-name">{cat.name}</h3>
+                      <p className="lead-category-desc">{cat.description || `Leads organized under ${cat.name}`}</p>
+                    </div>
+                    <div className="lead-category-footer">
+                      <div className="category-stats-pills">
+                        <span className="cat-pill fresh">{stat.fresh} Fresh</span>
+                        <span className="cat-pill followup">{stat.followup} Follow-up</span>
+                        <span className="cat-pill deal">{stat.deals} Deals</span>
+                      </div>
+                      <span style={{ color: cat.color || '#3B82F6', fontWeight: 600 }}>Open →</span>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+                );
+              })}
 
-        {/* Pagination Controls */}
-        {viewMode !== 'kanban' && filteredLeads.length > itemsPerPage && (
-          <div className="pagination-container-v2">
-            <div className="pagination-info">
-              Showing <span>{(currentPage - 1) * itemsPerPage + 1}</span> to <span>{Math.min(currentPage * itemsPerPage, filteredLeads.length)}</span> of <span>{filteredLeads.length}</span> leads
-            </div>
-            <div className="pagination-controls">
-              <button 
-                className="pag-btn" 
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-              >
-                <ChevronLeft size={18} />
-                Previous
-              </button>
-              
-              <div className="page-numbers">
-                {Array.from({ length: Math.ceil(filteredLeads.length / itemsPerPage) }, (_, i) => i + 1)
-                  .filter(p => p === 1 || p === Math.ceil(filteredLeads.length / itemsPerPage) || Math.abs(p - currentPage) <= 1)
-                  .map((p, i, arr) => (
-                    <React.Fragment key={p}>
-                      {i > 0 && arr[i-1] !== p - 1 && <span className="pag-dots">...</span>}
-                      <button 
-                        className={`pag-number ${currentPage === p ? 'active' : ''}`}
-                        onClick={() => setCurrentPage(p)}
-                      >
-                        {p}
-                      </button>
-                    </React.Fragment>
-                  ))
-                }
-              </div>
+              {/* Uncategorized Box (if has leads) */}
+              {categoryStats['UNCATEGORIZED']?.total > 0 && (
+                <div 
+                  className="lead-category-box"
+                  onClick={() => setSelectedCategory('UNCATEGORIZED')}
+                  style={{ '--card-accent': '#64748B', '--card-glow': 'rgba(100, 116, 139, 0.2)' }}
+                >
+                  <div className="lead-category-top">
+                    <div className="category-icon-wrapper" style={{ background: 'rgba(100, 116, 139, 0.15)', color: '#94A3B8' }}>
+                      <Tag size={22} />
+                    </div>
+                    <span className="category-lead-count-badge">
+                      {categoryStats['UNCATEGORIZED'].total} Leads
+                    </span>
+                  </div>
+                  <div className="lead-category-info">
+                    <h3 className="lead-category-name">Uncategorized</h3>
+                    <p className="lead-category-desc">Leads not yet assigned to any specific category</p>
+                  </div>
+                  <div className="lead-category-footer">
+                    <div className="category-stats-pills">
+                      <span className="cat-pill fresh">{categoryStats['UNCATEGORIZED'].fresh} Fresh</span>
+                      <span className="cat-pill followup">{categoryStats['UNCATEGORIZED'].followup} Follow-up</span>
+                    </div>
+                    <span style={{ color: '#94A3B8', fontWeight: 600 }}>Open →</span>
+                  </div>
+                </div>
+              )}
 
-              <button 
-                className="pag-btn" 
-                onClick={() => setCurrentPage(prev => Math.min(Math.ceil(filteredLeads.length / itemsPerPage), prev + 1))}
-                disabled={currentPage === Math.ceil(filteredLeads.length / itemsPerPage)}
+              {/* Dashed Add New Category Box */}
+              <div 
+                className="lead-category-box add-new-box"
+                onClick={() => setShowCategoryModal(true)}
               >
-                Next
-                <ChevronRight size={18} />
-              </button>
+                <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <FolderPlus size={22} />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-primary)' }}>+ Add New Category</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>Create custom lead segment</div>
+                </div>
+              </div>
             </div>
           </div>
+        ) : (
+          <>
+            {/* Active Category Header */}
+            <div className="category-active-banner">
+              <div className="category-banner-left">
+                <button className="category-back-btn" onClick={() => setSelectedCategory(null)}>
+                  <ArrowLeft size={15} /> All Categories
+                </button>
+                <div className="category-banner-info">
+                  <h2 className="category-banner-title">
+                    <Folder size={20} style={{ color: 'var(--primary)' }} />
+                    {selectedCategory === 'ALL' ? 'All Leads' : selectedCategory === 'UNCATEGORIZED' ? 'Uncategorized Leads' : selectedCategory}
+                  </h2>
+                  <span className="category-banner-count">{filteredLeads.length} Leads</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  className="fu-filter-select"
+                  style={{ height: '36px', fontSize: '0.8125rem' }}
+                >
+                  <option value="ALL">All Leads</option>
+                  {categories.map(c => (
+                    <option key={c.id || c.name} value={c.name}>{c.name}</option>
+                  ))}
+                  {categoryStats['UNCATEGORIZED']?.total > 0 && (
+                    <option value="UNCATEGORIZED">Uncategorized</option>
+                  )}
+                </select>
+                <Button variant="outline" size="sm" onClick={() => setSelectedCategory(null)}>
+                  Back to Categories
+                </Button>
+              </div>
+            </div>
+
+            {/* Status Filters */}
+            <div className="leads-status-filter-bar">
+              <div className="leads-status-filter-label">
+                <Filter size={14} style={{ color: 'var(--primary)' }} />
+                <span>Filter Status:</span>
+              </div>
+              <div className="leads-status-filter-group">
+                {['All', ...statuses.filter(s => s.id !== 'Released').map(s => s.id)].map(status => {
+                  const tabLeads = !user ? [] : leads.filter(l => {
+                    if (userId) return l.assignedTo === userId;
+                    const currentUserId = user.uid || user.id;
+                    const catMatch = !selectedCategory || selectedCategory === 'ALL' || (selectedCategory === 'UNCATEGORIZED' ? (!l.category || l.category.trim() === '') : (l.category || '').toLowerCase() === selectedCategory.toLowerCase());
+                    if (!catMatch) return false;
+
+                    if (activeTab === 'personal') return l.ownerId === currentUserId || (!l.ownerId && l.assignedTo === currentUserId);
+                    if (activeTab === 'assigned') return l.assignedTo === currentUserId && l.ownerId && l.ownerId !== currentUserId;
+                    return l.ownerId !== currentUserId && l.assignedTo !== currentUserId;
+                  });
+                  const count = tabLeads.filter(l => status === 'All' || l.status === status).length;
+                  
+                  return (
+                    <button
+                      key={status}
+                      onClick={() => { setStatusFilter(status); setCurrentPage(1); }}
+                      className={`status-pill-btn ${statusFilter === status ? 'active' : ''}`}
+                    >
+                      <span>{status}</span>
+                      <span className="count-badge">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="leads-toolbar">
+              <div className="toolbar-left" style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <div className="search-box">
+                  <Search size={18} className="search-icon" />
+                  <input 
+                    type="text" 
+                    placeholder="Search your leads..." 
+                    value={searchTerm}
+                    onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                  />
+                </div>
+
+                <div className="fu-filter-select-wrapper">
+                  <select 
+                    value={selectedPriority} 
+                    onChange={e => { setSelectedPriority(e.target.value); setCurrentPage(1); }}
+                    className="fu-filter-select"
+                  >
+                    <option value="All">All Priorities</option>
+                    <option value="Normal">Normal</option>
+                    <option value="High Priority">High Priority</option>
+                    <option value="Urgent">Urgent</option>
+                    <option value="Follow-up">Follow-up</option>
+                  </select>
+                </div>
+
+                <div className="fu-filter-select-wrapper">
+                  <select 
+                    value={selectedWhatsAppStatus} 
+                    onChange={e => { setSelectedWhatsAppStatus(e.target.value); setCurrentPage(1); }}
+                    className="fu-filter-select"
+                  >
+                    <option value="All">All WhatsApp Status</option>
+                    <option value="Verified">WhatsApp Verified Leads</option>
+                    <option value="Unverified">WhatsApp Unverified</option>
+                  </select>
+                </div>
+
+                <div className="fu-filter-select-wrapper">
+                  <select 
+                    value={selectedProject} 
+                    onChange={e => { setSelectedProject(e.target.value); setCurrentPage(1); }}
+                    className="fu-filter-select"
+                  >
+                    <option value="All">All Projects</option>
+                    {filteredProjects.map(p => (
+                      <option key={p.id} value={p.projectName}>{p.projectName}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="toolbar-right">
+                <div className="view-toggle">
+                  <button 
+                    className={`toggle-btn ${viewMode === 'list' ? 'active' : ''}`}
+                    onClick={() => setViewMode('list')}
+                    title="List View"
+                  >
+                    <List size={18} />
+                  </button>
+                  <button 
+                    className={`toggle-btn ${viewMode === 'grid' ? 'active' : ''}`}
+                    onClick={() => setViewMode('grid')}
+                    title="Grid View"
+                  >
+                    <Layout size={18} />
+                  </button>
+                  <button 
+                    className={`toggle-btn kanban-toggle ${viewMode === 'kanban' ? 'active' : ''}`}
+                    onClick={() => setViewMode('kanban')}
+                    title="Kanban Board"
+                  >
+                    <GitMerge size={18} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="leads-content-area">
+              {viewMode === 'list' ? (
+                <ListView 
+                  leads={paginatedLeads} 
+                  onAddUpdate={handleAddUpdate} 
+                  onStatusChange={handleStatusChangeFromTable}
+                  onAssign={(lead) => setAssignModal({ isOpen: true, lead })}
+                  onEditInterests={(lead) => setInterestsModal({ isOpen: true, lead })}
+                  onVerifyWhatsApp={handleVerifyWhatsApp}
+                  onDelete={handleSingleDelete}
+                  showAssignment={activeTab === 'team'}
+                  activeTab={activeTab}
+                  selectedLeadIds={selectedLeadIds}
+                  setSelectedLeadIds={setSelectedLeadIds}
+                />
+              ) : viewMode === 'grid' ? (
+                <GridView 
+                  leads={paginatedLeads} 
+                  onAddUpdate={handleAddUpdate} 
+                  onAssign={(lead) => setAssignModal({ isOpen: true, lead })}
+                  onStatusChange={(lead, newStatus) => setUpdateModal({ isOpen: true, lead, newStatus })}
+                  onEditInterests={(lead) => setInterestsModal({ isOpen: true, lead })}
+                  onVerifyWhatsApp={handleVerifyWhatsApp}
+                  onDelete={handleSingleDelete}
+                  showAssignment={activeTab === 'team'}
+                  activeTab={activeTab}
+                  selectedLeadIds={selectedLeadIds}
+                  setSelectedLeadIds={setSelectedLeadIds}
+                />
+              ) : (
+                <div className="kanban-board-container">
+                  <div className="kanban-board">
+                    {statuses.map(status => (
+                      <div 
+                        key={status.id} 
+                        className="kanban-column"
+                        onDragOver={handleDragOver}
+                        onDrop={(e) => handleDrop(e, status.id)}
+                      >
+                        <div className="column-header" style={{ borderTop: `4px solid ${status.color}` }}>
+                          <div className="header-title-group">
+                            <span className="status-dot" style={{ backgroundColor: status.color }}></span>
+                            <h3>{status.title}</h3>
+                            <span className="count-pill" style={{ backgroundColor: `${status.color}15`, color: status.color }}>
+                              {filteredLeads.filter(l => l.status === status.id).length}
+                            </span>
+                          </div>
+                          <button className="col-action-btn"><MoreVertical size={16} /></button>
+                        </div>
+                        <div className="column-content custom-scrollbar">
+                          {filteredLeads
+                            .filter(l => l.status === status.id)
+                            .map(lead => (
+                              <LeadCard 
+                                key={lead.id} 
+                                lead={lead} 
+                                className="kanban-card"
+                                onDragStart={handleDragStart}
+                                onAddUpdate={handleAddUpdate}
+                                onDelete={handleSingleDelete}
+                                showAssignment={activeTab === 'team'}
+                                activeTab={activeTab}
+                              />
+                            ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Pagination Controls */}
+            {viewMode !== 'kanban' && filteredLeads.length > itemsPerPage && (
+              <div className="pagination-container-v2">
+                <div className="pagination-info">
+                  Showing <span>{(currentPage - 1) * itemsPerPage + 1}</span> to <span>{Math.min(currentPage * itemsPerPage, filteredLeads.length)}</span> of <span>{filteredLeads.length}</span> leads
+                </div>
+                <div className="pagination-controls">
+                  <button 
+                    className="pag-btn" 
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                  >
+                    <ChevronLeft size={18} />
+                    Previous
+                  </button>
+                  
+                  <div className="page-numbers">
+                    {Array.from({ length: Math.ceil(filteredLeads.length / itemsPerPage) }, (_, i) => i + 1)
+                      .filter(p => p === 1 || p === Math.ceil(filteredLeads.length / itemsPerPage) || Math.abs(p - currentPage) <= 1)
+                      .map((p, i, arr) => (
+                        <React.Fragment key={p}>
+                          {i > 0 && arr[i-1] !== p - 1 && <span className="pag-dots">...</span>}
+                          <button 
+                            className={`pag-number ${currentPage === p ? 'active' : ''}`}
+                            onClick={() => setCurrentPage(p)}
+                          >
+                            {p}
+                          </button>
+                        </React.Fragment>
+                      ))}
+                  </div>
+
+                  <button 
+                    className="pag-btn" 
+                    onClick={() => setCurrentPage(prev => Math.min(Math.ceil(filteredLeads.length / itemsPerPage), prev + 1))}
+                    disabled={currentPage === Math.ceil(filteredLeads.length / itemsPerPage)}
+                  >
+                    Next
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -2974,6 +3324,7 @@ const MyLeads = () => {
         user={user}
         allUsers={allUsers}
         teams={teams}
+        categories={categories}
         onImport={async (data) => {
           try {
             const importPromises = data.map(lead => {
@@ -3009,6 +3360,7 @@ const MyLeads = () => {
                 name:                  displayName,
                 company:               lead.company || '',
                 contact_person:        lead.contact_person || '',
+                category:              lead.category || '',
                 email:                 lead.email || '',
                 phone:                 normalizePhoneForDb(lead.phone || ''),
                 phone_whatsapp:        lead.phone_whatsapp || false,
@@ -3033,15 +3385,26 @@ const MyLeads = () => {
                 updated_at:            new Date().toISOString()
               };
 
-              return supabase.from('leads').insert(dbPayload).select().then(async (res) => {
-                if (res.error && (res.error.message?.includes('column') || res.error.code === 'PGRST204')) {
-                  const fallback = { ...dbPayload };
-                  delete fallback.city;
-                  delete fallback.contact_person;
-                  return supabase.from('leads').insert(fallback).select();
+              return (async () => {
+                let payload = { ...dbPayload };
+                while (true) {
+                  const res = await supabase.from('leads').insert(payload).select();
+                  if (res.error) {
+                    const colMatch = res.error.message?.match(/Could not find the '([^']+)' column/i);
+                    if (colMatch && colMatch[1] && payload[colMatch[1]] !== undefined) {
+                      delete payload[colMatch[1]];
+                      continue;
+                    }
+                    if (res.error.code === 'PGRST204') {
+                      delete payload.category;
+                      delete payload.city;
+                      delete payload.contact_person;
+                      return supabase.from('leads').insert(payload).select();
+                    }
+                  }
+                  return res;
                 }
-                return res;
-              });
+              })();
             });
             
             const insertResults = await Promise.all(importPromises);
@@ -3193,6 +3556,121 @@ const MyLeads = () => {
               </Button>
             </div>
           </div>
+        </Modal>
+      )}
+
+      {/* Category Creation Modal */}
+      {showCategoryModal && (
+        <Modal
+          isOpen={showCategoryModal}
+          onClose={() => setShowCategoryModal(false)}
+          title="Create New Lead Category"
+        >
+          <form onSubmit={handleCreateCategory} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary, #94a3b8)', marginBottom: '6px' }}>
+                Category Name <span style={{ color: '#ef4444' }}>*</span>
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Real Estate, Corporate Clients, VIP Buyers"
+                value={newCategoryName}
+                onChange={e => setNewCategoryName(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  color: '#fff',
+                  fontSize: '0.9rem',
+                  outline: 'none'
+                }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary, #94a3b8)', marginBottom: '6px' }}>
+                Description (Optional)
+              </label>
+              <textarea
+                rows={2}
+                placeholder="Brief description or purpose of this category..."
+                value={newCategoryDesc}
+                onChange={e => setNewCategoryDesc(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  color: '#fff',
+                  fontSize: '0.9rem',
+                  outline: 'none',
+                  resize: 'vertical'
+                }}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary, #94a3b8)', marginBottom: '6px' }}>
+                Tag Color
+              </label>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                {['#3B82F6', '#10B981', '#F59E0B', '#EC4899', '#8B5CF6', '#06B6D4', '#64748B'].map(c => (
+                  <button
+                    type="button"
+                    key={c}
+                    onClick={() => setNewCategoryColor(c)}
+                    style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '50%',
+                      background: c,
+                      border: newCategoryColor === c ? '3px solid #fff' : '2px solid transparent',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                  />
+                ))}
+                <input
+                  type="color"
+                  value={newCategoryColor}
+                  onChange={e => setNewCategoryColor(e.target.value)}
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    padding: 0,
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    background: 'transparent'
+                  }}
+                  title="Choose custom color"
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setShowCategoryModal(false)}
+                disabled={isCreatingCategory}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                icon={FolderPlus}
+                disabled={isCreatingCategory || !newCategoryName.trim()}
+              >
+                {isCreatingCategory ? 'Creating...' : 'Create Category'}
+              </Button>
+            </div>
+          </form>
         </Modal>
       )}
     </DashboardLayout>

@@ -28,8 +28,11 @@ import {
   RefreshCcw,
   PlusCircle,
   Edit,
-  Camera
+  Camera,
+  Tag,
+  Folder
 } from 'lucide-react';
+import { fetchLeadCategories } from '../services/leadCategoryService';
 import { WhatsAppIcon } from '../components/ui/Icons';
 import './LeadDetails.css';
 
@@ -519,11 +522,18 @@ const LeadDetails = () => {
     interests: []
   });
 
+  const [availableCategories, setAvailableCategories] = useState([]);
+
+  useEffect(() => {
+    fetchLeadCategories().then(cats => setAvailableCategories(cats || []));
+  }, []);
+
   useEffect(() => {
     if (lead) {
       setEditForm({
         name: lead.name || '',
         email: lead.email || '',
+        category: lead.category || '',
         phone: lead.phone?.replace(/^\+880\s*/, '') || '',
         phoneWhatsapp: lead.phoneWhatsapp || false,
         secondPhone: lead.secondPhone?.replace(/^\+880\s*/, '') || '',
@@ -551,9 +561,10 @@ const LeadDetails = () => {
         formattedSecondPhone = '+880 ' + formattedSecondPhone.replace(/\D/g, '');
       }
 
-      await supabase.from('leads').update({
+      const updateData = {
         name: editForm.name,
         email: editForm.email,
+        category: editForm.category || '',
         phone: formattedPhone,
         phone_whatsapp: editForm.phoneWhatsapp,
         second_phone: formattedSecondPhone,
@@ -566,7 +577,31 @@ const LeadDetails = () => {
         image: editForm.image || '',
         interests: editForm.interests || [],
         updated_at: new Date().toISOString()
-      }).eq('id', id);
+      };
+
+      // Resilient update with missing column stripping loop
+      let payload = { ...updateData };
+      let updatedRes = null;
+      while (true) {
+        const res = await supabase.from('leads').update(payload).eq('id', id);
+        if (res.error) {
+          const colMatch = res.error.message?.match(/Could not find the '([^']+)' column/i);
+          if (colMatch && colMatch[1] && payload[colMatch[1]] !== undefined) {
+            delete payload[colMatch[1]];
+            continue;
+          }
+        }
+        updatedRes = res;
+        break;
+      }
+
+      setLead(prev => prev ? {
+        ...prev,
+        ...updateData,
+        phoneWhatsapp: editForm.phoneWhatsapp,
+        secondPhoneWhatsapp: editForm.secondPhoneWhatsapp
+      } : prev);
+
       setIsEditModalOpen(false);
     } catch (error) {
       console.error('Error updating lead details:', error);
@@ -1056,9 +1091,28 @@ const LeadDetails = () => {
                 <div className="profile-meta-details">
                   <h2>{lead?.name || 'Unnamed Lead'}</h2>
                   <p className="designation-text">{lead?.designation || 'Lead'} at {lead?.company || 'N/A'}</p>
-                  <span className={`status-pill ${(lead?.status || 'Fresh Lead').toLowerCase().replace(/ /g, '-')}`}>
-                    {lead?.status === 'Released' ? 'Junk Lead' : (lead?.status || 'Fresh Lead')}
-                  </span>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginTop: '6px' }}>
+                    <span className={`status-pill ${(lead?.status || 'Fresh Lead').toLowerCase().replace(/ /g, '-')}`}>
+                      {lead?.status === 'Released' ? 'Junk Lead' : (lead?.status || 'Fresh Lead')}
+                    </span>
+                    {lead?.category && (
+                      <span style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '4px 10px',
+                        borderRadius: '6px',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        background: 'rgba(59, 130, 246, 0.15)',
+                        color: '#60a5fa',
+                        border: '1px solid rgba(59, 130, 246, 0.3)'
+                      }}>
+                        <Folder size={12} />
+                        {lead.category}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1727,6 +1781,23 @@ const LeadDetails = () => {
                 value={editForm.address}
                 onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
               />
+            </div>
+
+            <div className="form-group" style={{ marginTop: '12px' }}>
+              <label className="form-label">Lead Category</label>
+              <select
+                className="custom-input-field"
+                value={editForm.category || ''}
+                onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+                style={{ width: '100%', background: 'var(--background-secondary)', color: 'var(--text-primary)' }}
+              >
+                <option value="">No Category / General</option>
+                {availableCategories.map(cat => (
+                  <option key={cat.id || cat.name} value={cat.name}>
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div className="form-group" style={{ marginTop: '16px' }}>

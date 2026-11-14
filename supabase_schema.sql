@@ -242,6 +242,7 @@ ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS next_follow_up TEXT;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS next_follow_up_date DATE;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS next_follow_up_time TEXT;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS category TEXT;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS image TEXT;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS interests TEXT[];
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS history JSONB DEFAULT '[]'::jsonb;
@@ -251,6 +252,23 @@ ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT
 ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow public access" ON public.leads;
 CREATE POLICY "Allow public access" ON public.leads FOR ALL TO public USING (true) WITH CHECK (true);
+
+-- 11. Lead Categories Table
+CREATE TABLE IF NOT EXISTS public.lead_categories (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    color TEXT DEFAULT '#3B82F6',
+    icon TEXT,
+    org_id UUID,
+    owner_id UUID,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.lead_categories ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow public access" ON public.lead_categories;
+CREATE POLICY "Allow public access" ON public.lead_categories FOR ALL TO public USING (true) WITH CHECK (true);
 
 -- Alter Book Demo Leads Table
 ALTER TABLE public.book_demo_leads ADD COLUMN IF NOT EXISTS full_name TEXT;
