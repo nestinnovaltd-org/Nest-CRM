@@ -1,6 +1,10 @@
 .add-lead-page {
-    padding: 1.5rem 2rem;
+    padding: 0;
     padding-bottom: 100px;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    box-sizing: border-box;
 }
 
 .add-lead-header {
@@ -423,8 +427,9 @@
 }
 
 .footer-content {
-    max-width: 1000px;
-    margin: 0 auto;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
     display: flex;
     justify-content: space-between;
     align-items: center;

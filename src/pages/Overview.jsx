@@ -128,7 +128,8 @@ const Overview = () => {
     currentUser.role === 'Team Leader'
   ) : false;
   
-  const hasDashboardConfig = currentUser?.rolePermissions?.Dashboard !== undefined;
+  const userDashboardPerm = (Array.isArray(currentUser?.permissions) && currentUser.permissions[0]?.Dashboard !== undefined) || (currentUser?.permissions?.Dashboard !== undefined);
+  const hasDashboardConfig = userDashboardPerm;
   
   const hasOverviewAccess = hasDashboardConfig 
     ? hasPermission('Dashboard', 'read', 'Overview') 
@@ -156,7 +157,7 @@ const Overview = () => {
     if (!availableTabs.includes(activeTab)) {
       setActiveTab(availableTabs[0]);
     }
-  }, [currentUser?.rolePermissions, activeTab]);
+  }, [currentUser?.permissions, activeTab]);
 
   useEffect(() => {
     if (!currentUser) return;

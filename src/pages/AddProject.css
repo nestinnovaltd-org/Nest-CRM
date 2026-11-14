@@ -1,8 +1,10 @@
 .add-project-page {
-    padding: 1.5rem;
-    max-width: 1000px;
-    margin: 0 auto;
+    padding: 0;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
     padding-bottom: 100px;
+    box-sizing: border-box;
 }
 
 .add-project-header {
@@ -238,6 +240,161 @@
     gap: 0.5rem;
 }
 
+/* Features Tag Input UI */
+.features-input-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    background: var(--background-secondary);
+    border: 1.5px solid var(--border);
+    border-radius: 14px;
+    padding: 1rem;
+    transition: all 0.2s ease;
+}
+
+[data-theme='dark'] .features-input-box {
+    background: rgba(255, 255, 255, 0.02);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.features-input-row {
+    display: flex;
+    gap: 0.625rem;
+    align-items: center;
+}
+
+.features-input-row input {
+    flex: 1;
+    background: var(--surface);
+}
+
+.feature-add-btn {
+    padding: 0.75rem 1.25rem;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.875rem;
+    white-space: nowrap;
+}
+
+.features-chips-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    min-height: 38px;
+    align-items: center;
+}
+
+.feature-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.35rem 0.75rem;
+    background: rgba(var(--primary-rgb), 0.12);
+    color: var(--primary);
+    border: 1px solid rgba(var(--primary-rgb), 0.25);
+    border-radius: 20px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+
+.feature-chip:hover {
+    background: rgba(var(--primary-rgb), 0.2);
+}
+
+.feature-chip-remove {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.7;
+    transition: opacity 0.2s;
+}
+
+.feature-chip-remove:hover {
+    opacity: 1;
+}
+
+.quick-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    align-items: center;
+    margin-top: 0.25rem;
+}
+
+.quick-sugg-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 500;
+    margin-right: 0.25rem;
+}
+
+.quick-sugg-chip {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    border-radius: 14px;
+    padding: 0.25rem 0.625rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.quick-sugg-chip:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: rgba(var(--primary-rgb), 0.05);
+}
+
+.quick-sugg-chip.added {
+    opacity: 0.4;
+    cursor: default;
+    border-style: dashed;
+}
+
+.url-input-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.url-input-container input {
+    padding-left: 2.75rem !important;
+    padding-right: 4.5rem !important;
+}
+
+.url-icon-prefix {
+    position: absolute;
+    left: 1rem;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+.url-test-link {
+    position: absolute;
+    right: 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--primary);
+    text-decoration: none;
+    padding: 0.25rem 0.5rem;
+    border-radius: 6px;
+    background: rgba(var(--primary-rgb), 0.1);
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.url-test-link:hover {
+    background: rgba(var(--primary-rgb), 0.2);
+}
+
 /* Sticky Footer */
 .form-sticky-footer {
     position: fixed;
@@ -261,8 +418,9 @@
 }
 
 .footer-content {
-    max-width: 1000px;
-    margin: 0 auto;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
     display: flex;
     justify-content: space-between;
     align-items: center;

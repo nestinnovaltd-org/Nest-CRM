@@ -86,15 +86,39 @@ const AddUserPage = () => {
     fetchData();
   }, [user]);
 
-  // When role changes, sync permissions preview
-  useEffect(() => {
-    if (formData.role && roles.length > 0) {
-      const selectedRole = roles.find(r => r.name === formData.role);
-      if (selectedRole && !formData.permissions) {
-        setFormData(prev => ({ ...prev, permissions: JSON.parse(JSON.stringify(selectedRole.permissions || {})) }));
-      }
+  const handleGrantAllModules = () => {
+    const allPerms = {};
+    modules.forEach(m => {
+      allPerms[m.name] = {};
+      m.subModules.forEach(sub => {
+        allPerms[m.name][sub] = {
+          create: true,
+          read: true,
+          update: true,
+          delete: true
+        };
+      });
+    });
+    setFormData(prev => ({ ...prev, permissions: allPerms }));
+  };
+
+  const handleClearAllModules = () => {
+    setFormData(prev => ({ ...prev, permissions: {} }));
+  };
+
+  const handleCopyRoleTemplate = () => {
+    if (!formData.role) {
+      toast.error('Please select a role first in Step 1.');
+      return;
     }
-  }, [formData.role, roles]);
+    const selectedRole = roles.find(r => r.name === formData.role);
+    if (selectedRole?.permissions && Object.keys(selectedRole.permissions).length > 0) {
+      setFormData(prev => ({ ...prev, permissions: JSON.parse(JSON.stringify(selectedRole.permissions)) }));
+      toast.success(`Copied template permissions from ${selectedRole.name}`);
+    } else {
+      toast.error('No permissions configured in this role template.');
+    }
+  };
 
   const generatePassword = () => {
     const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
@@ -136,15 +160,19 @@ const AddUserPage = () => {
     const updatedPermissions = { ...(formData.permissions || {}) };
     const module = modules.find(m => m.name === moduleName);
     
-    module.subModules.forEach(sub => {
+    if (value) {
       if (!updatedPermissions[moduleName]) updatedPermissions[moduleName] = {};
-      updatedPermissions[moduleName][sub] = {
-        create: value,
-        read: value,
-        update: value,
-        delete: value
-      };
-    });
+      module.subModules.forEach(sub => {
+        updatedPermissions[moduleName][sub] = {
+          create: true,
+          read: true,
+          update: true,
+          delete: true
+        };
+      });
+    } else {
+      delete updatedPermissions[moduleName];
+    }
     
     setFormData({
       ...formData,
@@ -209,12 +237,26 @@ const AddUserPage = () => {
         ? (formData.orgId || null)
         : (user?.org_id || user?.org?.id || null);
 
-      // 4. Build permissions — ONLY what was checked in Step 5
-      //    Empty permissions array means no custom overrides (role defaults apply)
-      let resolvedPermissions = [];
-      if (formData.permissions && Object.keys(formData.permissions).length > 0) {
-        resolvedPermissions = [formData.permissions];
-      }
+      // 4. Build permissions — explicitly what was granted in Step 5
+      const cleanPermissions = { ...(formData.permissions || {}) };
+      Object.keys(cleanPermissions).forEach(modName => {
+        const mod = cleanPermissions[modName];
+        if (typeof mod === 'object' && mod !== null) {
+          let hasAnyTrue = false;
+          Object.keys(mod).forEach(sub => {
+            if (typeof mod[sub] === 'object' && mod[sub] !== null) {
+              const subHasTrue = Object.values(mod[sub]).some(Boolean);
+              if (!subHasTrue) delete mod[sub];
+              else hasAnyTrue = true;
+            } else if (mod[sub] === true) {
+              hasAnyTrue = true;
+            }
+          });
+          if (!hasAnyTrue) delete cleanPermissions[modName];
+        }
+      });
+
+      const resolvedPermissions = [JSON.stringify(cleanPermissions)];
 
       // 5. Upsert user profile in users table
       const { error: upsertError } = await supabase.from('users').upsert({
@@ -567,10 +609,38 @@ const AddUserPage = () => {
           {currentStep === 5 && (
             <div className="form-section-card">
               <div className="section-body">
-                <div className="section-header-v4">
+                <div className="section-header-v4" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
                   <div className="title-area">
-                    <h3>Custom Permissions Override</h3>
-                    <p>Adjust granular access specifically for this user. These will override role defaults.</p>
+                    <h3>User Module Permissions</h3>
+                    <p>Grant access strictly to the modules this user needs. Access is module-based per user.</p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button 
+                      type="button" 
+                      className="btn-v3" 
+                      style={{ padding: '6px 12px', fontSize: '0.8125rem', background: 'var(--card-bg)', border: '1px solid var(--border)' }}
+                      onClick={handleGrantAllModules}
+                    >
+                      Grant All Modules
+                    </button>
+                    <button 
+                      type="button" 
+                      className="btn-v3" 
+                      style={{ padding: '6px 12px', fontSize: '0.8125rem', background: 'var(--card-bg)', border: '1px solid var(--border)' }}
+                      onClick={handleClearAllModules}
+                    >
+                      Clear All
+                    </button>
+                    {formData.role && (
+                      <button 
+                        type="button" 
+                        className="btn-v3" 
+                        style={{ padding: '6px 12px', fontSize: '0.8125rem', background: 'var(--card-bg)', border: '1px solid var(--border)' }}
+                        onClick={handleCopyRoleTemplate}
+                      >
+                        Copy {formData.role} Template
+                      </button>
+                    )}
                   </div>
                 </div>
                 
@@ -590,18 +660,28 @@ const AddUserPage = () => {
                         <React.Fragment key={module.name}>
                           <tr className="module-group-row">
                             <td colSpan="5">
-                              <div className="module-header-row">
+                              <div className="module-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div className="module-title">
                                   <module.icon size={16} />
                                   {module.name}
                                 </div>
-                                <button 
-                                  type="button"
-                                  className="grant-all-btn"
-                                  onClick={() => handleSelectAllModule(module.name, true)}
-                                >
-                                  Grant All
-                                </button>
+                                <div style={{ display: 'flex', gap: '6px' }}>
+                                  <button 
+                                    type="button"
+                                    className="grant-all-btn"
+                                    onClick={() => handleSelectAllModule(module.name, true)}
+                                  >
+                                    Grant All
+                                  </button>
+                                  <button 
+                                    type="button"
+                                    className="grant-all-btn"
+                                    style={{ opacity: 0.7 }}
+                                    onClick={() => handleSelectAllModule(module.name, false)}
+                                  >
+                                    Revoke
+                                  </button>
+                                </div>
                               </div>
                             </td>
                           </tr>

@@ -21,7 +21,7 @@ import {
   Target,
   ChevronRight
 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, parseUserPermissions } from '../context/AuthContext';
 import { SYSTEM_MODULES as modules } from '../constants/modules';
 import './Users.css';
 
@@ -60,7 +60,11 @@ const UsersPage = () => {
       if (error) { console.error('Error fetching users:', error); setIsError(true); }
       else {
         const filteredList = (usersList || []).filter(u => u.role !== 'Super Admin' && u.account_type !== 'super_admin');
-        setUsers(filteredList.map(u => ({ ...u, name: u.full_name || u.name || 'Unnamed User' })));
+        setUsers(filteredList.map(u => ({ 
+          ...u, 
+          name: u.full_name || u.name || 'Unnamed User',
+          permissions: parseUserPermissions(u.permissions)
+        })));
       }
       setIsLoading(false);
 
@@ -84,7 +88,7 @@ const UsersPage = () => {
     setEditReportsTo(user.reportsTo || user.reports_to || '');
     
     // Load existing permissions override
-    const rawPerms = Array.isArray(user.permissions) && user.permissions.length > 0 ? user.permissions[0] : {};
+    const rawPerms = parseUserPermissions(user.permissions);
     setEditPermissions(rawPerms);
     
     setShowEditDrawer(true);
@@ -104,17 +108,41 @@ const UsersPage = () => {
     const module = modules.find(m => m.name === moduleName);
     setEditPermissions(prev => {
       const next = { ...prev };
-      if (!next[moduleName]) next[moduleName] = {};
-      module.subModules.forEach(sub => {
-        next[moduleName][sub] = {
-          create: value,
-          read: value,
-          update: value,
-          delete: value
-        };
-      });
+      if (value) {
+        if (!next[moduleName]) next[moduleName] = {};
+        module.subModules.forEach(sub => {
+          next[moduleName][sub] = {
+            create: true,
+            read: true,
+            update: true,
+            delete: true
+          };
+        });
+      } else {
+        delete next[moduleName];
+      }
       return next;
     });
+  };
+
+  const handleGrantAllModules = () => {
+    const allPerms = {};
+    modules.forEach(m => {
+      allPerms[m.name] = {};
+      m.subModules.forEach(sub => {
+        allPerms[m.name][sub] = {
+          create: true,
+          read: true,
+          update: true,
+          delete: true
+        };
+      });
+    });
+    setEditPermissions(allPerms);
+  };
+
+  const handleClearAllModules = () => {
+    setEditPermissions({});
   };
 
   const openTargetModal = (e, user) => {
@@ -155,10 +183,24 @@ const UsersPage = () => {
   const handleSaveUser = async () => {
     if (!selectedUser) return;
     try {
-      let resolvedPermissions = [];
-      if (editPermissions && Object.keys(editPermissions).length > 0) {
-        resolvedPermissions = [editPermissions];
-      }
+      const cleanPermissions = { ...(editPermissions || {}) };
+      Object.keys(cleanPermissions).forEach(modName => {
+        const mod = cleanPermissions[modName];
+        if (typeof mod === 'object' && mod !== null) {
+          let hasAnyTrue = false;
+          Object.keys(mod).forEach(sub => {
+            if (typeof mod[sub] === 'object' && mod[sub] !== null) {
+              const subHasTrue = Object.values(mod[sub]).some(Boolean);
+              if (!subHasTrue) delete mod[sub];
+              else hasAnyTrue = true;
+            } else if (mod[sub] === true) {
+              hasAnyTrue = true;
+            }
+          });
+          if (!hasAnyTrue) delete cleanPermissions[modName];
+        }
+      });
+      const resolvedPermissions = [JSON.stringify(cleanPermissions)];
 
       await supabase.from('users').update({
         full_name: editName,
@@ -414,7 +456,25 @@ const UsersPage = () => {
                   </select>
                 </div>
                 <div className="form-group-v3 mt-24">
-                  <label style={{ display: 'block', fontWeight: 'bold', marginBottom: 12 }}>Custom Permissions Overrides</label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <label style={{ fontWeight: 'bold' }}>User Module Access</label>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button 
+                        type="button" 
+                        style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '6px', color: 'var(--primary)', fontSize: '0.75rem', padding: '2px 8px', cursor: 'pointer' }} 
+                        onClick={handleGrantAllModules}
+                      >
+                        Grant All
+                      </button>
+                      <button 
+                        type="button" 
+                        style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '6px', color: 'var(--text-muted)', fontSize: '0.75rem', padding: '2px 8px', cursor: 'pointer' }} 
+                        onClick={handleClearAllModules}
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  </div>
                   <div style={{ maxHeight: '250px', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '12px', padding: '16px', background: 'var(--input-bg)' }}>
                     {modules.map(module => (
                       <div key={module.name} style={{ marginBottom: 16, borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: 12 }}>

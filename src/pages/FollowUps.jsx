@@ -44,17 +44,15 @@ const formatTime = (timeStr) => {
   } catch { return timeStr; }
 };
 
-const formatDateTime = (dateStr) => {
+const formatDateTime = (dateStr, timeStr) => {
   if (!dateStr) return '';
   try {
     const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return dateStr;
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const year = d.getFullYear();
-    const hours = String(d.getHours()).padStart(2, '0');
-    const minutes = String(d.getMinutes()).padStart(2, '0');
-    return `${day}-${month}-${year} ${hours}:${minutes}`;
+    const dateFormatted = !isNaN(d.getTime())
+      ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+      : dateStr;
+    const timeFormatted = timeStr || (!isNaN(d.getTime()) && dateStr.includes('T') ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+    return timeFormatted ? `${dateFormatted} • ${timeFormatted}` : dateFormatted;
   } catch (e) {
     return dateStr;
   }
@@ -105,14 +103,14 @@ const FollowUps = () => {
 
     const fetchLeads = async () => {
       const { data: allUsers } = await supabase.from('users').select('*');
-      const isAdmin = ['Admin', 'MD', 'System Admin'].includes(user.role);
+      const isAdmin = user?.account_type === 'super_admin' || ['Admin', 'MD', 'System Admin'].includes(user.role);
       let allowedUids = [];
 
       if (!isAdmin) {
-        allowedUids = getSubUids(allUsers || [], user.uid);
+        allowedUids = getSubUids(allUsers || [], user.uid || user.id);
       }
 
-      let query = supabase.from('leads').select('*').not('next_follow_up_date', 'is', null);
+      let query = supabase.from('leads').select('*');
       if (!isAdmin && allowedUids.length > 0) {
         query = query.in('assigned_to', allowedUids);
       }
@@ -120,11 +118,28 @@ const FollowUps = () => {
       const { data: leads, error } = await query;
       if (error) { console.error('Error fetching followups:', error); setIsLoading(false); return; }
 
-      const todayStr = new Date().toISOString().split('T')[0];
-      const processed = (leads || []).map(l => {
-        const nd = l.next_follow_up_date || l.nextFollowUpDate;
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const todayStr = `${yyyy}-${mm}-${dd}`;
+
+      const leadsWithFollowUp = (leads || []).filter(l => Boolean(l.next_follow_up_date || l.next_follow_up || l.nextFollowUpDate));
+
+      const processed = leadsWithFollowUp.map(l => {
+        const rawDate = l.next_follow_up_date || l.next_follow_up || l.nextFollowUpDate;
+        const nd = typeof rawDate === 'string' ? rawDate.split('T')[0] : new Date(rawDate).toISOString().split('T')[0];
         const type = nd === todayStr ? 'today' : nd < todayStr ? 'missed' : 'upcoming';
-        return { ...l, name: l.full_name || l.fullName || l.name || 'Unknown', company: l.project_name || l.projectName || l.company || '', nextDate: nd, nextTime: l.next_follow_up_time || l.nextFollowUpTime || '09:00', lastNote: l.history?.slice(-1)[0]?.note || null, type, priority: l.priority || 'Normal' };
+        return { 
+          ...l, 
+          name: l.full_name || l.fullName || l.name || 'Unknown', 
+          company: l.project_name || l.projectName || l.company || '', 
+          nextDate: nd, 
+          nextTime: l.next_follow_up_time || l.nextFollowUpTime || '09:00', 
+          lastNote: Array.isArray(l.history) && l.history.length > 0 ? l.history[l.history.length - 1]?.note : null, 
+          type, 
+          priority: l.priority || 'Normal' 
+        };
       });
       setFollowUps(processed);
       setIsLoading(false);
@@ -140,16 +155,25 @@ const FollowUps = () => {
 
   useEffect(() => {
     const fetchFilters = async () => {
-      const { data: teamsData } = await supabase.from('teams').select('*');
-      setTeams(teamsData || []);
-      const { data: projectsData } = await supabase.from('projects').select('*').order('project_name', { ascending: true });
-      setRawProjects(projectsData || []);
+      try {
+        const { data: teamsData } = await supabase.from('teams').select('*');
+        setTeams(teamsData || []);
+        const { data: projectsData } = await supabase.from('projects').select('*');
+        if (projectsData) {
+          const sorted = [...projectsData].sort((a, b) => 
+            (a.projectName || a.project_name || a.name || '').localeCompare(b.projectName || b.project_name || b.name || '')
+          );
+          setRawProjects(sorted);
+        }
+      } catch (err) {
+        console.error('Error fetching projects in FollowUps:', err);
+      }
     };
     fetchFilters();
   }, []);
 
   const allProjects = React.useMemo(() => {
-    const isAdmin = user?.role === 'Admin' || user?.role === 'MD' || user?.role === 'System Admin';
+    const isAdmin = user?.account_type === 'super_admin' || user?.role === 'Admin' || user?.role === 'MD' || user?.role === 'System Admin';
     if (isAdmin) return rawProjects;
 
     const userName = user?.fullName || user?.name || '';
@@ -177,62 +201,121 @@ const FollowUps = () => {
     setModalMode(mode);
     setSelectedLead(lead);
     setFormData({
-      note: '', nextDate: '', nextTime: lead.nextTime || '',
+      note: '', 
+      nextDate: '', 
+      nextTime: '',
       priority: lead.priority || 'Normal',
-      isAppointment: false, appointmentDate: '', appointmentTime: '',
-      appointmentLocation: '', selectedProjects: lead.interests || []
+      isAppointment: false, 
+      appointmentDate: '', 
+      appointmentTime: '',
+      appointmentLocation: '', 
+      selectedProjects: lead.interests || []
     });
   };
 
   /* ── submit ── */
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (modalMode === 'reschedule' && !formData.nextDate) {
+      alert('Please select a new follow-up date to reschedule.');
+      return;
+    }
+
     try {
-      const leadRef = doc(db, 'leads', selectedLead.id);
       const now = new Date();
+      const nextDateVal = formData.nextDate ? formData.nextDate : null;
+      const nextTimeVal = nextDateVal ? (formData.nextTime || '09:00 AM') : null;
+
       const historyEntry = {
         date:      now.toISOString().split('T')[0],
         time:      now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }),
         type:      modalMode === 'reschedule' ? 'Rescheduled'
                  : formData.isAppointment ? 'Appointment' : 'Follow-up',
-        note:      formData.note,
+        note:      formData.note?.trim() || (modalMode === 'reschedule' ? `Rescheduled to ${formData.nextDate}` : 'Follow-up completed'),
         status:    selectedLead.status,
-        createdBy: user?.fullName || user?.name || 'User',
-        interests: formData.selectedProjects
+        createdBy: user?.full_name || user?.fullName || user?.name || 'User',
+        interests: formData.selectedProjects,
+        nextFollowUp: nextDateVal,
+        nextFollowUpTime: nextTimeVal
       };
 
+      const newHistory = [...(selectedLead.history || []), historyEntry];
+
       const payload = {
-        nextFollowUpDate: formData.nextDate || null,
-        nextFollowUpTime: formData.nextTime || '',
-        priority:         formData.priority,
-        history:          arrayUnion(historyEntry),
-        updatedAt:        serverTimestamp(),
-        interests:        formData.selectedProjects
+        next_follow_up_date: nextDateVal,
+        next_follow_up:      nextDateVal,
+        priority:            formData.priority || 'Normal',
+        history:             newHistory,
+        updated_at:          new Date().toISOString(),
+        interests:           formData.selectedProjects || []
       };
 
       if (formData.isAppointment && modalMode === 'complete') {
-        payload.visitDate     = formData.appointmentDate;
-        payload.visitTime     = formData.appointmentTime;
-        payload.visitLocation = formData.appointmentLocation;
-        payload.visitNote     = formData.note;
-        payload.visitStatus   = 'Confirmed';
+        payload.visit_date     = formData.appointmentDate;
+        payload.visit_time     = formData.appointmentTime;
+        payload.visit_location = formData.appointmentLocation;
+        payload.visit_note     = formData.note;
+        payload.visit_status   = 'Confirmed';
       }
 
-      await updateDoc(leadRef, payload);
+      let { error } = await supabase.from('leads').update(payload).eq('id', selectedLead.id);
+      if (error && (error.message?.includes('interests') || error.code === 'PGRST204')) {
+        const fallbackPayload = { ...payload };
+        delete fallbackPayload.interests;
+        const retry = await supabase.from('leads').update(fallbackPayload).eq('id', selectedLead.id);
+        error = retry.error;
+      }
+      if (error) {
+        console.error('Error updating lead follow-up in Supabase:', error);
+        alert('Failed to update follow-up: ' + error.message);
+        return;
+      }
 
-      if (formData.nextDate) {
+      if (nextDateVal) {
         addEvent({
           title:    selectedLead.name,
           type:     formData.isAppointment ? 'Property Visit' : 'Follow-up',
-          start:    `${formData.nextDate}T${formData.nextTime || '09:00'}`,
-          end:      `${formData.nextDate}T10:00`,
+          start:    `${nextDateVal}T${nextTimeVal || '09:00'}`,
+          end:      `${nextDateVal}T10:00`,
           status:   'upcoming',
           location: formData.isAppointment ? 'Site Visit' : 'Phone Call',
           notes:    formData.note
         });
       }
+
+      // Update local followUps list
+      if (nextDateVal) {
+        const nowD = new Date();
+        const yyyy = nowD.getFullYear();
+        const mm = String(nowD.getMonth() + 1).padStart(2, '0');
+        const dd = String(nowD.getDate()).padStart(2, '0');
+        const todayStr = `${yyyy}-${mm}-${dd}`;
+        const newType = nextDateVal === todayStr ? 'today' : nextDateVal < todayStr ? 'missed' : 'upcoming';
+
+        setFollowUps(prev => prev.map(l => {
+          if (l.id === selectedLead.id) {
+            return {
+              ...l,
+              ...payload,
+              nextDate: nextDateVal,
+              nextTime: nextTimeVal,
+              type: newType,
+              history: newHistory,
+              lastNote: historyEntry.note
+            };
+          }
+          return l;
+        }));
+      } else {
+        // Follow-up is completed without next follow-up scheduled; remove from active follow-ups list!
+        setFollowUps(prev => prev.filter(l => l.id !== selectedLead.id));
+      }
+
       setModalMode(null);
-    } catch (err) { console.error(err); }
+    } catch (err) {
+      console.error('Error in handleSubmit:', err);
+      alert('Error: ' + (err.message || err));
+    }
   };
 
   /* ── derived data ── */
@@ -354,110 +437,135 @@ const FollowUps = () => {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: idx * 0.025, duration: 0.2 }}
                   >
-                    {/* Left: Avatar */}
-                    <div className="fu-card-avatar" onClick={() => navigate(`/leads/${item.id}`)}>
-                      {item.image
-                        ? <img src={item.image} alt={item.name} />
-                        : <span>{(item.name)[0].toUpperCase()}</span>
-                      }
-                      <span className="fu-priority-dot" style={{ background: pc.dot }} />
-                    </div>
+                    {/* Top Main Row: Identity & Primary Actions */}
+                    <div className="fu-card-main">
+                      {/* Left: Avatar & Identity */}
+                      <div className="fu-card-left">
+                        <div className="fu-card-avatar" onClick={() => navigate(`/leads/${item.id}`)}>
+                          {item.image
+                            ? <img src={item.image} alt={item.name} />
+                            : <span>{(item.name)[0].toUpperCase()}</span>
+                          }
+                          <span className="fu-priority-dot" style={{ background: pc.dot }} />
+                        </div>
 
-                    {/* Center: Lead Info */}
-                    <div className="fu-card-body" onClick={() => navigate(`/leads/${item.id}`)}>
-                      <div className="fu-card-name">{item.name}</div>
-                      <div className="fu-card-meta">
-                        {item.phone && <span className="fu-meta-item"><Phone size={11} />{item.phone}</span>}
-                        {item.company && <span className="fu-meta-item"><User size={11} />{item.company}</span>}
-                      </div>
-                      {item.lastNote && (
-                        <div 
-                          className="fu-card-note" 
-                          style={{ cursor: 'pointer', padding: '6px 8px', borderRadius: '6px', background: 'var(--hover-bg)', border: '1px solid var(--border)', marginTop: '6px', whiteSpace: 'normal' }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setExpandedHistory(prev => ({ ...prev, [item.id]: !prev[item.id] }));
-                          }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Last Note: {item.lastNote}</span>
-                            <span style={{ fontSize: '0.65rem', color: 'var(--primary)', fontWeight: 600, marginLeft: '6px', flexShrink: 0 }}>
-                              {expandedHistory[item.id] ? 'Collapse' : 'Expand'}
+                        <div className="fu-card-identity" onClick={() => navigate(`/leads/${item.id}`)}>
+                          <div className="fu-card-name-row">
+                            <span className="fu-card-name">{item.name}</span>
+                            <span className="fu-chip" style={{ color: pc.color, background: pc.bg }}>
+                              {item.priority === 'Urgent' && <Flame size={10} />}
+                              {pc.label}
                             </span>
                           </div>
+                          <div className="fu-card-meta">
+                            {item.phone && <span className="fu-meta-item"><Phone size={11} />{item.phone}</span>}
+                            {item.company && <span className="fu-meta-item"><User size={11} />{item.company}</span>}
+                          </div>
+                        </div>
+                      </div>
 
-                          {expandedHistory[item.id] && item.history && item.history.length > 0 && (
-                            <div className="history-timeline-expanded" style={{ marginTop: '8px', borderTop: '1px solid var(--border-subtle)', paddingTop: '6px' }}>
-                              {item.history.map((hist, hIdx) => (
-                                <div key={hIdx} className="timeline-item" style={{ position: 'relative', paddingLeft: '12px', marginBottom: '6px', borderLeft: '1px dashed var(--border)', textAlign: 'left' }}>
-                                  <div style={{ position: 'absolute', left: '-3px', top: '4px', width: '5px', height: '5px', borderRadius: '50%', background: hist.type === 'Follow-up' ? 'var(--primary)' : '#10b981' }}></div>
-                                  <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-                                    <span>{formatDateTime(hist.date)}</span>
-                                    {hist.createdBy && <span>By: {hist.createdBy}</span>}
-                                  </div>
-                                  <p style={{ margin: '2px 0 0', fontSize: '0.73rem', color: 'var(--text-primary)', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                                    {hist.note}
-                                  </p>
-                                </div>
-                              ))}
-                            </div>
+                      {/* Right: Schedule + Priority + Actions */}
+                      <div className="fu-card-right">
+                        {/* Schedule block */}
+                        <div className="fu-schedule">
+                          <div className="fu-sched-date"><Calendar size={12} /><span>{formatDate(item.nextDate)}</span></div>
+                          <div className="fu-sched-time"><Clock size={12} /><span>{formatTime(item.nextTime)}</span></div>
+                        </div>
+
+                        {/* Quick contact */}
+                        <div className="fu-contacts">
+                          {item.phone && (
+                            <a href={`https://wa.me/${item.phone.replace(/[^\d]/g,'')}`}
+                               target="_blank" rel="noopener noreferrer"
+                               className="fu-contact-btn wa" title="WhatsApp">
+                              <WhatsAppIcon size={15} />
+                            </a>
+                          )}
+                          {item.phone && (
+                            <a href={`tel:${item.phone}`} className="fu-contact-btn call" title="Call">
+                              <Phone size={14} />
+                            </a>
+                          )}
+                          {item.email && (
+                            <a href={`mailto:${item.email}`} className="fu-contact-btn mail" title="Email">
+                              <Mail size={14} />
+                            </a>
                           )}
                         </div>
-                      )}
-                    </div>
 
-                    {/* Right: Schedule + Priority + Actions */}
-                    <div className="fu-card-right">
-                      {/* Schedule block */}
-                      <div className="fu-schedule">
-                        <div className="fu-sched-date"><Calendar size={11} /><span>{formatDate(item.nextDate)}</span></div>
-                        <div className="fu-sched-time"><Clock size={11} /><span>{formatTime(item.nextTime)}</span></div>
-                      </div>
+                        {/* Primary Actions */}
+                        <div className="fu-actions">
+                          <button className="fu-btn fu-btn-reschedule" onClick={() => openModal('reschedule', item)} title="Reschedule">
+                            <RotateCcw size={13} />
+                            <span>Reschedule</span>
+                          </button>
+                          <button className="fu-btn fu-btn-complete" onClick={() => openModal('complete', item)} title="Log & Complete">
+                            <CheckCircle2 size={13} />
+                            <span>Done</span>
+                          </button>
+                        </div>
 
-                      {/* Priority */}
-                      <span className="fu-chip" style={{ color: pc.color, background: pc.bg }}>
-                        {item.priority === 'Urgent' && <Flame size={10} />}
-                        {pc.label}
-                      </span>
-
-                      {/* Quick contact */}
-                      <div className="fu-contacts">
-                        {item.phone && (
-                          <a href={`https://wa.me/${item.phone.replace(/[^\d]/g,'')}`}
-                             target="_blank" rel="noopener noreferrer"
-                             className="fu-contact-btn wa" title="WhatsApp">
-                            <WhatsAppIcon size={16} />
-                          </a>
-                        )}
-                        {item.phone && (
-                          <a href={`tel:${item.phone}`} className="fu-contact-btn call" title="Call">
-                            <Phone size={16} />
-                          </a>
-                        )}
-                        {item.email && (
-                          <a href={`mailto:${item.email}`} className="fu-contact-btn mail" title="Email">
-                            <Mail size={16} />
-                          </a>
-                        )}
-                      </div>
-
-                      {/* Primary Actions */}
-                      <div className="fu-actions">
-                        <button className="fu-btn fu-btn-reschedule" onClick={() => openModal('reschedule', item)} title="Reschedule">
-                          <RotateCcw size={13} />
-                          <span>Reschedule</span>
-                        </button>
-                        <button className="fu-btn fu-btn-complete" onClick={() => openModal('complete', item)} title="Log & Complete">
-                          <CheckCircle2 size={13} />
-                          <span>Done</span>
+                        {/* Arrow */}
+                        <button className="fu-arrow" onClick={() => navigate(`/leads/${item.id}`)} title="View Details">
+                          <ChevronRight size={16} />
                         </button>
                       </div>
                     </div>
 
-                    {/* Arrow */}
-                    <button className="fu-arrow" onClick={() => navigate(`/leads/${item.id}`)}>
-                      <ChevronRight size={16} />
-                    </button>
+                    {/* Bottom: Last Note & Collapsible History */}
+                    {item.lastNote && (
+                      <div className="fu-card-bottom">
+                        <div 
+                          className="fu-note-summary"
+                          onClick={() => setExpandedHistory(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                        >
+                          <div className="fu-note-preview">
+                            <MessageSquare size={13} className="fu-note-icon" />
+                            <span className="fu-note-label">Last Note:</span>
+                            <span className="fu-note-text">{item.lastNote}</span>
+                          </div>
+                          <div className="fu-history-toggle-pill">
+                            <span>{expandedHistory[item.id] ? 'Hide History' : `History (${item.history?.length || 1})`}</span>
+                            <ChevronRight size={12} className={`fu-toggle-chevron ${expandedHistory[item.id] ? 'open' : ''}`} />
+                          </div>
+                        </div>
+
+                        {expandedHistory[item.id] && item.history && item.history.length > 0 && (
+                          <div className="fu-expanded-tray">
+                            <div className="fu-timeline-list">
+                              {[...item.history].reverse().map((hist, hIdx) => {
+                                const isFollowUp = hist.type === 'Follow-up' || hist.type === 'Appointment';
+                                return (
+                                  <div key={hIdx} className="fu-timeline-row">
+                                    <div className="fu-tl-timestamp">
+                                      <span className="fu-tl-dot" style={{ background: isFollowUp ? 'var(--primary)' : '#10b981' }} />
+                                      <span>{formatDateTime(hist.date, hist.time)}</span>
+                                    </div>
+                                    <div className="fu-tl-body">
+                                      <div className="fu-tl-header">
+                                        <span className={`fu-tl-badge ${isFollowUp ? 'followup' : 'system'}`}>
+                                          {hist.type || 'Follow-up'}
+                                        </span>
+                                        {hist.createdBy && (
+                                          <span className="fu-tl-author">by {hist.createdBy}</span>
+                                        )}
+                                      </div>
+                                      <p className="fu-tl-note">{hist.note}</p>
+                                      {hist.nextFollowUp && (
+                                        <div className="fu-tl-next">
+                                          <Calendar size={11} />
+                                          <span>Next Follow-up: {formatDate(hist.nextFollowUp)}</span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </motion.div>
                 );
               })}
@@ -522,16 +630,32 @@ const FollowUps = () => {
               {/* Next date + time */}
               <div className="form-grid" style={{ gridTemplateColumns:'1fr 1fr', gap:'10px' }}>
                 <div className="form-group">
-                  <label className="form-label">Next Follow-up Date</label>
-                  <input type="date" className="custom-input-field" required
+                  <label className="form-label">
+                    {modalMode === 'reschedule' ? 'New Follow-up Date' : 'Next Follow-up Date (Optional)'}
+                  </label>
+                  <input 
+                    type="date" 
+                    className="custom-input-field" 
+                    required={modalMode === 'reschedule'}
                     value={formData.nextDate}
-                    onChange={e => setFormData({...formData, nextDate: e.target.value})} />
+                    onChange={e => setFormData({...formData, nextDate: e.target.value})} 
+                  />
+                  {modalMode === 'complete' && (
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block', marginTop: '3px' }}>
+                      Leave blank if no further follow-up is required
+                    </span>
+                  )}
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Time</label>
-                  <input type="time" className="custom-input-field"
+                  <label className="form-label">
+                    {modalMode === 'reschedule' ? 'Time' : 'Time (Optional)'}
+                  </label>
+                  <input 
+                    type="time" 
+                    className="custom-input-field"
                     value={formData.nextTime}
-                    onChange={e => setFormData({...formData, nextTime: e.target.value})} />
+                    onChange={e => setFormData({...formData, nextTime: e.target.value})} 
+                  />
                 </div>
               </div>
 

@@ -132,19 +132,38 @@ const LeadUpdateModal = ({ isOpen, onClose, lead, newStatus, onConfirm }) => {
   }, []);
 
   useEffect(() => {
-    if (lead) setAssigneeId(lead.assignedTo);
+    if (lead && isOpen) {
+      setNote('');
+      setNextFollowUp(lead.next_follow_up_date || lead.next_follow_up || lead.nextFollowUpDate || '');
+      setPriority(lead.priority || 'Normal');
+      setSelectedProjects(lead.interests || []);
+      setAssigneeId(lead.assigned_to || lead.assignedTo || '');
+      setIsAppointment(false);
+      setAppointmentDate('');
+      setAppointmentTime('');
+      setAppointmentLocation('');
+    }
   }, [lead, isOpen]);
 
   useEffect(() => {
     const fetchProjects = async () => {
-      const { data } = await supabase.from('projects').select('*').order('project_name', { ascending: true });
-      setAllProjects(data || []);
+      try {
+        const { data } = await supabase.from('projects').select('*');
+        if (data) {
+          const sorted = [...data].sort((a, b) => 
+            (a.projectName || a.project_name || a.name || '').localeCompare(b.projectName || b.project_name || b.name || '')
+          );
+          setAllProjects(sorted);
+        }
+      } catch (err) {
+        console.error('Error fetching projects:', err);
+      }
     };
     if (isOpen) fetchProjects();
   }, [isOpen]);
 
   const filteredProjects = React.useMemo(() => {
-    const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'MD' || currentUser?.role === 'System Admin';
+    const isAdmin = currentUser?.account_type === 'super_admin' || currentUser?.role === 'Admin' || currentUser?.role === 'MD' || currentUser?.role === 'System Admin';
     if (isAdmin) return allProjects;
 
     const userName = currentUser?.fullName || currentUser?.name || '';
@@ -161,7 +180,7 @@ const LeadUpdateModal = ({ isOpen, onClose, lead, newStatus, onConfirm }) => {
           assignedProjects.push(...t.assignedProjects);
         }
       });
-      return allProjects.filter(p => assignedProjects.includes(p.projectName));
+      return allProjects.filter(p => assignedProjects.includes(p.projectName || p.project_name || p.name));
     }
 
     return allProjects;
@@ -215,7 +234,7 @@ const LeadUpdateModal = ({ isOpen, onClose, lead, newStatus, onConfirm }) => {
 
         <div className="form-grid">
           <div className="form-group">
-            <label className="form-label">Next Follow-up Date</label>
+            <label className="form-label">Next Follow-up Date (Optional)</label>
             <div className="input-with-icon">
               <Calendar size={18} className="input-icon" />
               <input 
@@ -225,6 +244,9 @@ const LeadUpdateModal = ({ isOpen, onClose, lead, newStatus, onConfirm }) => {
                 className="custom-input-field"
               />
             </div>
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block', marginTop: '3px' }}>
+              Leave blank if no further follow-up is required
+            </span>
           </div>
           <div className="form-group">
             <label className="form-label">Set Priority</label>
@@ -243,25 +265,32 @@ const LeadUpdateModal = ({ isOpen, onClose, lead, newStatus, onConfirm }) => {
           </div>
         </div>
 
-        <div className="form-group mt-4">
-          <label className="form-label">Clients Interests (Projects)</label>
-          <div className="interests-selection-grid">
-            {filteredProjects.map(project => (
-              <div 
-                key={project.id}
-                className={`interest-checkbox-card ${selectedProjects.includes(project.projectName) ? 'selected' : ''}`}
-                onClick={() => toggleProject(project.projectName)}
-              >
-                <input 
-                  type="checkbox" 
-                  checked={selectedProjects.includes(project.projectName)}
-                  onChange={() => {}} 
-                />
-                <span>{project.projectName}</span>
-              </div>
-            ))}
+        {filteredProjects && filteredProjects.length > 0 && (
+          <div className="form-group mt-4">
+            <label className="form-label">
+              Clients Interests (Projects) <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>(Optional)</span>
+            </label>
+            <div className="interests-selection-grid">
+              {filteredProjects.map(project => {
+                const pName = project.projectName || project.project_name || project.name;
+                return (
+                  <div 
+                    key={project.id || pName}
+                    className={`interest-checkbox-card ${selectedProjects.includes(pName) ? 'selected' : ''}`}
+                    onClick={() => toggleProject(pName)}
+                  >
+                    <input 
+                      type="checkbox" 
+                      checked={selectedProjects.includes(pName)}
+                      onChange={() => {}} 
+                    />
+                    <span>{pName}</span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="form-group mt-4">
           <div className="appointment-toggle-section">
@@ -611,8 +640,13 @@ const LeadDetails = () => {
   useEffect(() => {
     const fetchProjects = async () => {
       try {
-        const { data } = await supabase.from('projects').select('*').order('project_name', { ascending: true });
-        setRawProjectsList(data || []);
+        const { data } = await supabase.from('projects').select('*');
+        if (data) {
+          const sorted = [...data].sort((a, b) => 
+            (a.projectName || a.project_name || a.name || '').localeCompare(b.projectName || b.project_name || b.name || '')
+          );
+          setRawProjectsList(sorted);
+        }
       } catch (err) {
         console.error('Error fetching projects in LeadDetails:', err);
       }
@@ -621,7 +655,7 @@ const LeadDetails = () => {
   }, []);
 
   const projectsList = React.useMemo(() => {
-    const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'MD' || currentUser?.role === 'System Admin';
+    const isAdmin = currentUser?.account_type === 'super_admin' || currentUser?.role === 'Admin' || currentUser?.role === 'MD' || currentUser?.role === 'System Admin';
     if (isAdmin) return rawProjectsList;
 
     const userName = currentUser?.full_name || currentUser?.fullName || currentUser?.name || '';
@@ -663,22 +697,25 @@ const LeadDetails = () => {
         date: now.toISOString().split('T')[0],
         time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         type: data.isAppointment ? 'Appointment' : 'Follow-up',
-        note: data.note,
+        note: data.note?.trim() || (data.nextFollowUp ? `Follow-up scheduled for ${data.nextFollowUp}` : 'Follow-up recorded'),
         status: lead?.status || 'Fresh Lead',
         createdBy: currentUser?.full_name || currentUser?.fullName || currentUser?.name || 'User',
-        interests: data.interests || []
+        interests: data.interests || [],
+        nextFollowUp: data.nextFollowUp || null
       };
 
       const newHistory = [...(lead.history || []), historyEntry];
 
+      const targetNextDate = data.nextFollowUp || null;
+
       const updatePayload = {
         status: lead.status === 'Fresh Lead' ? 'Follow Up' : lead.status,
-        next_follow_up_date: data.nextFollowUp || lead.next_follow_up_date || lead.nextFollowUpDate || '',
-        next_follow_up_time: data.appointmentTime || lead.next_follow_up_time || lead.nextFollowUpTime || '09:00 AM',
-        priority: data.priority,
+        next_follow_up_date: targetNextDate,
+        next_follow_up: targetNextDate,
+        priority: data.priority || lead.priority || 'Normal',
         history: newHistory,
         updated_at: new Date().toISOString(),
-        interests: data.interests || []
+        interests: data.interests || lead.interests || []
       };
 
       if (data.isAppointment) {
@@ -703,14 +740,28 @@ const LeadDetails = () => {
           type: 'lead',
           is_read: false,
           created_at: new Date().toISOString(),
-          link: `/leads/details/${id}`
+          link: `/leads/${id}`
         });
       }
 
-      await supabase.from('leads').update(updatePayload).eq('id', id);
+      let { error: updateError } = await supabase.from('leads').update(updatePayload).eq('id', id);
+      if (updateError && (updateError.message?.includes('interests') || updateError.code === 'PGRST204')) {
+        const fallbackPayload = { ...updatePayload };
+        delete fallbackPayload.interests;
+        const retry = await supabase.from('leads').update(fallbackPayload).eq('id', id);
+        updateError = retry.error;
+      }
+      if (updateError) {
+        console.error('Error updating follow-up in Supabase:', updateError);
+        alert('Failed to save follow-up: ' + updateError.message);
+        return;
+      }
+
+      setLead(prev => ({ ...prev, ...updatePayload, history: newHistory }));
       setShowFollowUpModal(false);
     } catch (error) {
       console.error('Error updating follow-up:', error);
+      alert('Error saving follow-up: ' + (error.message || error));
     }
   };
 
@@ -1044,20 +1095,17 @@ const LeadDetails = () => {
                   <Mail size={16} className="icon-email" />
                   <span>{lead?.email || 'No Email'}</span>
                 </div>
-                <div className="contact-item">
-                  <MapPin size={16} className="icon-location" />
-                  <span>{lead?.location || 'No Location'}{lead?.area ? `, ${lead.area}` : ''}</span>
-                </div>
-
-                {lead?.address && (
-                  <div className="contact-item" style={{ alignItems: 'flex-start' }}>
-                    <MapPin size={16} className="icon-location" style={{ marginTop: '2px', opacity: 0.8 }} />
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', fontWeight: '700', marginBottom: '2px' }}>Full Address</span>
-                      <span style={{ fontSize: '0.8125rem', color: 'var(--text-primary)', lineHeight: '1.4' }}>{lead.address}</span>
+                {(() => {
+                  const displayAddress = lead?.address || [lead?.location, lead?.city || lead?.area].filter(Boolean).join(', ') || lead?.location;
+                  return (
+                    <div className="contact-item" style={{ alignItems: 'flex-start' }}>
+                      <MapPin size={16} className="icon-location" style={{ marginTop: '2px', flexShrink: 0 }} />
+                      <span style={{ fontSize: '0.8125rem', color: 'var(--text-primary)', lineHeight: '1.4' }}>
+                        {displayAddress || 'No Location'}
+                      </span>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {lead?.interests && lead.interests.length > 0 ? (
                   <div className="contact-item" style={{ alignItems: 'flex-start', borderTop: '1px solid var(--border)', paddingTop: '16px', marginTop: '16px' }}>
@@ -1143,7 +1191,7 @@ const LeadDetails = () => {
             <div className="tab-content">
               {activeTab === 'follow-ups' && (
                 <div className="timeline-container">
-                  {lead.nextFollowUpDate ? (
+                  {Boolean(lead.next_follow_up_date || lead.next_follow_up || lead.nextFollowUpDate) ? (
                     <div className="upcoming-followup-bar" style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -1173,12 +1221,12 @@ const LeadDetails = () => {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '0.8125rem' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)' }}>
                             <Calendar size={14} style={{ color: 'var(--primary)' }} />
-                            <span>{formatDate(lead.nextFollowUpDate)}</span>
+                            <span>{formatDate(lead.next_follow_up_date || lead.next_follow_up || lead.nextFollowUpDate)}</span>
                           </div>
                           
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)' }}>
                             <Clock size={14} style={{ color: 'var(--primary)' }} />
-                            <span>{lead.nextFollowUpTime || '09:00 AM'}</span>
+                            <span>{lead.next_follow_up_time || lead.nextFollowUpTime || '09:00 AM'}</span>
                           </div>
                           
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-primary)' }}>
@@ -1201,7 +1249,7 @@ const LeadDetails = () => {
                     </div>
                   )}
 
-                  {lead.nextFollowUpDate && (
+                  {Boolean(lead.next_follow_up_date || lead.next_follow_up || lead.nextFollowUpDate) && (
                     <div className="section-header-row mb-3" style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
                       <h3 className="text-lg font-semibold" style={{ margin: 0 }}>Interaction History</h3>
                     </div>
@@ -1210,14 +1258,17 @@ const LeadDetails = () => {
                   <div className="chat-timeline">
                     {(lead.history || []).length > 0 ? (
                       [...(lead.history || [])].reverse().map((item, idx) => {
-                        const isSystemEvent = item.type === 'Status Change' || item.type === 'Lead Created';
+                        const isSystemEvent = item.type === 'Status Change' || item.type === 'Lead Created' || item.type === 'System' || item.type === 'Assignment';
                         const dateObj = item.date ? new Date(item.date) : null;
                         const time = item.time || (dateObj && !isNaN(dateObj) ? dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '10:00 AM');
                         const dateStr = formatDate(item.date);
                         
                         // Icons based on type
-                        let TypeIcon = item.type === 'Site Visit' ? Car : Phone;
-                        if (isSystemEvent) TypeIcon = item.type === 'Status Change' ? RefreshCcw : PlusCircle;
+                        let TypeIcon = Phone;
+                        if (item.type === 'Site Visit' || item.type === 'Appointment') TypeIcon = Car;
+                        else if (item.type === 'Status Change') TypeIcon = RefreshCcw;
+                        else if (item.type === 'Lead Created') TypeIcon = PlusCircle;
+                        else if (item.type === 'Assignment') TypeIcon = User;
 
                         return (
                           <div key={idx} className="chat-row">
@@ -1233,10 +1284,16 @@ const LeadDetails = () => {
                                 <div className="chat-bubble-header">
                                   <div className="type-with-icon">
                                     <TypeIcon size={14} className="type-icon" />
-                                    <span className="bubble-type">{item.type}</span>
+                                    <span className="bubble-type">{item.type || 'Follow-up'}</span>
                                   </div>
                                 </div>
                                 <p className="bubble-note">{item.note}</p>
+                                {item.nextFollowUp && (
+                                  <div className="bubble-next-followup" style={{ marginTop: '8px', fontSize: '0.8125rem', color: '#38BDF8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <Calendar size={13} />
+                                    <span>Next Follow-up Scheduled: <strong>{formatDate(item.nextFollowUp)}</strong></span>
+                                  </div>
+                                )}
                                 {item.interests && item.interests.length > 0 && (
                                   <div className="bubble-interests">
                                     {item.interests.map((proj, i) => (

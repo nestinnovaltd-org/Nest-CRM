@@ -28,7 +28,8 @@ import {
   Globe,
   User,
   Calendar,
-  ShieldCheck
+  ShieldCheck,
+  Sparkles
 } from 'lucide-react';
 import './Projects.css';
 
@@ -373,29 +374,63 @@ const ProjectsPage = () => {
                 <div className="card-content">
                   <div className="card-header">
                     <h3>{project.projectName}</h3>
-                    <div className="card-location">
-                      <MapPin size={14} />
-                      <span>{project.location}, {project.sector}</span>
-                    </div>
+                    {(project.location || project.sector) ? (
+                      <div className="card-location">
+                        <MapPin size={14} />
+                        <span>{[project.location, project.sector].filter(Boolean).join(', ')}</span>
+                      </div>
+                    ) : (project.projectUrl || project.url) ? (
+                      <div className="card-location">
+                        <Globe size={14} />
+                        <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {(project.projectUrl || project.url).replace(/^https?:\/\//, '')}
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
-                  <div className="card-details-grid">
-                    <div className="detail-item" title="Plot Size">
-                      <Maximize2 size={12} className="icon-project" />
-                      <span className="detail-value">{project.plotSize}</span>
+
+                  {project.plotSize || project.numberOfFloors ? (
+                    <div className="card-details-grid">
+                      <div className="detail-item" title="Plot Size">
+                        <Maximize2 size={12} className="icon-project" />
+                        <span className="detail-value">{project.plotSize || 'N/A'}</span>
+                      </div>
+                      <div className="detail-item" title="Floors">
+                        <Building2 size={12} className="icon-building" />
+                        <span className="detail-value">{project.numberOfFloors ? `${project.numberOfFloors} Floors` : 'N/A'}</span>
+                      </div>
+                      <div className="detail-item" title="Starting Date">
+                        <Calendar size={12} className="icon-calendar" />
+                        <span className="detail-value">{project.startingDate || 'N/A'}</span>
+                      </div>
+                      <div className="detail-item" title="Handover Date">
+                        <ClipboardCheck size={12} className="icon-check" />
+                        <span className="detail-value">{project.handoverDate || 'N/A'}</span>
+                      </div>
                     </div>
-                    <div className="detail-item" title="Floors">
-                      <Building2 size={12} className="icon-building" />
-                      <span className="detail-value">{project.numberOfFloors} Floors</span>
+                  ) : (
+                    <div style={{ marginTop: '0.5rem', marginBottom: '0.75rem' }}>
+                      {project.description && (
+                        <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', lineHeight: '1.4', margin: '0 0 0.5rem 0', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                          {project.description}
+                        </p>
+                      )}
+                      {project.features && (Array.isArray(project.features) ? project.features : []).length > 0 && (
+                        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                          {(Array.isArray(project.features) ? project.features : []).slice(0, 3).map((f, idx) => (
+                            <span key={idx} style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem', background: 'rgba(var(--primary-rgb), 0.1)', color: 'var(--primary)', borderRadius: '12px', fontWeight: 600 }}>
+                              {f}
+                            </span>
+                          ))}
+                          {(Array.isArray(project.features) ? project.features : []).length > 3 && (
+                            <span style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem', background: 'var(--background-secondary)', color: 'var(--text-muted)', borderRadius: '12px' }}>
+                              +{(project.features.length - 3)} more
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    <div className="detail-item" title="Starting Date">
-                      <Calendar size={12} className="icon-calendar" />
-                      <span className="detail-value">{project.startingDate}</span>
-                    </div>
-                    <div className="detail-item" title="Handover Date">
-                      <ClipboardCheck size={12} className="icon-check" />
-                      <span className="detail-value">{project.handoverDate}</span>
-                    </div>
-                  </div>
+                  )}
                   <div className="card-footer">
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <Button variant="ghost" size="sm" icon={ExternalLink}>Details</Button>
@@ -451,99 +486,206 @@ const ProjectsPage = () => {
                 <div className="modal-title-row">
                   <div className="modal-title-main">
                     <h2>{selectedProject.projectName}</h2>
-                    <p className="modal-address-sub"><MapPin size={14} /> {selectedProject.address}</p>
+                    {selectedProject.address && (
+                      <p className="modal-address-sub"><MapPin size={14} /> {selectedProject.address}</p>
+                    )}
                   </div>
-                  <span className={`status-badge ${selectedProject.projectStatus.toLowerCase().replace(' ', '-')}`}>
-                    {selectedProject.projectStatus}
+                  <span className={`status-badge ${(selectedProject.projectStatus || 'Upcoming').toLowerCase().replace(' ', '-')}`}>
+                    {selectedProject.projectStatus || 'Upcoming'}
                   </span>
                 </div>
               </div>
 
               <div className="details-info-grid">
-                <div className="details-section">
-                  <h4 className="section-title">
-                    <User size={16} className="icon-user" /> Ownership Details
-                  </h4>
-                  <div className="modal-info-list-v6">
-                    <div className="info-item-v6">
-                      <span className="info-label-v6">Owner Name</span>
-                      <span className="info-value-v6">{selectedProject.plotOwnerName || 'Not Specified'}</span>
-                    </div>
-                    <div className="info-item-v6">
-                      <span className="info-label-v6">Contact Number</span>
-                      <span className="info-value-v6">{selectedProject.plotOwnerContact || 'Not Specified'}</span>
-                    </div>
-                    <div className="info-item-v6 span-2">
-                      <span className="info-label-v6">Location Map</span>
-                      <span className="info-value-v6">
-                        {selectedProject.latitude && selectedProject.longitude ? (
-                          <a 
-                            href={`https://www.google.com/maps/dir/?api=1&destination=${selectedProject.latitude},${selectedProject.longitude}`} 
-                            target="_blank" 
-                            rel="noreferrer" 
-                            className="modal-map-link-v6"
-                          >
-                            <Globe size={14} /> Get Directions on Google Maps
-                          </a>
-                        ) : selectedProject.mapLink ? (
-                          <a href={selectedProject.mapLink} target="_blank" rel="noreferrer" className="modal-map-link-v6">
-                            <Globe size={14} /> View in Google Maps
-                          </a>
-                        ) : (
-                          <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not Available</span>
-                        )}
-                      </span>
+                {/* Project URL Link */}
+                {(selectedProject.projectUrl || selectedProject.url) && (
+                  <div className="details-section span-2">
+                    <h4 className="section-title">
+                      <Globe size={16} className="icon-building" /> Project Website & Live Link
+                    </h4>
+                    <div style={{ marginTop: '0.625rem' }}>
+                      <a 
+                        href={selectedProject.projectUrl || selectedProject.url} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                          padding: '0.625rem 1rem',
+                          background: 'rgba(var(--primary-rgb), 0.12)',
+                          color: 'var(--primary)',
+                          borderRadius: '10px',
+                          textDecoration: 'none',
+                          fontWeight: 600,
+                          fontSize: '0.875rem'
+                        }}
+                      >
+                        <ExternalLink size={16} />
+                        {selectedProject.projectUrl || selectedProject.url}
+                      </a>
                     </div>
                   </div>
-                </div>
+                )}
 
-                <div className="details-section">
-                  <h4 className="section-title">
-                    <Building2 size={16} className="icon-building" /> Plot & Construction
-                  </h4>
-                  <div className="modal-info-list-v6">
-                    <div className="info-item-v6">
-                      <span className="info-label-v6">Location</span>
-                      <span className="info-value-v6">{selectedProject.location || 'N/A'} {selectedProject.sector ? `(Sector-${selectedProject.sector})` : ''}</span>
-                    </div>
-                    <div className="info-item-v6">
-                      <span className="info-label-v6">Plot Size</span>
-                      <span className="info-value-v6">{selectedProject.plotSize || 'N/A'}</span>
-                    </div>
-                    <div className="info-item-v6">
-                      <span className="info-label-v6">Orientation</span>
-                      <span className="info-value-v6">{selectedProject.plotOrientation || 'N/A'}</span>
-                    </div>
-                    <div className="info-item-v6">
-                      <span className="info-label-v6">Floors</span>
-                      <span className="info-value-v6">{selectedProject.numberOfFloors ? `${selectedProject.numberOfFloors} Stories` : 'N/A'}</span>
-                    </div>
-                    <div className="info-item-v6">
-                      <span className="info-label-v6">Total Units</span>
-                      <span className="info-value-v6">{selectedProject.totalApartments ? `${selectedProject.totalApartments} Units` : 'N/A'}</span>
-                    </div>
-                    <div className="info-item-v6">
-                      <span className="info-label-v6">Apartment Size</span>
-                      <span className="info-value-v6">{selectedProject.apartmentSize ? `${selectedProject.apartmentSize} sqft` : 'N/A'}</span>
+                {/* Features & Amenities */}
+                {selectedProject.features && (
+                  <div className="details-section span-2">
+                    <h4 className="section-title">
+                      <Sparkles size={16} className="icon-check" /> Features & Amenities
+                    </h4>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.625rem' }}>
+                      {(Array.isArray(selectedProject.features)
+                        ? selectedProject.features
+                        : typeof selectedProject.features === 'string'
+                          ? selectedProject.features.split(',').map(s => s.trim()).filter(Boolean)
+                          : []
+                      ).map((feat, idx) => (
+                        <span key={idx} style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.375rem',
+                          padding: '0.35rem 0.75rem',
+                          background: 'rgba(var(--primary-rgb), 0.1)',
+                          color: 'var(--primary)',
+                          border: '1px solid rgba(var(--primary-rgb), 0.2)',
+                          borderRadius: '20px',
+                          fontSize: '0.8125rem',
+                          fontWeight: 600
+                        }}>
+                          <Sparkles size={12} />
+                          {feat}
+                        </span>
+                      ))}
                     </div>
                   </div>
-                </div>
+                )}
 
-                <div className="details-section">
-                  <h4 className="section-title">
-                    <Clock size={16} className="icon-clock" /> Project Timeline
-                  </h4>
-                  <div className="modal-info-list-v6">
-                    <div className="info-item-v6">
-                      <span className="info-label-v6">Start Date</span>
-                      <span className="info-value-v6">{selectedProject.startingDate || 'Not Set'}</span>
-                    </div>
-                    <div className="info-item-v6">
-                      <span className="info-label-v6">Handover Date</span>
-                      <span className="info-value-v6">{selectedProject.handoverDate || 'Not Set'}</span>
+                {/* Description */}
+                {selectedProject.description && (
+                  <div className="details-section span-2">
+                    <h4 className="section-title">
+                      <Building2 size={16} className="icon-building" /> Project Description
+                    </h4>
+                    <p style={{ marginTop: '0.625rem', lineHeight: '1.6', color: 'var(--text-secondary)', whiteSpace: 'pre-line', fontSize: '0.9375rem' }}>
+                      {selectedProject.description}
+                    </p>
+                  </div>
+                )}
+
+                {/* Conditional Legacy: Ownership Details */}
+                {(selectedProject.plotOwnerName || selectedProject.plotOwnerContact || selectedProject.mapLink || selectedProject.latitude) && (
+                  <div className="details-section">
+                    <h4 className="section-title">
+                      <User size={16} className="icon-user" /> Ownership Details
+                    </h4>
+                    <div className="modal-info-list-v6">
+                      {selectedProject.plotOwnerName && (
+                        <div className="info-item-v6">
+                          <span className="info-label-v6">Owner Name</span>
+                          <span className="info-value-v6">{selectedProject.plotOwnerName}</span>
+                        </div>
+                      )}
+                      {selectedProject.plotOwnerContact && (
+                        <div className="info-item-v6">
+                          <span className="info-label-v6">Contact Number</span>
+                          <span className="info-value-v6">{selectedProject.plotOwnerContact}</span>
+                        </div>
+                      )}
+                      {(selectedProject.mapLink || selectedProject.latitude) && (
+                        <div className="info-item-v6 span-2">
+                          <span className="info-label-v6">Location Map</span>
+                          <span className="info-value-v6">
+                            {selectedProject.latitude && selectedProject.longitude ? (
+                              <a 
+                                href={`https://www.google.com/maps/dir/?api=1&destination=${selectedProject.latitude},${selectedProject.longitude}`} 
+                                target="_blank" 
+                                rel="noreferrer" 
+                                className="modal-map-link-v6"
+                              >
+                                <Globe size={14} /> Get Directions on Google Maps
+                              </a>
+                            ) : selectedProject.mapLink ? (
+                              <a href={selectedProject.mapLink} target="_blank" rel="noreferrer" className="modal-map-link-v6">
+                                <Globe size={14} /> View in Google Maps
+                              </a>
+                            ) : null}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
+                )}
+
+                {/* Conditional Legacy: Plot & Construction */}
+                {(selectedProject.location || selectedProject.plotSize || selectedProject.numberOfFloors) && (
+                  <div className="details-section">
+                    <h4 className="section-title">
+                      <Building2 size={16} className="icon-building" /> Plot & Construction
+                    </h4>
+                    <div className="modal-info-list-v6">
+                      {selectedProject.location && (
+                        <div className="info-item-v6">
+                          <span className="info-label-v6">Location</span>
+                          <span className="info-value-v6">{selectedProject.location} {selectedProject.sector ? `(Sector-${selectedProject.sector})` : ''}</span>
+                        </div>
+                      )}
+                      {selectedProject.plotSize && (
+                        <div className="info-item-v6">
+                          <span className="info-label-v6">Plot Size</span>
+                          <span className="info-value-v6">{selectedProject.plotSize}</span>
+                        </div>
+                      )}
+                      {selectedProject.plotOrientation && (
+                        <div className="info-item-v6">
+                          <span className="info-label-v6">Orientation</span>
+                          <span className="info-value-v6">{selectedProject.plotOrientation}</span>
+                        </div>
+                      )}
+                      {selectedProject.numberOfFloors && (
+                        <div className="info-item-v6">
+                          <span className="info-label-v6">Floors</span>
+                          <span className="info-value-v6">{selectedProject.numberOfFloors} Stories</span>
+                        </div>
+                      )}
+                      {selectedProject.totalApartments && (
+                        <div className="info-item-v6">
+                          <span className="info-label-v6">Total Units</span>
+                          <span className="info-value-v6">{selectedProject.totalApartments} Units</span>
+                        </div>
+                      )}
+                      {selectedProject.apartmentSize && (
+                        <div className="info-item-v6">
+                          <span className="info-label-v6">Apartment Size</span>
+                          <span className="info-value-v6">{selectedProject.apartmentSize} sqft</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Conditional Legacy: Timeline */}
+                {(selectedProject.startingDate || selectedProject.handoverDate) && (
+                  <div className="details-section">
+                    <h4 className="section-title">
+                      <Clock size={16} className="icon-clock" /> Project Timeline
+                    </h4>
+                    <div className="modal-info-list-v6">
+                      {selectedProject.startingDate && (
+                        <div className="info-item-v6">
+                          <span className="info-label-v6">Start Date</span>
+                          <span className="info-value-v6">{selectedProject.startingDate}</span>
+                        </div>
+                      )}
+                      {selectedProject.handoverDate && (
+                        <div className="info-item-v6">
+                          <span className="info-label-v6">Handover Date</span>
+                          <span className="info-value-v6">{selectedProject.handoverDate}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 <div className="details-section">
                   <h4 className="section-title">

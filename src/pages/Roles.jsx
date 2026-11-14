@@ -4,7 +4,7 @@ import Button from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import Skeleton from '../components/ui/Skeleton';
 import { supabase } from '../lib/supabase';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, parseUserPermissions } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import { 
   Shield, 
@@ -43,7 +43,7 @@ const RolesPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  const [configMode, setConfigMode] = useState('roles'); // 'roles' or 'users'
+  const [configMode, setConfigMode] = useState('users'); // default to 'users' for direct module access
   const [selectedUser, setSelectedUser] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -96,30 +96,18 @@ const RolesPage = () => {
       }
       // Filter out Super Admin users and map permissions
       const usersList = (data || []).filter(u => u.role !== 'Super Admin' && u.account_type !== 'super_admin')
-        .map(u => {
-          let parsedPermissions = u.permissions;
-          if (Array.isArray(u.permissions)) {
-            if (u.permissions.length > 0 && typeof u.permissions[0] === 'object' && u.permissions[0] !== null) {
-              parsedPermissions = u.permissions[0];
-            } else if (u.permissions.includes('All')) {
-              parsedPermissions = { All: true };
-            } else {
-              parsedPermissions = {};
-            }
-          } else if (!u.permissions) {
-            parsedPermissions = {};
-          }
-          return {
-            ...u,
-            permissions: parsedPermissions
-          };
-        });
+        .map(u => ({
+          ...u,
+          permissions: parseUserPermissions(u.permissions)
+        }));
       setUsers(usersList);
-      // Keep selectedUser in sync OR auto-clear if they left this org
+      // Keep selectedUser in sync OR auto-select first user
       if (selectedUser) {
         const updated = usersList.find(u => u.id === selectedUser.id);
         if (updated) setSelectedUser(updated);
         else setSelectedUser(usersList[0] || null);
+      } else if (usersList.length > 0) {
+        setSelectedUser(usersList[0]);
       }
     };
     fetchUsers();
@@ -154,27 +142,6 @@ const RolesPage = () => {
       if (!selectedUser) return;
       
       let basePermissions = JSON.parse(JSON.stringify(selectedUser.permissions || {}));
-      const userRole = roles.find(r => r.name.toLowerCase() === selectedUser.role?.toLowerCase());
-      const rolePermissions = JSON.parse(JSON.stringify(userRole?.permissions || {}));
-      
-      // Ensure we merge with role defaults so other modules aren't lost
-      modules.forEach(m => {
-        if (!basePermissions[m.name]) {
-          basePermissions[m.name] = rolePermissions[m.name] || {};
-        } else {
-          m.subModules.forEach(sub => {
-            if (!basePermissions[m.name][sub]) {
-              basePermissions[m.name][sub] = rolePermissions[m.name]?.[sub] || {};
-            } else {
-              ['create', 'read', 'update', 'delete'].forEach(act => {
-                if (basePermissions[m.name][sub][act] === undefined) {
-                  basePermissions[m.name][sub][act] = rolePermissions[m.name]?.[sub]?.[act] || false;
-                }
-              });
-            }
-          });
-        }
-      });
       
       if (!basePermissions[moduleName]) basePermissions[moduleName] = {};
       if (!basePermissions[moduleName][subModule]) basePermissions[moduleName][subModule] = {};
@@ -214,37 +181,21 @@ const RolesPage = () => {
       if (!selectedUser) return;
       
       let basePermissions = JSON.parse(JSON.stringify(selectedUser.permissions || {}));
-      const userRole = roles.find(r => r.name.toLowerCase() === selectedUser.role?.toLowerCase());
-      const rolePermissions = JSON.parse(JSON.stringify(userRole?.permissions || {}));
       
-      // Ensure we merge with role defaults so other modules aren't lost
-      modules.forEach(m => {
-        if (!basePermissions[m.name]) {
-          basePermissions[m.name] = rolePermissions[m.name] || {};
-        } else {
-          m.subModules.forEach(sub => {
-            if (!basePermissions[m.name][sub]) {
-              basePermissions[m.name][sub] = rolePermissions[m.name]?.[sub] || {};
-            } else {
-              ['create', 'read', 'update', 'delete'].forEach(act => {
-                if (basePermissions[m.name][sub][act] === undefined) {
-                  basePermissions[m.name][sub][act] = rolePermissions[m.name]?.[sub]?.[act] || false;
-                }
-              });
-            }
-          });
-        }
-      });
-      
-      module.subModules.forEach(sub => {
+      if (value) {
         if (!basePermissions[moduleName]) basePermissions[moduleName] = {};
-        basePermissions[moduleName][sub] = {
-          create: value,
-          read: value,
-          update: value,
-          delete: value
-        };
-      });
+        module.subModules.forEach(sub => {
+          basePermissions[moduleName][sub] = {
+            create: true,
+            read: true,
+            update: true,
+            delete: true
+          };
+        });
+      } else {
+        // Revoke entire module from user
+        delete basePermissions[moduleName];
+      }
       
       setSelectedUser({
         ...selectedUser,
@@ -252,6 +203,36 @@ const RolesPage = () => {
       });
       setHasChanges(true);
     }
+  };
+
+  const handleGrantAllUserModules = () => {
+    if (!selectedUser) return;
+    const allPerms = {};
+    modules.forEach(m => {
+      allPerms[m.name] = {};
+      m.subModules.forEach(sub => {
+        allPerms[m.name][sub] = {
+          create: true,
+          read: true,
+          update: true,
+          delete: true
+        };
+      });
+    });
+    setSelectedUser({
+      ...selectedUser,
+      permissions: allPerms
+    });
+    setHasChanges(true);
+  };
+
+  const handleRevokeAllUserModules = () => {
+    if (!selectedUser) return;
+    setSelectedUser({
+      ...selectedUser,
+      permissions: {}
+    });
+    setHasChanges(true);
   };
 
   const handleSave = async () => {
@@ -268,34 +249,28 @@ const RolesPage = () => {
         // Refresh permissions for the currently logged-in user in real-time
         await refreshRolePermissions();
       } else {
-        // Build full merged permissions object
-        const userRole = roles.find(r => r.name.toLowerCase() === selectedUser.role?.toLowerCase());
-        const rolePermissions = JSON.parse(JSON.stringify(userRole?.permissions || {}));
-        let basePermissions = JSON.parse(JSON.stringify(selectedUser.permissions || {}));
+        // Save user's explicit module permissions (strictly what was granted to this user)
+        const cleanPermissions = JSON.parse(JSON.stringify(selectedUser.permissions || {}));
 
-        // Merge role defaults into any missing paths
-        modules.forEach(m => {
-          if (!basePermissions[m.name]) basePermissions[m.name] = rolePermissions[m.name] || {};
-          m.subModules.forEach(sub => {
-            if (!basePermissions[m.name][sub]) basePermissions[m.name][sub] = rolePermissions[m.name]?.[sub] || {};
-            ['create', 'read', 'update', 'delete'].forEach(act => {
-              if (basePermissions[m.name][sub][act] === undefined) {
-                const rv = rolePermissions[m.name]?.[sub]?.[act];
-                if (rv !== undefined) {
-                  basePermissions[m.name][sub][act] = rv;
-                } else if (selectedUser.account_type === 'org_admin') {
-                  basePermissions[m.name][sub][act] = true;
-                } else if (selectedUser.account_type === 'org_employee') {
-                  basePermissions[m.name][sub][act] = act === 'read';
-                } else {
-                  basePermissions[m.name][sub][act] = false;
-                }
+        // Clean out empty modules
+        Object.keys(cleanPermissions).forEach(modName => {
+          const mod = cleanPermissions[modName];
+          if (typeof mod === 'object' && mod !== null) {
+            let hasAnyTrue = false;
+            Object.keys(mod).forEach(sub => {
+              if (typeof mod[sub] === 'object' && mod[sub] !== null) {
+                const subHasTrue = Object.values(mod[sub]).some(Boolean);
+                if (!subHasTrue) delete mod[sub];
+                else hasAnyTrue = true;
+              } else if (mod[sub] === true) {
+                hasAnyTrue = true;
               }
             });
-          });
+            if (!hasAnyTrue) delete cleanPermissions[modName];
+          }
         });
 
-        const permissionsPayload = [basePermissions];
+        const permissionsPayload = [JSON.stringify(cleanPermissions)];
         const { error } = await supabase.from('users').update({
           permissions: permissionsPayload,
           updated_at: new Date().toISOString()
@@ -303,7 +278,9 @@ const RolesPage = () => {
         
         if (error) throw error;
         setHasChanges(false);
-        toast.success(`Permissions updated for ${selectedUser.full_name || selectedUser.name}!`);
+        setSelectedUser({ ...selectedUser, permissions: cleanPermissions });
+        setUsers(prev => prev.map(u => u.id === selectedUser.id ? { ...u, permissions: cleanPermissions } : u));
+        toast.success(`Module access saved for ${selectedUser.full_name || selectedUser.name}!`);
       }
     } catch (error) {
       console.error('Error saving permissions:', error);
@@ -421,6 +398,20 @@ const RolesPage = () => {
             {/* Panel Tabs Selection */}
             <div className="panel-toggle-tabs" style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: '16px' }}>
               <button 
+                className={`panel-tab-btn ${configMode === 'users' ? 'active' : ''}`}
+                onClick={() => {
+                  if (hasChanges && !window.confirm("Unsaved changes will be lost. Continue?")) return;
+                  setConfigMode('users');
+                  setSelectedRole(null);
+                  if (users.length > 0) {
+                    setSelectedUser(users[0]);
+                  }
+                  setHasChanges(false);
+                }}
+              >
+                User Module Access
+              </button>
+              <button 
                 className={`panel-tab-btn ${configMode === 'roles' ? 'active' : ''}`}
                 onClick={() => {
                   if (hasChanges && !window.confirm("Unsaved changes will be lost. Continue?")) return;
@@ -433,21 +424,6 @@ const RolesPage = () => {
                 }}
               >
                 System Roles
-              </button>
-              <button 
-                className={`panel-tab-btn ${configMode === 'users' ? 'active' : ''}`}
-                onClick={() => {
-                  if (hasChanges && !window.confirm("Unsaved changes will be lost. Continue?")) return;
-                  setConfigMode('users');
-                  setSelectedRole(null);
-                  // Auto-select first user when switching to users tab
-                  if (users.length > 0) {
-                    setSelectedUser(users[0]);
-                  }
-                  setHasChanges(false);
-                }}
-              >
-                Users List
               </button>
             </div>
 
@@ -464,7 +440,7 @@ const RolesPage = () => {
             ) : (
               <div className="panel-header" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: '8px', width: '100%' }}>
                 <div className="header-title-v4">
-                  <h3>User Permissions</h3>
+                  <h3>User Module Access</h3>
                   <p>{users.length} Users</p>
                 </div>
                 {/* Workspace context label */}
@@ -556,28 +532,42 @@ const RolesPage = () => {
                     );
                   }
 
-                  return filteredUsers.map(u => (
-                    <div 
-                      key={u.id} 
-                      className={`role-item ${selectedUser?.id === u.id ? 'active' : ''}`}
-                      onClick={() => {
-                        if (hasChanges && !window.confirm("Unsaved changes will be lost. Continue?")) return;
-                        setSelectedUser(u);
-                        setHasChanges(false);
-                      }}
-                    >
-                      <div className="role-info" style={{ width: '100%' }}>
-                        <span className="role-name">{u.full_name || u.fullName || u.name}</span>
-                        <span className="role-users" style={{ opacity: 0.7 }}>{u.role || 'No Role'}</span>
-                        {u.permissions && Object.keys(u.permissions).length > 0 && (
-                          <span className="custom-override-badge">
-                            Custom Override
+                  return filteredUsers.map(u => {
+                    const grantedModules = u.permissions && typeof u.permissions === 'object' 
+                      ? Object.keys(u.permissions).filter(k => u.permissions[k] && Object.keys(u.permissions[k]).length > 0)
+                      : [];
+                    const count = grantedModules.length;
+
+                    return (
+                      <div 
+                        key={u.id} 
+                        className={`role-item ${selectedUser?.id === u.id ? 'active' : ''}`}
+                        onClick={() => {
+                          if (hasChanges && !window.confirm("Unsaved changes will be lost. Continue?")) return;
+                          setSelectedUser(u);
+                          setHasChanges(false);
+                        }}
+                      >
+                        <div className="role-info" style={{ width: '100%' }}>
+                          <span className="role-name">{u.full_name || u.fullName || u.name}</span>
+                          <span className="role-users" style={{ opacity: 0.7 }}>{u.role || 'No Role'}</span>
+                          <span 
+                            className="custom-override-badge"
+                            style={{ 
+                              marginTop: '4px', 
+                              display: 'inline-block',
+                              background: count > 0 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                              color: count > 0 ? '#10b981' : '#ef4444',
+                              borderColor: count > 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'
+                            }}
+                          >
+                            {count > 0 ? `${count} Modules Granted` : 'No Modules Granted'}
                           </span>
-                        )}
+                        </div>
+                        <ChevronRight size={16} className="role-chevron" />
                       </div>
-                      <ChevronRight size={16} className="role-chevron" />
-                    </div>
-                  ));
+                    );
+                  });
                 })()
               )}
             </div>
@@ -619,20 +609,15 @@ const RolesPage = () => {
                     <div>
                       <h2>
                         {configMode === 'roles' 
-                          ? `${selectedRole.name} Permissions` 
-                          : `${selectedUser.full_name || selectedUser.fullName || selectedUser.name} Permissions`
+                          ? `${selectedRole?.name} Role Template` 
+                          : `${selectedUser?.full_name || selectedUser?.fullName || selectedUser?.name} Module Access`
                         }
-                        {configMode === 'users' && selectedUser?.permissions && Object.keys(selectedUser.permissions).length > 0 && (
-                          <span className="custom-override-badge" style={{ marginLeft: '12px', display: 'inline-block', verticalAlign: 'middle' }}>
-                            Custom Override
-                          </span>
-                        )}
                       </h2>
                       <p>
                         {configMode === 'roles' 
-                          ? selectedRole.description 
+                          ? (selectedRole?.description || 'Template permissions for this role')
                           : <>
-                              {selectedUser.email || 'No Email'} • Default Role: {selectedUser.role || 'None'}
+                              {selectedUser?.email || 'No Email'} • Role: {selectedUser?.role || 'None'}
                               {currentTenant?.name && (
                                 <> • <Building2 size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 2 }} />{currentTenant.name}</>
                               )}
@@ -641,20 +626,31 @@ const RolesPage = () => {
                       </p>
                     </div>
                   </div>
-                  <div className="panel-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div className="panel-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    {configMode === 'users' && (
+                      <>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleGrantAllUserModules}
+                          disabled={isSaving}
+                        >
+                          Grant All Modules
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleRevokeAllUserModules}
+                          disabled={isSaving}
+                        >
+                          Clear All
+                        </Button>
+                      </>
+                    )}
                     {hasChanges && (
                       <span className="unsaved-warning">
                         <AlertCircle size={14} /> Unsaved changes
                       </span>
-                    )}
-                    {configMode === 'users' && selectedUser?.permissions && Object.keys(selectedUser.permissions).length > 0 && (
-                      <Button
-                        variant="secondary"
-                        onClick={handleResetToRoleDefault}
-                        disabled={isSaving}
-                      >
-                        Reset to Role Default
-                      </Button>
                     )}
 
                     <Button 
@@ -664,13 +660,22 @@ const RolesPage = () => {
                       disabled={isSaving}
                       style={{ position: 'relative' }}
                     >
-                      {isSaving ? "Saving..." : hasChanges ? "Save Permissions" : "Save Permissions"}
+                      {isSaving ? "Saving..." : "Save Module Access"}
                       {hasChanges && !isSaving && (
                         <span style={{ position: 'absolute', top: -4, right: -4, width: 10, height: 10, borderRadius: '50%', background: '#f59e0b', border: '2px solid var(--card-bg)' }} />
                       )}
                     </Button>
                   </div>
                 </div>
+
+                {configMode === 'users' && (
+                  <div style={{ margin: '0 0 16px 0', padding: '10px 14px', borderRadius: '10px', background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.2)', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.8125rem', color: '#93c5fd' }}>
+                    <Info size={16} style={{ flexShrink: 0, color: '#60a5fa' }} />
+                    <span>
+                      <strong>Direct Module Access:</strong> Non-Super Admin users access ONLY the specific modules and permissions checked below. Access is not inherited from roles.
+                    </span>
+                  </div>
+                )}
 
                 <div className="permissions-matrix-container custom-scrollbar">
                   <table className="permissions-table">
@@ -695,24 +700,8 @@ const RolesPage = () => {
                                   {/* Controlled: checked if EVERY submodule×action is true */}
                                   {(() => {
                                     const perms = configMode === 'roles' ? selectedRole?.permissions : selectedUser?.permissions;
-                                    const rolePerms = configMode === 'users'
-                                      ? roles.find(r => r.name.toLowerCase() === selectedUser?.role?.toLowerCase())?.permissions
-                                      : null;
                                     const isAllChecked = module.subModules.every(sub =>
-                                      ['create','read','update','delete'].every(act => {
-                                        // User override takes priority
-                                        if (perms?.[module.name]?.[sub]?.[act] !== undefined)
-                                          return perms[module.name][sub][act];
-                                        // Role configured value
-                                        const rv = rolePerms?.[module.name]?.[sub]?.[act];
-                                        if (rv !== undefined) return rv;
-                                        // Infer from account_type when role is unconfigured
-                                        if (configMode === 'users') {
-                                          if (selectedUser?.account_type === 'org_admin') return true;
-                                          if (selectedUser?.account_type === 'org_employee') return act === 'read';
-                                        }
-                                        return false;
-                                      })
+                                      ['create','read','update','delete'].every(act => perms?.[module.name]?.[sub]?.[act] === true)
                                     );
                                     return (
                                       <input 
@@ -732,19 +721,8 @@ const RolesPage = () => {
                               <td className="sub-module-name">{sub}</td>
                               {['create', 'read', 'update', 'delete'].map(action => {
                                 const isChecked = configMode === 'roles'
-                                  ? selectedRole?.permissions?.[module.name]?.[sub]?.[action] || false
-                                  : (() => {
-                                      const userRole = roles.find(r => r.name.toLowerCase() === selectedUser?.role?.toLowerCase());
-                                      const roleVal = userRole?.permissions?.[module.name]?.[sub]?.[action];
-                                      
-                                      if (selectedUser?.permissions?.[module.name]?.[sub]?.[action] !== undefined) {
-                                        return selectedUser.permissions[module.name][sub][action];
-                                      }
-                                      if (roleVal !== undefined) return roleVal;
-                                      if (selectedUser?.account_type === 'org_admin') return true;
-                                      if (selectedUser?.account_type === 'org_employee') return action === 'read';
-                                      return false;
-                                    })();
+                                  ? selectedRole?.permissions?.[module.name]?.[sub]?.[action] === true
+                                  : selectedUser?.permissions?.[module.name]?.[sub]?.[action] === true;
 
                                 return (
                                   <td key={action} className="text-center">

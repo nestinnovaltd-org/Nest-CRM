@@ -288,14 +288,19 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
 
   const downloadTemplate = () => {
     const headers = [
-      'Customer Name', 'Number', 'Second Number', 'Profession', 'Project', 
-      'Lead Source', 'Lead Status', 'Location', 'Area', 'Address',
-      'Email', 'Priority', 'Description', 'Next Call Date'
+      'Photo',
+      'Company Name',
+      'Contact Person',
+      'Email Address',
+      'Phone Number',
+      'Second Phone Number',
+      'Location',
+      'City'
     ];
     const csvContent = headers.join(',') + '\n' + 
-      'John Doe,01712345678,01812345678,Manager,Alpha Project,Facebook,Fresh Lead,Dhaka,Gulshan,Gulshan-2 Dhaka,john@example.com,High,Interested in 3BHK,2026-08-25';
+      'https://example.com/photo.jpg,Acme Corporation,John Doe,john@example.com,01712345678,01812345678,Road 11 Banani,Dhaka';
     
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.setAttribute('href', url);
@@ -336,7 +341,7 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
           let rawPhone = '';
 
           headers.forEach((header, colIndex) => {
-            const value = row[colIndex] || '';
+            const value = (row[colIndex] || '').trim();
             const h = header.toLowerCase().trim();
             
             if (
@@ -348,64 +353,42 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
               obj.second_phone_raw = value;
             }
             else if (
-              h.includes('number') || 
               h.includes('phone') || 
               h.includes('mobile') || 
-              h.includes('contact') ||
-              h.includes('cell')
+              h.includes('cell') ||
+              h.includes('number')
             ) {
               rawPhone = value;
             }
-            else if (h.includes('name')) {
-              obj.name = value;
-            }
-            else if (h.includes('profession') || h.includes('designation') || h.includes('job') || h.includes('role') || h.includes('title')) {
-              obj.designation = value;
-            }
-            else if (h.includes('project') || h.includes('company') || h.includes('org') || h.includes('business')) {
+            else if (h.includes('company') || h.includes('business') || h.includes('org') || h.includes('project')) {
               obj.company = value;
             }
-            else if (h.includes('source')) {
-              obj.source = value;
+            else if (h.includes('contact') || h.includes('person') || h.includes('customer') || h.includes('client') || h.includes('name')) {
+              obj.contact_person = value;
             }
-            else if (h.includes('status')) {
-              obj.status = value;
-            }
-            else if (h.includes('location') || h.includes('city')) {
-              obj.location = value;
-            }
-            else if (h.includes('area')) {
-              obj.area = value;
-            }
-            else if (h.includes('address')) {
-              obj.address = value;
-            }
-            else if (h.includes('email')) {
+            else if (h.includes('email') || h.includes('mail')) {
               obj.email = value;
             }
-            else if (h.includes('priority')) {
-              obj.priority = value;
+            else if (h.includes('city')) {
+              obj.city = value;
             }
-            else if (
-              h.includes('description') || 
-              h.includes('summary') || 
-              h.includes('note') || 
-              h.includes('remark') || 
-              h.includes('comment')
-            ) {
-              obj.description = value;
+            else if (h.includes('location') || h.includes('area') || h.includes('address')) {
+              obj.location = value;
             }
-            else if (
-              h.includes('next call') || 
-              h.includes('follow-up') || 
-              h.includes('followup') || 
-              h.includes('follow up') || 
-              h.includes('next date')
-            ) {
-              obj.nextFollowUp = value;
-              obj.nextFollowUpDate = value;
+            else if (h.includes('photo') || h.includes('image') || h.includes('avatar') || h.includes('picture')) {
+              obj.image = value;
             }
           });
+
+          // Unify fields matching form structure
+          obj.company = obj.company || '';
+          obj.contact_person = obj.contact_person || '';
+          obj.name = obj.contact_person || obj.company || 'Lead';
+          obj.email = obj.email || '';
+          obj.location = obj.location || '';
+          obj.city = obj.city || '';
+          obj.area = '';
+          obj.address = [obj.location, obj.city].filter(Boolean).join(', ');
 
           const cleaned = cleanPhoneNumber(rawPhone);
           const rowNum = index + 2; // row 1 is header
@@ -650,7 +633,7 @@ const BulkUploadModal = ({ isOpen, onClose, onImport, user, allUsers, teams }) =
             <div className="upload-info-box">
               <div className="info-icon"><FileSpreadsheet size={18} /></div>
               <div className="info-content">
-                <p>Ensure your CSV columns match the template. All lead fields are supported.</p>
+                <p>Ensure your CSV matches the template fields: Photo, Company Name, Contact Person, Email Address, Phone Number, Second Phone Number, Location, City.</p>
                 <a href="#" className="download-template" onClick={(e) => { e.preventDefault(); downloadTemplate(); }}>
                   Download CSV Template
                 </a>
@@ -830,6 +813,8 @@ const renderWhatsAppBadge = (lead, isMini = false) => {
     display: 'inline-flex',
     alignItems: 'center',
     gap: '2px',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
   } : {
     fontSize: '0.7rem', 
     padding: '1px 6px', 
@@ -838,6 +823,8 @@ const renderWhatsAppBadge = (lead, isMini = false) => {
     display: 'inline-flex',
     alignItems: 'center',
     gap: '2px',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
   };
 
   if (status === 'WHATSAPP_AVAILABLE') {
@@ -1287,7 +1274,7 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
             <th>Lead Name</th>
             <th>Status</th>
             <th>Company</th>
-            <th>Contact</th>
+            <th style={{ minWidth: '220px' }}>Contact</th>
             <th>Follow-up</th>
             <th>Age</th>
             <th>History</th>
@@ -1358,25 +1345,25 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
                 </div>
               </td>
               <td>
-                <div className="table-contact-cell">
+                <div className="table-contact-cell" style={{ minWidth: '200px' }}>
                   {lead.phone && (
-                    <div className="contact-item" style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-                      <Phone size={12} className="contact-icon" />
-                      <span>{lead.phone?.replace(/^(\+?88)?0?/, '0').replace(/\s+/g, '')}</span>
+                    <div className="contact-item" style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap', flexWrap: 'nowrap' }}>
+                      <Phone size={12} className="contact-icon" style={{ flexShrink: 0 }} />
+                      <span style={{ whiteSpace: 'nowrap', fontWeight: '500', wordBreak: 'keep-all' }}>{lead.phone?.replace(/^(\+?88)?0?/, '0').replace(/\s+/g, '')}</span>
                       {renderWhatsAppBadge(lead, true)}
                     </div>
                   )}
                   {lead.email && (
-                    <div className="contact-item">
-                      <Mail size={12} className="contact-icon" />
-                      <span className="email-text" style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>{lead.email}</span>
+                    <div className="contact-item" style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap', flexWrap: 'nowrap' }}>
+                      <Mail size={12} className="contact-icon" style={{ flexShrink: 0 }} />
+                      <span className="email-text" style={{ fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{lead.email}</span>
                     </div>
                   )}
                   {(lead.address || lead.area || lead.location) && (
-                    <div className="contact-item">
-                      <MapPin size={12} className="contact-icon" />
-                      <span className="address-text" style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                        {lead.address || `${lead.area ? lead.area + ', ' : ''}${lead.location || ''}`}
+                    <div className="contact-item" style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
+                      <MapPin size={12} className="contact-icon" style={{ flexShrink: 0, marginTop: '2px' }} />
+                      <span className="address-text" style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
+                        {lead.address || [lead.location, lead.city].filter(Boolean).join(', ') || lead.location || ''}
                       </span>
                     </div>
                   )}
@@ -1587,17 +1574,39 @@ const LeadUpdateModal = ({ isOpen, onClose, lead, newStatus, onConfirm }) => {
   const [teams, setTeams] = useState([]);
 
   useEffect(() => {
+    if (lead && isOpen) {
+      setNote('');
+      setNextFollowUp(lead.next_follow_up_date || lead.next_follow_up || lead.nextFollowUpDate || '');
+      setPriority(lead.priority || 'Normal');
+      setSelectedProjects(lead.interests || []);
+      setIsAppointment(false);
+      setAppointmentDate('');
+      setAppointmentTime('');
+      setAppointmentLocation('');
+    }
+  }, [lead, isOpen]);
+
+  useEffect(() => {
     const fetchData = async () => {
-      const { data: teamsData } = await supabase.from('teams').select('*');
-      setTeams(teamsData || []);
-      const { data: projectsData } = await supabase.from('projects').select('*').order('project_name', { ascending: true });
-      setAllProjects(projectsData || []);
+      try {
+        const { data: teamsData } = await supabase.from('teams').select('*');
+        setTeams(teamsData || []);
+        const { data: projectsData } = await supabase.from('projects').select('*');
+        if (projectsData) {
+          const sorted = [...projectsData].sort((a, b) => 
+            (a.projectName || a.project_name || a.name || '').localeCompare(b.projectName || b.project_name || b.name || '')
+          );
+          setAllProjects(sorted);
+        }
+      } catch (err) {
+        console.error('Error fetching projects in MyLeads:', err);
+      }
     };
     fetchData();
   }, []);
 
   const filteredProjects = React.useMemo(() => {
-    const isAdmin = user?.role === 'Admin' || user?.role === 'MD' || user?.role === 'System Admin';
+    const isAdmin = user?.account_type === 'super_admin' || user?.role === 'Admin' || user?.role === 'MD' || user?.role === 'System Admin';
     if (isAdmin) return allProjects;
 
     const userName = user?.fullName || user?.name || '';
@@ -1614,7 +1623,7 @@ const LeadUpdateModal = ({ isOpen, onClose, lead, newStatus, onConfirm }) => {
           assignedProjects.push(...t.assignedProjects);
         }
       });
-      return allProjects.filter(p => assignedProjects.includes(p.projectName));
+      return allProjects.filter(p => assignedProjects.includes(p.projectName || p.project_name || p.name));
     }
 
     return allProjects;
@@ -1697,28 +1706,32 @@ const LeadUpdateModal = ({ isOpen, onClose, lead, newStatus, onConfirm }) => {
         </div>
 
         {/* Clients Interests Section */}
-        <div className="form-group mt-4">
-          <label className="form-label">Clients Interests (Projects)</label>
-          <div className="interests-selection-grid">
-            {filteredProjects.map(project => (
-              <div 
-                key={project.id}
-                className={`interest-checkbox-card ${selectedProjects.includes(project.projectName) ? 'selected' : ''}`}
-                onClick={() => toggleProject(project.projectName)}
-              >
-                <input 
-                  type="checkbox" 
-                  checked={selectedProjects.includes(project.projectName)}
-                  onChange={() => {}} // Handled by card click
-                />
-                <span>{project.projectName}</span>
-              </div>
-            ))}
-            {filteredProjects.length === 0 && (
-              <div className="no-projects-hint">No active projects found</div>
-            )}
+        {filteredProjects && filteredProjects.length > 0 && (
+          <div className="form-group mt-4">
+            <label className="form-label">
+              Clients Interests (Projects) <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>(Optional)</span>
+            </label>
+            <div className="interests-selection-grid">
+              {filteredProjects.map(project => {
+                const pName = project.projectName || project.project_name || project.name;
+                return (
+                  <div 
+                    key={project.id || pName}
+                    className={`interest-checkbox-card ${selectedProjects.includes(pName) ? 'selected' : ''}`}
+                    onClick={() => toggleProject(pName)}
+                  >
+                    <input 
+                      type="checkbox" 
+                      checked={selectedProjects.includes(pName)}
+                      onChange={() => {}} // Handled by card click
+                    />
+                    <span>{pName}</span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Site Visit Section */}
         <div className="form-group mt-4">
@@ -2304,25 +2317,33 @@ const MyLeads = () => {
 
   const confirmStatusUpdate = async (data) => {
     try {
+      const now = new Date();
+      const historyEntry = {
+        date: now.toISOString().split('T')[0],
+        time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        note: data.note?.trim() || (data.nextFollowUp ? `Follow-up scheduled for ${data.nextFollowUp}` : 'Follow-up recorded'),
+        appointment: data.appointmentDate,
+        nextFollowUp: data.nextFollowUp || null,
+        priority: data.priority || 'Normal',
+        interests: data.interests || [],
+        type: updateModal.lead.status === updateModal.newStatus ? (data.isAppointment ? 'Appointment' : 'Follow-up') : 'Status Change',
+        createdBy: user?.full_name || user?.fullName || user?.name || 'User'
+      };
+
       const newHistory = [
         ...(updateModal.lead.history || []),
-        {
-          date: new Date().toISOString().split('T')[0],
-          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          note: data.note,
-          appointment: data.appointmentDate,
-          nextFollowUp: data.nextFollowUp,
-          priority: data.priority,
-          interests: data.interests,
-          type: updateModal.lead.status === updateModal.newStatus ? (data.isAppointment ? 'Appointment' : 'Follow-up') : 'Status Change'
-        }
+        historyEntry
       ];
+
+      const targetNextDate = data.nextFollowUp ? data.nextFollowUp : (updateModal.lead.next_follow_up_date || updateModal.lead.next_follow_up || null);
 
       const updatePayload = {
         status: updateModal.lead.status === 'Fresh Lead' ? 'Follow Up' : updateModal.newStatus,
         history: newHistory,
         updated_at: new Date().toISOString(),
-        next_follow_up_date: data.nextFollowUp || updateModal.lead.next_follow_up_date || updateModal.lead.nextFollowUpDate || null,
+        next_follow_up_date: targetNextDate,
+        next_follow_up: targetNextDate,
+        priority: data.priority || updateModal.lead.priority || 'Normal',
         interests: data.interests || updateModal.lead.interests || []
       };
 
@@ -2333,10 +2354,24 @@ const MyLeads = () => {
         updatePayload.visit_status = 'Confirmed';
       }
 
-      await supabase.from('leads').update(updatePayload).eq('id', updateModal.lead.id);
+      let { error: updateError } = await supabase.from('leads').update(updatePayload).eq('id', updateModal.lead.id);
+      if (updateError && (updateError.message?.includes('interests') || updateError.code === 'PGRST204')) {
+        const fallbackPayload = { ...updatePayload };
+        delete fallbackPayload.interests;
+        const retry = await supabase.from('leads').update(fallbackPayload).eq('id', updateModal.lead.id);
+        updateError = retry.error;
+      }
+      if (updateError) {
+        console.error('Error updating lead status in Supabase:', updateError);
+        alert('Failed to update lead: ' + updateError.message);
+        return;
+      }
+
+      setLeads(prev => prev.map(l => l.id === updateModal.lead.id ? { ...l, ...updatePayload, history: newHistory } : l));
       setUpdateModal({ isOpen: false, lead: null, newStatus: '' });
     } catch (error) {
       console.error('Error updating lead status:', error);
+      alert('Error updating lead: ' + (error.message || error));
     }
   };
 
@@ -2969,36 +3004,44 @@ const MyLeads = () => {
                 ? currentTenant.id
                 : (user?.uid || user?.id);
 
+              const displayName = lead.contact_person || lead.name || lead.company || 'Unnamed Lead';
               const dbPayload = {
-                name:                  lead.name || 'Unnamed Lead',
+                name:                  displayName,
                 company:               lead.company || '',
-                designation:           lead.designation || '',
+                contact_person:        lead.contact_person || '',
+                email:                 lead.email || '',
                 phone:                 normalizePhoneForDb(lead.phone || ''),
                 phone_whatsapp:        lead.phone_whatsapp || false,
                 second_phone:          normalizePhoneForDb(lead.second_phone || ''),
                 second_phone_whatsapp: lead.second_phone_whatsapp || false,
-                email:                 lead.email || '',
                 location:              lead.location || '',
-                area:                  lead.area || '',
-                address:               lead.address || '',
+                city:                  lead.city || '',
+                area:                  '',
+                address:               lead.address || [lead.location, lead.city].filter(Boolean).join(', ') || '',
                 assigned_to:           resolvedOwnerId,
                 assigned_to_name:      user?.full_name || user?.fullName || user?.name || 'Admin',
                 owner_id:              resolvedOwnerId,
                 owner_name:            user?.full_name || user?.fullName || user?.name || 'Admin',
-                priority:              lead.priority || 'Medium',
-                source:                lead.source || 'CSV Import',
-                status:                lead.nextFollowUp ? 'Follow Up' : 'Fresh Lead',
-                description:           lead.description || '',
-                next_follow_up:        lead.nextFollowUp || '',
-                next_follow_up_date:   lead.nextFollowUpDate || null,
-                image:                 lead.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(lead.name || 'Lead')}&background=random`,
+                priority:              'Normal',
+                source:                'CSV Import',
+                status:                'Fresh Lead',
+                description:           '',
+                image:                 lead.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(lead.company || displayName)}&background=random`,
                 history:               history,
                 org_id:                resolvedOrgId,
                 created_at:            new Date().toISOString(),
                 updated_at:            new Date().toISOString()
               };
 
-              return supabase.from('leads').insert(dbPayload).select();
+              return supabase.from('leads').insert(dbPayload).select().then(async (res) => {
+                if (res.error && (res.error.message?.includes('column') || res.error.code === 'PGRST204')) {
+                  const fallback = { ...dbPayload };
+                  delete fallback.city;
+                  delete fallback.contact_person;
+                  return supabase.from('leads').insert(fallback).select();
+                }
+                return res;
+              });
             });
             
             const insertResults = await Promise.all(importPromises);

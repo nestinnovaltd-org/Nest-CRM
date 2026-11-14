@@ -1,7 +1,9 @@
 .org-page {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 8px 4px;
+  max-width: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 .org-header {

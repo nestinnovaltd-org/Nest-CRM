@@ -6,47 +6,44 @@ import Button from '../components/ui/Button';
 import { 
   ChevronRight, 
   ArrowLeft,
-  Building2,
-  User,
-  MapPin,
-  Calendar,
-  Layers,
   Image as ImageIcon,
   ExternalLink,
   Save,
-  Check,
-  ArrowRight,
   Plus,
+  X,
+  Sparkles,
+  Globe,
   Loader2
 } from 'lucide-react';
 import Toast from '../components/ui/Toast';
 import './AddProject.css';
 
+const SUGGESTED_FEATURES = [
+  '24/7 Security',
+  'Rooftop Garden',
+  'Swimming Pool',
+  'Gym & Fitness',
+  'Modern Elevators',
+  'Standby Generator',
+  'CCTV Surveillance',
+  'Car Parking'
+];
+
 const EditProjectPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [currentStep, setCurrentStep] = useState(1);
+
   const [formData, setFormData] = useState({
     projectName: '',
-    plotOwnerName: '',
-    plotOwnerContact: '',
-    location: '',
-    sector: '',
-    address: '',
-    mapLink: '',
-    latitude: '',
-    longitude: '',
-    plotSize: '',
-    plotOrientation: '',
-    numberOfFloors: '',
-    startingDate: '',
-    handoverDate: '',
     projectStatus: 'Upcoming',
-    description: '',
     image: null,
-    totalApartments: '',
-    apartmentSize: ''
+    projectUrl: '',
+    description: '',
+    features: []
   });
+
+  const [currentFeature, setCurrentFeature] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toastConfig, setToastConfig] = useState({ show: false, message: '', type: 'success' });
 
@@ -58,16 +55,38 @@ const EditProjectPage = () => {
     const fetchProject = async () => {
       if (!id) return;
       try {
+        setIsLoading(true);
         const { data, error } = await supabase.from('projects').select('*').eq('id', id).single();
         if (error || !data) {
           showToast('Project not found', 'error');
           setTimeout(() => navigate('/projects'), 2000);
         } else {
-          setFormData({ ...data });
+          let parsedFeatures = [];
+          if (Array.isArray(data.features)) {
+            parsedFeatures = data.features;
+          } else if (typeof data.features === 'string' && data.features.trim()) {
+            try {
+              const json = JSON.parse(data.features);
+              parsedFeatures = Array.isArray(json) ? json : [data.features];
+            } catch {
+              parsedFeatures = data.features.split(',').map(f => f.trim()).filter(Boolean);
+            }
+          }
+
+          setFormData({
+            projectName: data.projectName || '',
+            projectStatus: data.projectStatus || 'Upcoming',
+            image: data.image || null,
+            projectUrl: data.projectUrl || data.url || data.mapLink || '',
+            description: data.description || '',
+            features: parsedFeatures
+          });
         }
       } catch (error) {
         console.error('Error fetching project:', error);
         showToast('Error loading project data', 'error');
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -80,84 +99,128 @@ const EditProjectPage = () => {
   };
 
   const handleImageChange = async (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        showToast("File is too large. Max 5MB allowed.", "error");
-        return;
-      }
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let width = img.width;
-          let height = img.height;
-
-          const MAX_WIDTH = 1200;
-          const MAX_HEIGHT = 800;
-
-          if (width > height) {
-            if (width > MAX_WIDTH) {
-              height *= MAX_WIDTH / width;
-              width = MAX_WIDTH;
-            }
-          } else {
-            if (height > MAX_HEIGHT) {
-              width *= MAX_HEIGHT / height;
-              height = MAX_HEIGHT;
-            }
-          }
-
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-
-          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
-          setFormData(prev => ({ ...prev, image: compressedBase64 }));
-        };
-        img.src = event.target.result;
-      };
-      reader.readAsDataURL(file);
+    if (file.size > 5 * 1024 * 1024) {
+      showToast("File is too large. Max 5MB allowed.", "error");
+      return;
     }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        const MAX_WIDTH = 1200;
+        const MAX_HEIGHT = 800;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+        setFormData(prev => ({ ...prev, image: compressedBase64 }));
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
   };
 
-  const nextStep = () => {
-    if (currentStep < 5) setCurrentStep(currentStep + 1);
+  const handleAddFeature = (featureToAdd) => {
+    const feat = (featureToAdd || currentFeature).trim();
+    if (!feat) return;
+
+    if (formData.features.includes(feat)) {
+      showToast("Feature already added", "error");
+      return;
+    }
+
+    setFormData(prev => ({
+      ...prev,
+      features: [...prev.features, feat]
+    }));
+    setCurrentFeature('');
   };
 
-  const prevStep = () => {
-    if (currentStep > 1) setCurrentStep(currentStep - 1);
+  const handleRemoveFeature = (indexToRemove) => {
+    setFormData(prev => ({
+      ...prev,
+      features: prev.features.filter((_, idx) => idx !== indexToRemove)
+    }));
+  };
+
+  const handleFeatureKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAddFeature();
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!formData.projectName.trim()) {
+      showToast("Please enter a Project Name", "error");
+      return;
+    }
+
     try {
       setIsSubmitting(true);
-      const { error } = await supabase.from('projects').update({
-        ...formData,
+
+      const payload = {
+        projectName: formData.projectName.trim(),
+        projectStatus: formData.projectStatus,
+        image: formData.image,
+        description: formData.description,
+        features: formData.features,
+        projectUrl: formData.projectUrl.trim(),
+        url: formData.projectUrl.trim(),
         updated_at: new Date().toISOString()
-      }).eq('id', id);
+      };
+
+      let { error } = await supabase.from('projects').update(payload).eq('id', id);
+
+      if (error && (error.message?.includes('column') || error.code === 'PGRST204')) {
+        console.warn('Retrying project update with core fields:', error.message);
+        const fallbackPayload = {
+          projectName: formData.projectName.trim(),
+          projectStatus: formData.projectStatus,
+          image: formData.image,
+          description: formData.description,
+          updated_at: new Date().toISOString()
+        };
+        const retry = await supabase.from('projects').update(fallbackPayload).eq('id', id);
+        error = retry.error;
+      }
+
       if (error) throw error;
+
       showToast('Project updated successfully!', 'success');
-      setTimeout(() => navigate('/projects'), 1500);
+      setTimeout(() => navigate('/projects'), 1200);
     } catch (error) {
       console.error('Error updating project:', error);
-      showToast('Failed to update project', 'error');
+      showToast(error.message || 'Failed to update project', 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
-
-  const steps = [
-    { id: 1, label: 'Basic Info', icon: Building2 },
-    { id: 2, label: 'Owner Info', icon: User },
-    { id: 3, label: 'Location', icon: MapPin },
-    { id: 4, label: 'Technical', icon: Layers },
-    { id: 5, label: 'Timeline', icon: Calendar },
-  ];
 
   return (
     <DashboardLayout>
@@ -170,67 +233,76 @@ const EditProjectPage = () => {
             <span>Edit Project</span>
           </div>
           <div className="header-with-back">
-            <button className="back-btn-v2" onClick={() => navigate('/projects')}>
+            <button className="back-btn-v2" onClick={() => navigate('/projects')} title="Back to Projects">
               <ArrowLeft size={20} />
             </button>
-            <h1>Edit Project: {formData.projectName}</h1>
+            <div>
+              <h1 style={{ fontSize: '1.75rem', fontWeight: 800 }}>
+                {isLoading ? 'Loading Project...' : `Edit Project: ${formData.projectName || 'Untitled'}`}
+              </h1>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '4px' }}>
+                Update project information, status, images, and links.
+              </p>
+            </div>
           </div>
         </div>
 
-        {/* Stepper */}
-        <div className="form-stepper">
-          {steps.map((step) => (
-            <div 
-              key={step.id} 
-              className={`step-item ${currentStep === step.id ? 'active' : ''} ${currentStep > step.id ? 'completed' : ''}`}
-              onClick={() => setCurrentStep(step.id)}
-            >
-              <div className="step-number">
-                {currentStep > step.id ? <Check size={18} /> : step.id}
-              </div>
-              <span className="step-label">{step.label}</span>
-            </div>
-          ))}
-        </div>
-
-        <form onSubmit={handleSubmit} className="add-project-container">
-          
-          {/* Step 1: Basic Information */}
-          {currentStep === 1 && (
+        {isLoading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px' }}>
+            <Loader2 size={36} className="animate-spin" style={{ color: 'var(--primary)' }} />
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="add-project-container">
             <div className="form-section-card">
               <div className="section-body">
                 <div className="form-grid-v3">
+
+                  {/* 1. Project Image */}
                   <div className="form-group-v3 full-width">
                     <label>Project Image</label>
                     <div className="image-upload-wrapper">
                       <div className="image-preview-large">
                         {formData.image ? (
-                          <img src={formData.image} alt="Preview" />
+                          <img 
+                            src={formData.image} 
+                            alt="Project Preview" 
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                          />
                         ) : (
-                          <ImageIcon size={48} strokeWidth={1.5} />
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                            <ImageIcon size={38} strokeWidth={1.5} />
+                            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>No image uploaded</span>
+                          </div>
                         )}
                       </div>
-                      <div className="upload-controls">
-                        <label className="upload-btn-label">
-                          <Plus size={18} />
-                          <span>Change Image</span>
-                          <input type="file" hidden onChange={handleImageChange} accept="image/*" />
-                        </label>
-                        <span className="upload-hint">Recommended: 1200x800px. Max: 5MB (Auto-compressed).</span>
-                        {formData.image && (
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => setFormData(prev => ({ ...prev, image: null }))}
-                          >
-                            Remove
-                          </Button>
-                        )}
+                      <div className="upload-controls" style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                          <label className="upload-btn-label" style={{ margin: 0, cursor: 'pointer' }}>
+                            <Plus size={16} />
+                            <span>{formData.image ? 'Change Image' : 'Upload Image'}</span>
+                            <input type="file" hidden onChange={handleImageChange} accept="image/*" />
+                          </label>
+                          {formData.image && (
+                            <button 
+                              type="button"
+                              className="btn-secondary-v3"
+                              style={{ padding: '0.5rem 1rem' }}
+                              onClick={() => setFormData(prev => ({ ...prev, image: null }))}
+                            >
+                              Remove Image
+                            </button>
+                          )}
+                        </div>
+                        <p className="upload-hint" style={{ marginTop: '8px', fontSize: '12px', color: 'var(--text-muted)' }}>
+                          Recommended resolution: 1200×800px. JPG, PNG or WebP (Max: 5MB, auto-compressed).
+                        </p>
                       </div>
                     </div>
                   </div>
+
+                  {/* 2. Project Name */}
                   <div className="form-group-v3">
-                    <label>Project Name <span>*</span></label>
+                    <label>Project Name <span style={{ color: 'var(--danger, #ef4444)' }}>*</span></label>
                     <input 
                       name="projectName"
                       type="text" 
@@ -240,8 +312,10 @@ const EditProjectPage = () => {
                       onChange={handleInputChange}
                     />
                   </div>
+
+                  {/* 3. Project Status */}
                   <div className="form-group-v3">
-                    <label>Project Status <span>*</span></label>
+                    <label>Project Status <span style={{ color: 'var(--danger, #ef4444)' }}>*</span></label>
                     <select 
                       name="projectStatus"
                       value={formData.projectStatus}
@@ -249,269 +323,162 @@ const EditProjectPage = () => {
                       required
                     >
                       <option value="Upcoming">Upcoming</option>
-                      <option value="Design Approval">Design Approval</option>
-                      <option value="Pilling">Pilling</option>
                       <option value="Ongoing">Ongoing</option>
                       <option value="Completed">Completed</option>
+                      <option value="Design Approval">Design Approval</option>
+                      <option value="Pilling">Pilling</option>
                     </select>
                   </div>
+
+                  {/* 4. URL Link of the Project */}
+                  <div className="form-group-v3 full-width">
+                    <label>Project URL Link</label>
+                    <div className="url-input-container">
+                      <Globe size={18} className="url-icon-prefix" />
+                      <input 
+                        name="projectUrl"
+                        type="url" 
+                        placeholder="https://example.com/project-preview" 
+                        value={formData.projectUrl}
+                        onChange={handleInputChange}
+                      />
+                      {formData.projectUrl && (
+                        <a 
+                          href={formData.projectUrl} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="url-test-link"
+                          title="Open Link"
+                        >
+                          <ExternalLink size={13} />
+                          Visit
+                        </a>
+                      )}
+                    </div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                      Provide live website, virtual tour, or preview URL of the project.
+                    </span>
+                  </div>
+
+                  {/* 5. Features */}
+                  <div className="form-group-v3 full-width">
+                    <label>Project Features & Amenities</label>
+                    <div className="features-input-box">
+                      <div className="features-input-row">
+                        <input 
+                          type="text"
+                          placeholder="Type a feature and press Enter (e.g. Swimming Pool, 24/7 Security)..."
+                          value={currentFeature}
+                          onChange={(e) => setCurrentFeature(e.target.value)}
+                          onKeyDown={handleFeatureKeyDown}
+                        />
+                        <Button 
+                          type="button" 
+                          variant="secondary" 
+                          icon={Plus}
+                          onClick={() => handleAddFeature()}
+                          disabled={!currentFeature.trim()}
+                          className="feature-add-btn"
+                        >
+                          Add
+                        </Button>
+                      </div>
+
+                      {/* Chips Display */}
+                      <div className="features-chips-wrap">
+                        {formData.features.length === 0 ? (
+                          <span style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                            No features added yet. Type above or click suggestions below.
+                          </span>
+                        ) : (
+                          formData.features.map((feat, idx) => (
+                            <span key={idx} className="feature-chip">
+                              <Sparkles size={12} />
+                              {feat}
+                              <button 
+                                type="button" 
+                                className="feature-chip-remove"
+                                onClick={() => handleRemoveFeature(idx)}
+                                title="Remove"
+                              >
+                                <X size={13} />
+                              </button>
+                            </span>
+                          ))
+                        )}
+                      </div>
+
+                      {/* Quick Suggestions */}
+                      <div className="quick-suggestions">
+                        <span className="quick-sugg-label">Quick suggestions:</span>
+                        {SUGGESTED_FEATURES.map((item) => {
+                          const isAdded = formData.features.includes(item);
+                          return (
+                            <button
+                              key={item}
+                              type="button"
+                              className={`quick-sugg-chip ${isAdded ? 'added' : ''}`}
+                              onClick={() => !isAdded && handleAddFeature(item)}
+                              disabled={isAdded}
+                            >
+                              + {item}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 6. Descriptions */}
                   <div className="form-group-v3 full-width">
                     <label>Description</label>
                     <textarea 
                       name="description"
                       rows="4" 
-                      placeholder="Describe the project's unique features and amenities..."
+                      placeholder="Describe the project overview, key highlights, architectural details, and offerings..."
                       value={formData.description}
                       onChange={handleInputChange}
                     ></textarea>
                   </div>
+
                 </div>
               </div>
             </div>
-          )}
 
-          {/* Step 2: Owner Information */}
-          {currentStep === 2 && (
-            <div className="form-section-card">
-              <div className="section-body">
-                <div className="form-grid-v3">
-                  <div className="form-group-v3">
-                    <label>Owner Name</label>
-                    <input 
-                      name="plotOwnerName"
-                      type="text" 
-                      placeholder="Enter full name" 
-                      value={formData.plotOwnerName}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                  <div className="form-group-v3">
-                    <label>Contact Number</label>
-                    <input 
-                      name="plotOwnerContact"
-                      type="tel" 
-                      placeholder="e.g. +880 17XX-XXXXXX" 
-                      value={formData.plotOwnerContact}
-                      onChange={handleInputChange}
-                    />
-                  </div>
+            {/* Sticky Actions Footer */}
+            <div className="form-sticky-footer">
+              <div className="footer-content">
+                <div className="footer-left">
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    icon={ArrowLeft} 
+                    onClick={() => navigate('/projects')}
+                  >
+                    Back to Projects
+                  </Button>
+                </div>
+                <div className="footer-btns">
+                  <button 
+                    type="button" 
+                    className="btn-secondary-v3" 
+                    onClick={() => navigate('/projects')}
+                  >
+                    Cancel
+                  </button>
+                  <Button 
+                    variant="primary" 
+                    type="submit" 
+                    icon={Save} 
+                    isLoading={isSubmitting}
+                  >
+                    Save Changes
+                  </Button>
                 </div>
               </div>
             </div>
-          )}
-
-          {/* Step 3: Location & Address */}
-          {currentStep === 3 && (
-            <div className="form-section-card">
-              <div className="section-body">
-                <div className="form-grid-v3">
-                  <div className="form-group-v3">
-                    <label>City/Area</label>
-                    <input 
-                      name="location"
-                      type="text" 
-                      placeholder="e.g. Uttara" 
-                      value={formData.location}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                  <div className="form-group-v3">
-                    <label>Sector/Block</label>
-                    <input 
-                      name="sector"
-                      type="text" 
-                      placeholder="e.g. Sector 4" 
-                      value={formData.sector}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                  <div className="form-group-v3 full-width">
-                    <label>Full Plot Address</label>
-                    <input 
-                      name="address"
-                      type="text" 
-                      placeholder="Road No, House No, etc." 
-                      value={formData.address}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                  <div className="form-group-v3 full-width">
-                    <label>Google Map Link</label>
-                    <div style={{ position: 'relative' }}>
-                      <input 
-                        name="mapLink"
-                        type="url" 
-                        placeholder="Paste Google Maps URL here" 
-                        value={formData.mapLink}
-                        onChange={handleInputChange}
-                        style={{ paddingRight: '3rem' }}
-                      />
-                      <ExternalLink size={18} style={{ position: 'absolute', right: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                    </div>
-                  </div>
-                  <div className="form-group-v3">
-                    <label>Latitude Coordinate</label>
-                    <input 
-                      name="latitude"
-                      type="number" 
-                      step="any"
-                      placeholder="e.g. 23.8103" 
-                      value={formData.latitude || ''}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                  <div className="form-group-v3">
-                    <label>Longitude Coordinate</label>
-                    <input 
-                      name="longitude"
-                      type="number" 
-                      step="any"
-                      placeholder="e.g. 90.4125" 
-                      value={formData.longitude || ''}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                  <div className="form-group-v3" style={{ justifyContent: 'flex-end', gridColumn: 'span 2' }}>
-                    <Button 
-                      type="button" 
-                      variant="secondary" 
-                      icon={MapPin}
-                      onClick={() => {
-                        if (navigator.geolocation) {
-                          navigator.geolocation.getCurrentPosition(
-                            (position) => {
-                              setFormData(prev => ({
-                                ...prev,
-                                latitude: position.coords.latitude,
-                                longitude: position.coords.longitude
-                              }));
-                              showToast("Location coordinates captured successfully!", "success");
-                            },
-                            (error) => {
-                              console.error(error);
-                              showToast("Failed to retrieve GPS location. Enable permissions.", "error");
-                            }
-                          );
-                        } else {
-                          showToast("Geolocation is not supported by your browser.", "error");
-                        }
-                      }}
-                    >
-                      Capture GPS Coordinates
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Step 4: Technical Specifications */}
-          {currentStep === 4 && (
-            <div className="form-section-card">
-              <div className="section-body">
-                <div className="form-grid-v3">
-                  <div className="form-group-v3">
-                    <label>Plot Size</label>
-                    <input 
-                      name="plotSize"
-                      type="text" 
-                      placeholder="e.g. 5 Katha" 
-                      value={formData.plotSize}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                  <div className="form-group-v3">
-                    <label>Plot Orientation</label>
-                    <input 
-                      name="plotOrientation"
-                      type="text" 
-                      placeholder="e.g. South Facing" 
-                      value={formData.plotOrientation}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                  <div className="form-group-v3">
-                    <label>Number of Floors</label>
-                    <input 
-                      name="numberOfFloors"
-                      type="text" 
-                      placeholder="e.g. G+9" 
-                      value={formData.numberOfFloors}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                  <div className="form-group-v3">
-                    <label>Total Apartments (Slots)</label>
-                    <input 
-                      name="totalApartments"
-                      type="number" 
-                      placeholder="e.g. 18" 
-                      value={formData.totalApartments}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                  <div className="form-group-v3">
-                    <label>Apartment Size (sqft)</label>
-                    <input 
-                      name="apartmentSize"
-                      type="text" 
-                      placeholder="e.g. 1450" 
-                      value={formData.apartmentSize}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Step 5: Project Timeline */}
-          {currentStep === 5 && (
-            <div className="form-section-card">
-              <div className="section-body">
-                <div className="form-grid-v3">
-                  <div className="form-group-v3">
-                    <label>Starting Date</label>
-                    <input 
-                      name="startingDate"
-                      type="date" 
-                      value={formData.startingDate}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                  <div className="form-group-v3">
-                    <label>Handover Date</label>
-                    <input 
-                      name="handoverDate"
-                      type="date" 
-                      value={formData.handoverDate}
-                      onChange={handleInputChange}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Sticky Footer */}
-          <div className="form-sticky-footer">
-            <div className="footer-content">
-              <div className="footer-left">
-                {currentStep > 1 && (
-                  <Button type="button" variant="outline" icon={ArrowLeft} onClick={prevStep}>Previous Step</Button>
-                )}
-              </div>
-              <div className="footer-btns">
-                <button type="button" className="btn-secondary-v3" onClick={() => navigate('/projects')}>Cancel</button>
-                {currentStep < 5 ? (
-                  <Button type="button" variant="primary" icon={ArrowRight} onClick={nextStep}>Next Step</Button>
-                ) : (
-                  <Button variant="primary" type="submit" icon={Save} isLoading={isSubmitting}>Update Project</Button>
-                )}
-              </div>
-            </div>
-          </div>
-        </form>
+          </form>
+        )}
 
         {toastConfig.show && (
           <Toast 

@@ -1,12 +1,16 @@
 .payments-container {
-  padding: 32px;
+  padding: 0;
   background: transparent;
   min-height: 100%;
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  box-sizing: border-box;
 }
 
 @media (max-width: 600px) {
   .payments-container {
-    padding: 16px;
+    padding: 0;
   }
 }
 
@@ -16,7 +20,8 @@
   grid-template-columns: repeat(4, minmax(180px, 1fr));
   gap: 16px;
   margin-bottom: 24px;
-  max-width: 1200px;
+  width: 100%;
+  max-width: 100%;
 }
 
 @media (max-width: 1024px) {

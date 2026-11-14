@@ -40,6 +40,14 @@ CREATE TABLE IF NOT EXISTS public.projects (
 ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow public access" ON public.projects;
 CREATE POLICY "Allow public access" ON public.projects FOR ALL TO public USING (true) WITH CHECK (true);
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS image TEXT;
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS "projectStatus" TEXT DEFAULT 'Upcoming';
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS features JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS "projectUrl" TEXT;
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS url TEXT;
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS location TEXT;
+ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS "addedByEmail" TEXT;
 
 -- 3. Notifications Table
 CREATE TABLE IF NOT EXISTS public.notifications (
@@ -221,6 +229,8 @@ ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS email TEXT;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS location TEXT;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS area TEXT;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS city TEXT;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS contact_person TEXT;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS assigned_to UUID;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS assigned_to_name TEXT;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS owner_id UUID;
@@ -231,7 +241,9 @@ ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Fresh Lea
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS description TEXT;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS next_follow_up TEXT;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS next_follow_up_date DATE;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS next_follow_up_time TEXT;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS image TEXT;
+ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS interests TEXT[];
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS history JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS org_id UUID;
 ALTER TABLE public.leads ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();

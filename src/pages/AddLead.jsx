@@ -10,7 +10,6 @@ import {
   ArrowLeft,
   Save,
   ChevronRight,
-  Phone,
   Camera
 } from 'lucide-react';
 import Toast from '../components/ui/Toast';
@@ -73,7 +72,7 @@ const checkPhoneDuplicateInTeam = async (phoneNumber, user, allUsers, teams) => 
       if (teamMemberUids.includes(assignee) || teamMemberUids.includes(owner)) {
         return {
           duplicate: true,
-          leadName: leadData.name || leadData.full_name,
+          leadName: leadData.name || leadData.full_name || leadData.company,
           assignedToName: leadData.assigned_to_name || leadData.assignedToName || 'someone in your team'
         };
       }
@@ -87,41 +86,32 @@ const AddLeadPage = () => {
   const navigate = useNavigate();
   const { user, currentTenant } = useAuth();
   const [users, setUsers] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  // Form State
+  const [teams, setTeams] = useState([]);
+
+  // Form State: Required and optional lead fields
   const [formData, setFormData] = useState({
-    name: '',
+    image: null,
     company: '',
-    designation: '',
+    contactPerson: '',
+    email: '',
     phone: '',
     phoneWhatsapp: false,
     secondPhone: '',
     secondPhoneWhatsapp: false,
+    location: '',
+    city: '',
     countryCode: '+880',
     countryFlag: '🇧🇩',
-    email: '',
-    location: '',
     assignedTo: '',
-    assignedToName: '',
-    priority: 'Normal',
-    source: 'Self Generated',
-    description: '',
-    image: null,
-    area: '',
-    address: '',
-    nextCallDate: ''
+    assignedToName: ''
   });
+
   const [toastConfig, setToastConfig] = useState({ show: false, message: '', type: 'success' });
 
   const showToast = (message, type = 'success') => {
     setToastConfig({ show: true, message, type });
   };
-
-  const [userTeam, setUserTeam] = useState(null);
-  const [teams, setTeams] = useState([]);
-  const [filteredUsers, setFilteredUsers] = useState([]);
 
   // Set initial assignment when user context is ready
   useEffect(() => {
@@ -139,68 +129,22 @@ const AddLeadPage = () => {
 
     const fetchData = async () => {
       const { data: teamsData } = await supabase.from('teams').select('*');
-      const teamsList = teamsData || [];
-      setTeams(teamsList);
-      const userName = user.full_name || user.fullName || user.name;
-
-      const foundTeam = teamsList.find(team =>
-        (team.members && team.members.includes(userName)) ||
-        team.team_lead === userName || team.teamLead === userName
-      );
-      setUserTeam(foundTeam);
+      setTeams(teamsData || []);
 
       const { data: usersData } = await supabase.from('users').select('*').order('full_name', { ascending: true });
       setUsers(usersData || []);
-      setIsLoading(false);
     };
 
     fetchData();
   }, [user]);
-
-  // Handle Filtering Logic
-  useEffect(() => {
-    if (!users.length) return;
-
-    const isAdmin = user?.role === 'Admin' || user?.role === 'System Admin' || user?.role === 'MD';
-    
-    if (isAdmin) {
-      setFilteredUsers(users);
-    } else if (userTeam) {
-      const teamMemberNames = [...(userTeam.members || [])];
-      if (userTeam.teamLead) teamMemberNames.push(userTeam.teamLead);
-      
-      const members = users.filter(u => teamMemberNames.includes(u.fullName || u.name));
-      setFilteredUsers(members);
-    } else {
-      // If no team found and not admin, only show self
-      setFilteredUsers(users.filter(u => u.uid === user?.uid));
-    }
-  }, [users, userTeam, user]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleCountryChange = (e) => {
-    const selected = countryCodes.find(c => c.code === e.target.value);
-    setFormData(prev => ({ 
-      ...prev, 
-      countryCode: selected.code, 
-      countryFlag: selected.flag 
-    }));
-  };
-
-  const handleUserSelect = (selectedUser) => {
-    setFormData(prev => ({
-      ...prev,
-      assignedTo: selectedUser.id,
-      assignedToName: selectedUser.fullName || selectedUser.name
-    }));
-  };
-
   const handleImageChange = async (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
         showToast("File is too large. Max 5MB allowed.", "error");
@@ -215,7 +159,7 @@ const AddLeadPage = () => {
           let width = img.width;
           let height = img.height;
 
-          const MAX_WIDTH = 600; // Smaller for avatars
+          const MAX_WIDTH = 600;
           const MAX_HEIGHT = 600;
 
           if (width > height) {
@@ -247,7 +191,13 @@ const AddLeadPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Validate Phone
+    // Validate Company Name
+    if (!formData.company?.trim()) {
+      showToast("Please enter Company Name.", "error");
+      return;
+    }
+
+    // Validate Phone Number
     const cleanedPhone = cleanPhoneNumber(formData.phone);
     if (!cleanedPhone.startsWith('1') || cleanedPhone.length !== 10) {
       showToast("Phone number must start with 1 and be exactly 10 digits (e.g. 1712345678).", "error");
@@ -281,29 +231,6 @@ const AddLeadPage = () => {
         createdBy: user?.fullName || 'Admin'
       }];
 
-      if (formData.description && formData.nextCallDate) {
-        history.push({
-          date: new Date().toISOString(),
-          note: `${formData.description}. Initial follow-up scheduled for ${formData.nextCallDate}.`,
-          type: 'Follow-up',
-          createdBy: user?.fullName || 'Admin'
-        });
-      } else if (formData.description) {
-        history.push({
-          date: new Date().toISOString(),
-          note: formData.description,
-          type: 'Follow-up',
-          createdBy: user?.fullName || 'Admin'
-        });
-      } else if (formData.nextCallDate) {
-        history.push({
-          date: new Date().toISOString(),
-          note: `Initial follow-up scheduled for ${formData.nextCallDate}.`,
-          type: 'Follow-up',
-          createdBy: user?.fullName || 'Admin'
-        });
-      }
-
       const isSA = user?.account_type === 'super_admin';
       const resolvedOrgId = (isSA && currentTenant?.type === 'org')
         ? currentTenant?.id
@@ -317,44 +244,57 @@ const AddLeadPage = () => {
       const fullPhone = `${codeCleaned}${cleanedPhone}`;
       const secondPhoneCleaned = formData.secondPhone ? `${codeCleaned}${cleanPhoneNumber(formData.secondPhone)}` : '';
 
+      const displayName = formData.contactPerson?.trim() || formData.company?.trim();
+
       const leadPayload = {
-        name: formData.name,
-        company: formData.company,
-        designation: formData.designation,
+        name: displayName,
+        company: formData.company?.trim(),
+        contact_person: formData.contactPerson?.trim() || '',
+        email: formData.email?.trim() || '',
         phone: fullPhone,
         phone_whatsapp: formData.phoneWhatsapp || false,
         second_phone: secondPhoneCleaned,
         second_phone_whatsapp: formData.secondPhoneWhatsapp || false,
-        email: formData.email,
-        location: formData.location,
-        area: formData.area,
-        address: formData.address || '',
+        location: formData.location?.trim() || '',
+        city: formData.city?.trim() || '',
+        area: '',
+        address: [formData.location?.trim(), formData.city?.trim()].filter(Boolean).join(', '),
         assigned_to: formData.assignedTo || resolvedOwnerId,
         assigned_to_name: formData.assignedToName || user?.full_name || user?.fullName || user?.name || 'Admin',
         owner_id: resolvedOwnerId,
         owner_name: user?.full_name || user?.fullName || user?.name || 'Admin',
         org_id: resolvedOrgId,
-        priority: formData.priority,
-        source: formData.source,
-        status: formData.nextCallDate ? 'Follow Up' : 'Fresh Lead',
-        description: formData.description,
-        next_follow_up: formData.nextCallDate || '',
-        next_follow_up_date: formData.nextCallDate || null,
-        image: formData.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.name)}&background=random`,
+        priority: 'Normal',
+        source: 'Self Generated',
+        status: 'Fresh Lead',
+        description: '',
+        image: formData.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(formData.company || displayName)}&background=random`,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         history: history
       };
 
-      const { data: newLead, error: leadError } = await supabase.from('leads').insert(leadPayload).select().single();
+      let { data: newLead, error: leadError } = await supabase.from('leads').insert(leadPayload).select().single();
+
+      // Graceful fallback if city or contact_person columns are not yet in Supabase schema cache
+      if (leadError && (leadError.message?.includes('column') || leadError.code === 'PGRST204')) {
+        console.warn('Retrying lead insert with core columns:', leadError.message);
+        const fallbackPayload = { ...leadPayload };
+        delete fallbackPayload.city;
+        delete fallbackPayload.contact_person;
+        const retry = await supabase.from('leads').insert(fallbackPayload).select().single();
+        newLead = retry.data;
+        leadError = retry.error;
+      }
+
       if (leadError) throw leadError;
 
       // Create notification for assigned user
-      if (formData.assignedTo) {
+      if (formData.assignedTo && newLead?.id) {
         await supabase.from('notifications').insert({
           user_id: formData.assignedTo,
           title: 'New Lead Assigned',
-          description: `${formData.name} has been assigned to you by ${user?.full_name || user?.fullName || user?.name || 'Admin'}.`,
+          description: `${displayName} (${formData.company}) has been assigned to you by ${user?.full_name || user?.fullName || user?.name || 'Admin'}.`,
           type: 'lead',
           is_read: false,
           created_at: new Date().toISOString(),
@@ -363,34 +303,20 @@ const AddLeadPage = () => {
       }
 
       showToast('Lead created successfully!', 'success');
-      setTimeout(() => navigate('/leads/mine'), 1500);
+      setTimeout(() => navigate('/leads/mine'), 1200);
     } catch (error) {
       console.error('Error creating lead:', error);
-      showToast('Failed to create lead. Please try again.', 'error');
+      showToast(error.message || 'Failed to create lead. Please try again.', 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-
-  const countryCodes = [
-    { code: '+880', flag: '🇧🇩', name: 'Bangladesh' },
-    { code: '+971', flag: '🇦🇪', name: 'UAE' },
-    { code: '+1', flag: '🇺🇸', name: 'USA' },
-    { code: '+44', flag: '🇬🇧', name: 'UK' },
-    { code: '+91', flag: '🇮🇳', name: 'India' },
-    { code: '+966', flag: '🇸🇦', name: 'Saudi Arabia' },
-    { code: '+974', flag: '🇶🇦', name: 'Qatar' },
-    { code: '+965', flag: '🇰🇼', name: 'Kuwait' },
-    { code: '+968', flag: '🇴🇲', name: 'Oman' },
-    { code: '+973', flag: '🇧🇭', name: 'Bahrain' }
-  ];
-
-
   return (
     <DashboardLayout>
       <div className="add-lead-page">
         <LeadTabs />
+
         {/* Header */}
         <div className="add-lead-header">
           <div className="header-left-group">
@@ -400,10 +326,15 @@ const AddLeadPage = () => {
               <span>Add New Lead</span>
             </div>
             <div className="header-with-back">
-              <button className="back-btn-v2" onClick={() => navigate(-1)}>
+              <button className="back-btn-v2" onClick={() => navigate(-1)} title="Back">
                 <ArrowLeft size={20} />
               </button>
-              <h1>Create New Lead</h1>
+              <div>
+                <h1>Create New Lead</h1>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginTop: '4px' }}>
+                  Fill in the essential information to add a new lead to your CRM.
+                </p>
+              </div>
             </div>
           </div>
           <div className="header-actions">
@@ -428,248 +359,205 @@ const AddLeadPage = () => {
 
         <form id="add-lead-form" onSubmit={handleSubmit} className="add-lead-container">
           <div className="form-section-card">
-            {/* Section 1: Lead Information */}
             <div className="section-header-v4">
               <div className="title-area">
-                <h3>Lead Information</h3>
-                <p>Basic identification and priority settings for the new lead.</p>
+                <h3>Lead Details</h3>
+                <p>Provide lead contact, company, and location details.</p>
               </div>
             </div>
-              <div className="section-body">
-                <div className="form-grid-v3">
-                  {/* Row 1: Photo & Name */}
-                  <div className="form-group-v3 col-span-4 photo-name-row">
-                    <div className="photo-col">
-                      <label>Photo</label>
-                      <div className="image-upload-wrapper-lead compact">
-                        <div className="lead-avatar-preview">
-                          {formData.image ? (
-                            <img src={formData.image} alt="Lead" />
-                          ) : (
-                            <div className="default-avatar-placeholder">
-                              <User size={18} />
-                            </div>
-                          )}
-                          <label className="lead-camera-btn compact">
-                            <Camera size={10} />
-                            <input type="file" hidden accept="image/*" onChange={handleImageChange} />
-                          </label>
-                        </div>
+
+            <div className="section-body">
+              <div className="form-grid-v3">
+                {/* 1. Photo, 2. Company Name, 3. Contact Person (optional) */}
+                <div className="form-group-v3 col-span-4 photo-name-row" style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start' }}>
+                  <div className="photo-col" style={{ flex: '0 0 auto' }}>
+                    <label>Photo</label>
+                    <div className="image-upload-wrapper-lead compact" style={{ marginTop: '4px' }}>
+                      <div className="lead-avatar-preview" style={{ width: '76px', height: '76px', position: 'relative' }}>
+                        {formData.image ? (
+                          <img 
+                            src={formData.image} 
+                            alt="Lead Avatar" 
+                            style={{ width: '100%', height: '100%', borderRadius: '16px', objectFit: 'cover', border: '2px solid var(--surface)' }} 
+                          />
+                        ) : (
+                          <div className="default-avatar-placeholder" style={{ width: '100%', height: '100%', borderRadius: '16px' }}>
+                            <User size={26} />
+                          </div>
+                        )}
+                        <label className="lead-camera-btn compact" title="Upload Photo">
+                          <Camera size={14} />
+                          <input type="file" hidden accept="image/*" onChange={handleImageChange} />
+                        </label>
                       </div>
+                      {formData.image && (
+                        <button
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, image: null }))}
+                          style={{
+                            marginTop: '6px',
+                            background: 'none',
+                            border: 'none',
+                            color: 'var(--danger, #ef4444)',
+                            fontSize: '11px',
+                            cursor: 'pointer',
+                            padding: '2px 4px',
+                            display: 'block'
+                          }}
+                        >
+                          Remove
+                        </button>
+                      )}
                     </div>
-                    <div className="name-col">
-                      <label>Lead Full Name <span>*</span></label>
+                  </div>
+
+                  <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1.25rem' }}>
+                    {/* 2. Company Name */}
+                    <div className="form-group-v3">
+                      <label>Company Name <span style={{ color: 'var(--danger, #ef4444)' }}>*</span></label>
                       <input 
                         type="text" 
-                        name="name" 
+                        name="company" 
                         required 
+                        placeholder="e.g. Acme Corp"
+                        value={formData.company}
+                        onChange={handleChange}
+                      />
+                    </div>
+
+                    {/* 3. Contact Person (optional) */}
+                    <div className="form-group-v3">
+                      <label>
+                        Contact Person 
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '0.8rem' }}>(optional)</span>
+                      </label>
+                      <input 
+                        type="text" 
+                        name="contactPerson" 
                         placeholder="e.g. John Doe"
-                        value={formData.name}
+                        value={formData.contactPerson}
                         onChange={handleChange}
                       />
                     </div>
                   </div>
-
-                  {/* Row 2: Company & Designation */}
-                  <div className="form-group-v3 col-span-2">
-                    <label>Company Name</label>
-                    <input 
-                      type="text" 
-                      name="company" 
-                      placeholder="e.g. Acme Corp"
-                      value={formData.company}
-                      onChange={handleChange}
-                    />
-                  </div>
-                  <div className="form-group-v3 col-span-2">
-                    <label>Designation</label>
-                    <input 
-                      type="text" 
-                      name="designation" 
-                      placeholder="e.g. Managing Director"
-                      value={formData.designation}
-                      onChange={handleChange}
-                    />
-                  </div>
-
-                  {/* Row 3: Priority & Source */}
-                  <div className="form-group-v3 col-span-2">
-                    <label>Priority</label>
-                    <select name="priority" value={formData.priority} onChange={handleChange}>
-                      <option value="Low">Low</option>
-                      <option value="Normal">Normal</option>
-                      <option value="High">High</option>
-                      <option value="Urgent">Urgent</option>
-                    </select>
-                  </div>
-                  <div className="form-group-v3 col-span-2">
-                    <label>Lead Source</label>
-                    <select name="source" value={formData.source} onChange={handleChange}>
-                      <option value="Self Generated">Self Generated</option>
-                      <option value="Facebook">Facebook</option>
-                      <option value="WhatsApp">WhatsApp</option>
-                      <option value="Website">Website</option>
-                      <option value="Referral">Referral</option>
-                      <option value="Walk-in">Walk-in</option>
-                    </select>
-                  </div>
                 </div>
-              </div>
-            <div className="section-divider-v2"></div>
 
-            {/* Section 2: Contact Details */}
-            <div className="section-header-v4">
-              <div className="title-area">
-                <h3>Contact & Location</h3>
-                <p>How to reach the lead and their physical location details.</p>
+                {/* 4. Phone Number */}
+                <div className="form-group-v3 col-span-2">
+                  <label>Phone Number <span style={{ color: 'var(--danger, #ef4444)' }}>*</span></label>
+                  <div className="phone-input-wrapper compact">
+                    <div className="country-selector-v2 compact">
+                      <div className="selected-country">
+                        <span>{formData.countryFlag}</span>
+                        <span>{formData.countryCode}</span>
+                      </div>
+                    </div>
+                    <input 
+                      type="tel" 
+                      name="phone" 
+                      required 
+                      placeholder="1XXXXXXXXX"
+                      maxLength={10}
+                      value={formData.phone}
+                      onChange={(e) => {
+                        let val = e.target.value.replace(/\D/g, '');
+                        if (val.startsWith('0')) val = val.substring(1);
+                        if (val.length <= 10) setFormData(prev => ({ ...prev, phone: val }));
+                      }}
+                    />
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '8px', fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>
+                    <input 
+                      type="checkbox" 
+                      name="phoneWhatsapp"
+                      checked={formData.phoneWhatsapp || false}
+                      onChange={(e) => setFormData(prev => ({ ...prev, phoneWhatsapp: e.target.checked }))}
+                      style={{ width: '14px', height: '14px', accentColor: 'var(--primary)' }}
+                    />
+                    <span>WhatsApp active on this number</span>
+                  </label>
+                </div>
+
+                {/* 5. Second Phone Number */}
+                <div className="form-group-v3 col-span-2">
+                  <label>
+                    Second Phone Number 
+                    <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '0.8rem' }}>(optional)</span>
+                  </label>
+                  <div className="phone-input-wrapper compact">
+                    <div className="country-selector-v2 compact">
+                      <div className="selected-country">
+                        <span>{formData.countryFlag}</span>
+                        <span>{formData.countryCode}</span>
+                      </div>
+                    </div>
+                    <input 
+                      type="tel" 
+                      name="secondPhone" 
+                      placeholder="1XXXXXXXXX (Optional)"
+                      maxLength={10}
+                      value={formData.secondPhone}
+                      onChange={(e) => {
+                        let val = e.target.value.replace(/\D/g, '');
+                        if (val.startsWith('0')) val = val.substring(1);
+                        if (val.length <= 10) setFormData(prev => ({ ...prev, secondPhone: val }));
+                      }}
+                    />
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '8px', fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>
+                    <input 
+                      type="checkbox" 
+                      name="secondPhoneWhatsapp"
+                      checked={formData.secondPhoneWhatsapp || false}
+                      onChange={(e) => setFormData(prev => ({ ...prev, secondPhoneWhatsapp: e.target.checked }))}
+                      style={{ width: '14px', height: '14px', accentColor: 'var(--primary)' }}
+                    />
+                    <span>WhatsApp active on this number</span>
+                  </label>
+                </div>
+
+                {/* Email Address */}
+                <div className="form-group-v3 col-span-2">
+                  <label>
+                    Email Address 
+                    <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '0.8rem' }}>(optional)</span>
+                  </label>
+                  <input 
+                    type="email" 
+                    name="email" 
+                    placeholder="e.g. client@example.com"
+                    value={formData.email}
+                    onChange={handleChange}
+                  />
+                </div>
+
+                {/* City */}
+                <div className="form-group-v3 col-span-2">
+                  <label>City</label>
+                  <input 
+                    type="text" 
+                    name="city" 
+                    placeholder="e.g. Dhaka"
+                    value={formData.city}
+                    onChange={handleChange}
+                  />
+                </div>
+
+                {/* Location */}
+                <div className="form-group-v3 col-span-4">
+                  <label>Location</label>
+                  <input 
+                    type="text" 
+                    name="location" 
+                    placeholder="e.g. Banani, Road 11"
+                    value={formData.location}
+                    onChange={handleChange}
+                  />
+                </div>
+
               </div>
             </div>
-              <div className="section-body">
-                <div className="form-grid-v3">
-                  <div className="form-group-v3 col-span-2">
-                    <label>Phone Number <span>*</span></label>
-                    <div className="phone-input-wrapper compact">
-                      <div className="country-selector-v2 compact">
-                        <div className="selected-country">
-                          <span>{formData.countryFlag}</span>
-                          <span>{formData.countryCode}</span>
-                        </div>
-                      </div>
-                      <input 
-                        type="tel" 
-                        name="phone" 
-                        required 
-                        placeholder="1XXXXXXXXX"
-                        maxLength={10}
-                        value={formData.phone}
-                        onChange={(e) => {
-                          let val = e.target.value.replace(/\D/g, '');
-                          // Automatically remove leading zero if entered
-                          if (val.startsWith('0')) {
-                            val = val.substring(1);
-                          }
-                          if (val.length <= 10) {
-                            setFormData(prev => ({ ...prev, phone: val }));
-                          }
-                        }}
-                      />
-                    </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '8px', fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>
-                      <input 
-                        type="checkbox" 
-                        name="phoneWhatsapp"
-                        checked={formData.phoneWhatsapp || false}
-                        onChange={(e) => setFormData(prev => ({ ...prev, phoneWhatsapp: e.target.checked }))}
-                        style={{ width: '14px', height: '14px', accentColor: 'var(--primary)' }}
-                      />
-                      <span>WhatsApp active on this number</span>
-                    </label>
-                  </div>
-                  <div className="form-group-v3 col-span-2">
-                    <label>Second Phone Number</label>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div className="phone-input-wrapper compact">
-                        <div className="country-selector-v2 compact">
-                          <div className="selected-country">
-                            <span>{formData.countryFlag}</span>
-                            <span>{formData.countryCode}</span>
-                          </div>
-                        </div>
-                        <input 
-                          type="tel" 
-                          name="secondPhone" 
-                          placeholder="1XXXXXXXXX (Optional)"
-                          maxLength={10}
-                          value={formData.secondPhone || ''}
-                          onChange={(e) => {
-                            let val = e.target.value.replace(/\D/g, '');
-                            if (val.startsWith('0')) {
-                              val = val.substring(1);
-                            }
-                            if (val.length <= 10) {
-                              setFormData(prev => ({ ...prev, secondPhone: val }));
-                            }
-                          }}
-                        />
-                      </div>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 'normal', color: 'var(--text-secondary)' }}>
-                        <input 
-                          type="checkbox" 
-                          name="secondPhoneWhatsapp"
-                          checked={formData.secondPhoneWhatsapp || false}
-                          onChange={(e) => setFormData(prev => ({ ...prev, secondPhoneWhatsapp: e.target.checked }))}
-                          style={{ width: '14px', height: '14px', accentColor: 'var(--primary)' }}
-                        />
-                        <span>WhatsApp active on this number</span>
-                      </label>
-                    </div>
-                  </div>
-                  <div className="form-group-v3 col-span-2">
-                    <label>Email Address</label>
-                    <input 
-                      type="email" 
-                      name="email" 
-                      placeholder="client@example.com"
-                      value={formData.email}
-                      onChange={handleChange}
-                    />
-                  </div>
-                  <div className="form-group-v3 col-span-2">
-                    <label>Location (City)</label>
-                    <input 
-                      type="text" 
-                      name="location" 
-                      placeholder="City, Country"
-                      value={formData.location}
-                      onChange={handleChange}
-                    />
-                  </div>
-                  <div className="form-group-v3 col-span-2">
-                    <label>Area</label>
-                    <input 
-                      type="text" 
-                      name="area" 
-                      placeholder="Specific Area/Neighborhood"
-                      value={formData.area}
-                      onChange={handleChange}
-                    />
-                  </div>
-                  <div className="form-group-v3 col-span-4">
-                    <label>Full Address</label>
-                    <input 
-                      type="text" 
-                      name="address" 
-                      placeholder="e.g. House 42, Road 11, Gabtoli, Mohammadpur, Dhaka"
-                      value={formData.address || ''}
-                      onChange={handleChange}
-                    />
-                  </div>
-                  <div className="form-group-v3 col-span-4">
-                    <label>Next Call Date (Scheduled Follow-up)</label>
-                    <input 
-                      type="date" 
-                      name="nextCallDate" 
-                      value={formData.nextCallDate || ''}
-                      onChange={handleChange}
-                      style={{ width: '100%' }}
-                    />
-                  </div>
-                  <div className="form-group-v3 col-span-4">
-                    <label>Follow Up Message</label>
-                    <textarea 
-                      name="description" 
-                      rows="2" 
-                      placeholder="Follow up message..."
-                      value={formData.description}
-                      onChange={handleChange}
-                    ></textarea>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-
-
+          </div>
         </form>
 
         {toastConfig.show && (

@@ -5,6 +5,61 @@ const AuthContext = createContext(null);
 
 export const SUPER_ADMIN_UID = '970690f1-d3d5-47fd-bd79-fe9c3a2be65c';
 
+export const parseUserPermissions = (rawPermissions) => {
+  if (!rawPermissions) return {};
+  
+  let perms = rawPermissions;
+
+  // If already a parsed object (and not an array)
+  if (typeof perms === 'object' && perms !== null && !Array.isArray(perms)) {
+    return perms;
+  }
+
+  // If rawPermissions is a JSON string
+  if (typeof perms === 'string') {
+    try {
+      perms = JSON.parse(perms);
+    } catch {
+      if (perms === 'All') return { All: true };
+      return {};
+    }
+  }
+
+  // If it's an array
+  if (Array.isArray(perms)) {
+    if (perms.length === 0) return {};
+    if (perms.includes('All')) return { All: true };
+
+    const first = perms[0];
+    if (typeof first === 'string') {
+      try {
+        const parsedFirst = JSON.parse(first);
+        if (typeof parsedFirst === 'object' && parsedFirst !== null) {
+          return parsedFirst;
+        }
+      } catch {
+        const obj = {};
+        perms.forEach(item => {
+          if (typeof item === 'string') obj[item] = true;
+        });
+        return obj;
+      }
+    }
+
+    if (typeof first === 'object' && first !== null) {
+      return first;
+    }
+
+    const obj = {};
+    perms.forEach(item => {
+      if (typeof item === 'string') obj[item] = true;
+    });
+    return obj;
+  }
+
+  return {};
+};
+
 export const getIndividualModules = (pkg) => {
   const base = ['Lead Management', 'Calendar & Schedule', 'Notifications', 'Settings', 'WhatsApp'];
   if (pkg === 'individual_pro') return [...base, 'Visits', 'Payments'];
@@ -171,6 +226,7 @@ export const AuthProvider = ({ children }) => {
         email: supabaseUser.email,
         name: profile.full_name || profile.name || 'User',
         account_type: accountType,
+        permissions: parseUserPermissions(profile.permissions),
         trialExpired,
         subscriptionStatus,
         org: orgData,
@@ -350,8 +406,14 @@ export const AuthProvider = ({ children }) => {
 
   const hasPermission = (module, action = 'read', subModule = null) => {
     if (!user) return false;
+
+    // ── 1. Super Admin has unrestricted full access across all modules ─────
     if (isSuperAdmin()) return true;
-    if (Array.isArray(user.permissions) && user.permissions.includes('All')) return true;
+
+    // ── 2. Global wildcard access on user account ─────────────────────────
+    const userPerms = parseUserPermissions(user.permissions);
+    if (userPerms?.All === true) return true;
+
     if (user.trialExpired) return module === 'Lead Management' && action === 'read';
 
     const actionMap = {
@@ -362,70 +424,45 @@ export const AuthProvider = ({ children }) => {
     };
     const dbAction = actionMap[action] || action;
 
-    // ── Step 1: Org-level module gate ──────────────────────────────────────
-    // If the user has role-based permissions that explicitly include this module,
-    // bypass the billing/org gate — the role grants the access.
-    const roleGrantsModule = user.rolePermissions && user.rolePermissions[module] !== undefined;
+    // ── 3. Strict User-Module Permissions (NO Role-Based Fallback) ─────────
+    // Non-Super Admin users access modules ONLY if explicitly granted to their user account.
+    if (!userPerms || Object.keys(userPerms).length === 0) return false;
 
-    if (isIndividual()) {
-      const allowed = getIndividualModules(user.subscription_package || 'free_trial');
-      if (!allowed.includes(module) && !roleGrantsModule) return false;
-    } else if (isOrgAdmin() || isOrgEmployee()) {
-      if (!roleGrantsModule) {
-        const org = user.org;
-        const hasCustomModules = org && Array.isArray(org.tags) && org.tags.some(t => t.startsWith('module:'));
-        if (hasCustomModules) {
-          const prefix = `module:${module}:`;
-          const moduleTags = org.tags.filter(t => t.startsWith(prefix));
-          if (moduleTags.length === 0) return false;
-          if (['create', 'update', 'delete'].includes(dbAction)) {
-            if (!moduleTags.includes(`${prefix}write`)) return false;
-          }
-        } else {
-          const allowed = getOrgModules(user.org?.billing_package || 'starter');
-          if (!allowed.includes(module)) return false;
+    const moduleConfig = userPerms[module];
+    // Module is not granted to this user
+    if (!moduleConfig) return false;
+
+    if (moduleConfig === true) return true;
+
+    if (typeof moduleConfig === 'object') {
+      if (subModule) {
+        const sub = moduleConfig[subModule];
+        if (sub === true) return true;
+        if (sub && typeof sub === 'object') {
+          if (sub[dbAction] !== undefined) return sub[dbAction] === true;
+          if (dbAction === 'read') return Object.values(sub).some(Boolean);
         }
+        if (moduleConfig[dbAction] === true) return true;
+        return false;
+      }
+
+      // No submodule passed (checking general module access for navigation/route)
+      if (moduleConfig[dbAction] === true) return true;
+
+      const hasSubAction = Object.values(moduleConfig).some(p => {
+        if (p === true) return true;
+        if (typeof p === 'object' && p !== null) {
+          if (p[dbAction] === true) return true;
+          if (dbAction === 'read' && Object.values(p).some(Boolean)) return true;
+        }
+        return false;
+      });
+      if (hasSubAction) return true;
+
+      if (dbAction === 'read' && Object.keys(moduleConfig).length > 0) {
+        return true;
       }
     }
-
-    // ── Step 2: Explicit user-level permission overrides ──────────────────
-    // If the user has any custom permissions set, treat them as the STRICT
-    // source of truth — no fallback to role or org-admin defaults.
-    const hasExplicitPermissions =
-      Array.isArray(user.permissions) &&
-      user.permissions.length > 0 &&
-      typeof user.permissions[0] === 'object' &&
-      user.permissions[0] !== null &&
-      Object.keys(user.permissions[0]).length > 0;
-
-    if (hasExplicitPermissions) {
-      const userOverrides = user.permissions[0];
-
-      // Module not listed in overrides → no access
-      if (!userOverrides[module]) return false;
-
-      const modulePerms = userOverrides[module];
-
-      if (subModule) {
-        const val = modulePerms[subModule]?.[dbAction];
-        return val === true;
-      }
-      // Any sub-module grants the action
-      return Object.values(modulePerms).some(p => p?.[dbAction] === true);
-    }
-
-    // ── Step 3: Role-based permissions (no explicit override) ─────────────
-    if (user.rolePermissions && user.rolePermissions[module]) {
-      const modulePerms = user.rolePermissions[module];
-      if (subModule) {
-        return modulePerms[subModule]?.[dbAction] === true;
-      }
-      return Object.values(modulePerms).some(p => p?.[dbAction] === true);
-    }
-
-
-    // ── Step 4: Org Admin default (only when NO custom permissions set) ───
-    if (isOrgAdmin()) return true;
 
     return false;
   };

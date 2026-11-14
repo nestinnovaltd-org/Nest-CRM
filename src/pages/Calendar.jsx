@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -237,7 +237,7 @@ const CalendarPage = () => {
       
       if (isFollowup) {
         updatePayload.next_follow_up_date = rescheduleDate;
-        updatePayload.next_follow_up_time = rescheduleTime || '09:00';
+        updatePayload.next_follow_up = rescheduleDate;
       } else {
         updatePayload.visit_date = rescheduleDate;
         updatePayload.visit_time = rescheduleTime || '10:00';
@@ -282,7 +282,7 @@ const CalendarPage = () => {
       
       if (isFollowup) {
         updatePayload.next_follow_up_date = null;
-        updatePayload.next_follow_up_time = '';
+        updatePayload.next_follow_up = null;
       } else {
         updatePayload.visit_date = null;
         updatePayload.visit_time = '';
