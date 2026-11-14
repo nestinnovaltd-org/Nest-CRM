@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import DashboardLayout from '../layouts/DashboardLayout';
@@ -46,6 +46,7 @@ const EditProjectPage = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toastConfig, setToastConfig] = useState({ show: false, message: '', type: 'success' });
+  const availableColsRef = useRef(null);
 
   const showToast = (message, type = 'success') => {
     setToastConfig({ show: true, message, type });
@@ -61,6 +62,7 @@ const EditProjectPage = () => {
           showToast('Project not found', 'error');
           setTimeout(() => navigate('/projects'), 2000);
         } else {
+          availableColsRef.current = new Set(Object.keys(data));
           let parsedFeatures = [];
           if (Array.isArray(data.features)) {
             parsedFeatures = data.features;
@@ -184,30 +186,56 @@ const EditProjectPage = () => {
     try {
       setIsSubmitting(true);
 
+      const available = availableColsRef.current;
       const payload = {
-        projectName: formData.projectName.trim(),
-        projectStatus: formData.projectStatus,
-        image: formData.image,
-        description: formData.description,
-        features: formData.features,
-        projectUrl: formData.projectUrl.trim(),
-        url: formData.projectUrl.trim(),
         updated_at: new Date().toISOString()
       };
 
-      let { error } = await supabase.from('projects').update(payload).eq('id', id);
+      const setIfAvailable = (key, val) => {
+        if (!available || available.has(key)) {
+          payload[key] = val;
+        }
+      };
 
-      if (error && (error.message?.includes('column') || error.code === 'PGRST204')) {
-        console.warn('Retrying project update with core fields:', error.message);
-        const fallbackPayload = {
-          projectName: formData.projectName.trim(),
-          projectStatus: formData.projectStatus,
-          image: formData.image,
-          description: formData.description,
-          updated_at: new Date().toISOString()
-        };
-        const retry = await supabase.from('projects').update(fallbackPayload).eq('id', id);
-        error = retry.error;
+      // Project Name
+      if (!available || available.has('projectName')) {
+        payload.projectName = formData.projectName.trim();
+      } else if (available.has('project_name')) {
+        payload.project_name = formData.projectName.trim();
+      } else if (available.has('name')) {
+        payload.name = formData.projectName.trim();
+      }
+
+      // Status
+      if (!available || available.has('projectStatus')) {
+        payload.projectStatus = formData.projectStatus;
+      }
+      if (available && available.has('status')) {
+        payload.status = formData.projectStatus;
+      }
+
+      // Optional columns
+      setIfAvailable('image', formData.image);
+      setIfAvailable('description', formData.description);
+      setIfAvailable('features', formData.features);
+      setIfAvailable('projectUrl', formData.projectUrl.trim());
+      setIfAvailable('url', formData.projectUrl.trim());
+
+      let currentPayload = { ...payload };
+      let { error } = await supabase.from('projects').update(currentPayload).eq('id', id);
+
+      // In case availableCols didn't catch a missing column reported by PostgREST schema cache
+      while (error && (error.message?.includes('column') || error.code === 'PGRST204')) {
+        const match = error.message.match(/Could not find the '([^']+)' column/i);
+        if (match && match[1] && match[1] in currentPayload) {
+          const missingCol = match[1];
+          console.warn(`Column '${missingCol}' not found in 'projects'. Removing and retrying...`);
+          delete currentPayload[missingCol];
+          const retry = await supabase.from('projects').update(currentPayload).eq('id', id);
+          error = retry.error;
+        } else {
+          break;
+        }
       }
 
       if (error) throw error;

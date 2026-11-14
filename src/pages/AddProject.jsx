@@ -166,26 +166,21 @@ const AddProjectPage = () => {
         updated_at: new Date().toISOString()
       };
 
-      let { error } = await supabase.from('projects').insert(payload);
+      let currentPayload = { ...payload };
+      let { error } = await supabase.from('projects').insert(currentPayload);
 
-      // Fallback in case columns like projectUrl or features are not yet in Supabase schema cache
-      if (error && (error.message?.includes('column') || error.code === 'PGRST204')) {
-        console.warn('Retrying project insert with core schema fields:', error.message);
-        const fallbackPayload = {
-          projectName: formData.projectName.trim(),
-          projectStatus: formData.projectStatus,
-          image: formData.image,
-          description: formData.description 
-            ? `${formData.description}\n\nFeatures: ${formData.features.join(', ')}\nURL: ${formData.projectUrl}`
-            : `Features: ${formData.features.join(', ')}\nURL: ${formData.projectUrl}`,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-        if (resolvedOrgId) fallbackPayload.org_id = resolvedOrgId;
-        if (resolvedOwnerId) fallbackPayload.owner_id = resolvedOwnerId;
-
-        const retry = await supabase.from('projects').insert(fallbackPayload);
-        error = retry.error;
+      // In case columns like description, projectUrl, features, image are not yet in Supabase schema cache
+      while (error && (error.message?.includes('column') || error.code === 'PGRST204')) {
+        const match = error.message.match(/Could not find the '([^']+)' column/i);
+        if (match && match[1] && match[1] in currentPayload) {
+          const missingCol = match[1];
+          console.warn(`Column '${missingCol}' not found in 'projects'. Removing and retrying...`);
+          delete currentPayload[missingCol];
+          const retry = await supabase.from('projects').insert(currentPayload);
+          error = retry.error;
+        } else {
+          break;
+        }
       }
 
       if (error) throw error;
