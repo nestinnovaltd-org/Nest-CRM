@@ -48,7 +48,8 @@ import {
   FolderPlus,
   Tag,
   ArrowLeft,
-  Layers
+  Layers,
+  Inbox
 } from 'lucide-react';
 import { WhatsAppIcon } from '../components/ui/Icons';
 import { waLeads, waSessions, waCampaigns, waTemplates } from '../services/whatsappApi';
@@ -920,7 +921,7 @@ const renderWhatsAppBadge = (lead, isMini = false) => {
   );
 };
 
-const LeadCard = ({ lead, index, onDragStart, onAddUpdate, onAssign, onStatusChange, onEditInterests, onVerifyWhatsApp, onDelete, showAssignment, activeTab, className = '' }) => {
+const LeadCard = ({ lead, index, onDragStart, onAddUpdate, onAssign, onStatusChange, onEditInterests, onVerifyWhatsApp, onDelete, showAssignment, activeTab, className = '', isSelected = false, onToggleSelect = null }) => {
   const [expandedHistory, setExpandedHistory] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const cleanPhone = lead.phone.replace(/[^\d+]/g, '');
@@ -937,6 +938,49 @@ const LeadCard = ({ lead, index, onDragStart, onAddUpdate, onAssign, onStatusCha
       draggable 
       onDragStart={(e) => onDragStart(e, lead.id)}
     >
+      {/* Integrated top header bar inside card: Serial, Category Tag & Checkbox */}
+      {(typeof index === 'number' || onToggleSelect || lead.category) && (
+        <div className="card-inner-top-bar" style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingBottom: '8px',
+          marginBottom: '10px',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.06)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {typeof index === 'number' && (
+              <span className="card-serial-number" style={{ 
+                fontFamily: "'JetBrains Mono', monospace", 
+                fontWeight: '700', 
+                color: 'var(--primary)', 
+                fontSize: '0.82rem', 
+                opacity: 0.9
+              }}>
+                {(index + 1).toString().padStart(2, '0')}.
+              </span>
+            )}
+            {lead.category && (
+              <span className="category-badge-chip" style={{ fontSize: '0.7rem', padding: '1px 6px', whiteSpace: 'nowrap' }}>
+                📁 {lead.category}
+              </span>
+            )}
+          </div>
+          {onToggleSelect && (
+            <input 
+              type="checkbox" 
+              checked={isSelected} 
+              onChange={(e) => {
+                e.stopPropagation();
+                onToggleSelect(lead.id);
+              }}
+              onClick={(e) => e.stopPropagation()}
+              style={{ cursor: 'pointer', accentColor: 'var(--primary)' }}
+            />
+          )}
+        </div>
+      )}
+
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
         <div className="lead-header-profile-section" style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: 0 }}>
           {/* Profile Picture / Avatar */}
@@ -965,15 +1009,24 @@ const LeadCard = ({ lead, index, onDragStart, onAddUpdate, onAssign, onStatusCha
           {/* Identity details (Name, Designation, Company) */}
           <div className="lead-identity" style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
             <div className="lead-identity-header" style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
-              <Link to={`/leads/${lead.id}`} className="lead-name-link" style={{ marginBottom: 0 }}>
-                <h4 className="lead-name" style={{ display: 'inline', fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>{lead.name}</h4>
+              <Link to={`/leads/${lead.id}`} className="lead-name-link" style={{ marginBottom: 0, minWidth: 0, maxWidth: '100%' }}>
+                <h4 className="lead-name" style={{
+                  display: 'block',
+                  fontSize: '0.9rem',
+                  fontWeight: 600,
+                  color: 'var(--text-primary)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  maxWidth: '100%'
+                }} title={lead.name}>{lead.name}</h4>
               </Link>
-              {lead.designation && <span className="lead-designation">{lead.designation}</span>}
+              {lead.designation && <span className="lead-designation" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100px' }}>{lead.designation}</span>}
             </div>
             {lead.company && (
               <div className="lead-company-info" style={{ marginTop: '2px' }}>
-                <Briefcase size={14} className="icon-briefcase" />
-                <span className="company-name-text">{lead.company}</span>
+                <Briefcase size={14} className="icon-briefcase" style={{ flexShrink: 0 }} />
+                <span className="company-name-text" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }} title={lead.company}>{lead.company}</span>
               </div>
             )}
           </div>
@@ -984,28 +1037,28 @@ const LeadCard = ({ lead, index, onDragStart, onAddUpdate, onAssign, onStatusCha
         <div className="lead-contact-info">
           {lead.phone && (
             <div className="info-row" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-              <Phone size={14} className="info-icon icon-phone" />
-              <span className="phone-number">{lead.phone?.replace(/^(\+?88)?0?/, '0').replace(/\s+/g, '')}</span>
+              <Phone size={14} className="info-icon icon-phone" style={{ flexShrink: 0 }} />
+              <span className="phone-number" style={{ whiteSpace: 'nowrap' }}>{lead.phone?.replace(/^(\+?88)?0?/, '0').replace(/\s+/g, '')}</span>
               {renderWhatsAppBadge(lead, false)}
               <span className="country-flag">{lead.flag}</span>
             </div>
           )}
           {lead.email && (
-            <div className="info-row">
-              <Mail size={14} className="info-icon icon-email" />
-              <span className="info-text">{lead.email}</span>
+            <div className="info-row" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Mail size={14} className="info-icon icon-email" style={{ flexShrink: 0 }} />
+              <span className="info-text" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }} title={lead.email}>{lead.email}</span>
             </div>
           )}
           {lead.location && (
-            <div className="info-row">
-              <MapPin size={14} className="info-icon icon-location" />
-              <span className="info-text">{lead.location}</span>
+            <div className="info-row" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <MapPin size={14} className="info-icon icon-location" style={{ flexShrink: 0 }} />
+              <span className="info-text" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }} title={lead.location}>{lead.location}</span>
             </div>
           )}
           {lead.age && (
-            <div className="info-row age-info">
-              <Clock size={12} className="info-icon icon-clock" />
-              <span className="info-text age-text">{lead.age}</span>
+            <div className="info-row age-info" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Clock size={12} className="info-icon icon-clock" style={{ flexShrink: 0 }} />
+              <span className="info-text age-text" style={{ whiteSpace: 'nowrap' }}>{lead.age}</span>
             </div>
           )}
         </div>
@@ -1019,16 +1072,16 @@ const LeadCard = ({ lead, index, onDragStart, onAddUpdate, onAssign, onStatusCha
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <MessageCircle size={14} className="note-icon" />
-              <div className="note-content" style={{ flex: 1 }}>
+              <MessageCircle size={14} className="note-icon" style={{ flexShrink: 0 }} />
+              <div className="note-content" style={{ flex: 1, minWidth: 0 }}>
                 <span className="note-label">Last Follow Up Message</span>
                 {!expandedHistory && (
-                  <p className="note-text">
+                  <p className="note-text" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', margin: 0 }} title={lead.history[lead.history.length - 1].note}>
                     {lead.history[lead.history.length - 1].note}
                   </p>
                 )}
               </div>
-              <span style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 600 }}>
+              <span style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 600, flexShrink: 0 }}>
                 {expandedHistory ? 'Collapse' : 'Expand'}
               </span>
             </div>
@@ -1543,63 +1596,41 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
 };
 
 const GridView = ({ leads, onAddUpdate, onAssign, onStatusChange, onEditInterests, onVerifyWhatsApp, onDelete, showAssignment, activeTab, selectedLeadIds, setSelectedLeadIds }) => {
+  const handleToggleSelect = (leadId) => {
+    setSelectedLeadIds(prev => {
+      const next = new Set(prev);
+      if (next.has(leadId)) {
+        next.delete(leadId);
+      } else {
+        if (next.size >= 40) {
+          toast.warning('Maximum 40 leads can be selected per campaign (24-hour limit).');
+          return prev;
+        }
+        next.add(leadId);
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="leads-grid-view">
       {leads.map((lead, index) => (
-        <div key={lead.id} className="grid-card-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {/* Serial Number and Checkbox displayed above the card */}
-          <div className="card-header-row" style={{ 
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingLeft: '4px',
-            paddingRight: '4px'
-          }}>
-            <div className="card-serial-number" style={{ 
-              fontFamily: "'JetBrains Mono', monospace", 
-              fontWeight: '700', 
-              color: 'var(--primary)', 
-              fontSize: '0.85rem', 
-              opacity: 0.8
-            }}>
-              {(index + 1).toString().padStart(2, '0')}.
-            </div>
-            <input 
-              type="checkbox" 
-              checked={selectedLeadIds.has(lead.id)} 
-              onChange={() => {
-                setSelectedLeadIds(prev => {
-                  const next = new Set(prev);
-                  if (next.has(lead.id)) {
-                    next.delete(lead.id);
-                  } else {
-                    if (next.size >= 40) {
-                      toast.warning('Maximum 40 leads can be selected per campaign (24-hour limit).');
-                      return prev;
-                    }
-                    next.add(lead.id);
-                  }
-                  return next;
-                });
-              }}
-              style={{ cursor: 'pointer' }}
-            />
-          </div>
-          
-          <LeadCard 
-            lead={lead} 
-            index={index} 
-            onDragStart={() => {}} 
-            onAddUpdate={onAddUpdate}
-            onAssign={onAssign}
-            onStatusChange={onStatusChange}
-            onEditInterests={onEditInterests}
-            onVerifyWhatsApp={onVerifyWhatsApp}
-            onDelete={onDelete}
-            showAssignment={showAssignment}
-            activeTab={activeTab}
-          />
-        </div>
+        <LeadCard 
+          key={lead.id} 
+          lead={lead} 
+          index={index} 
+          isSelected={selectedLeadIds.has(lead.id)}
+          onToggleSelect={handleToggleSelect}
+          onDragStart={() => {}} 
+          onAddUpdate={onAddUpdate}
+          onAssign={onAssign}
+          onStatusChange={onStatusChange}
+          onEditInterests={onEditInterests}
+          onVerifyWhatsApp={onVerifyWhatsApp}
+          onDelete={onDelete}
+          showAssignment={showAssignment}
+          activeTab={activeTab}
+        />
       ))}
     </div>
   );
@@ -3227,20 +3258,28 @@ const MyLeads = () => {
                           <button className="col-action-btn"><MoreVertical size={16} /></button>
                         </div>
                         <div className="column-content custom-scrollbar">
-                          {filteredLeads
-                            .filter(l => l.status === status.id)
-                            .map(lead => (
-                              <LeadCard 
-                                key={lead.id} 
-                                lead={lead} 
-                                className="kanban-card"
-                                onDragStart={handleDragStart}
-                                onAddUpdate={handleAddUpdate}
-                                onDelete={handleSingleDelete}
-                                showAssignment={activeTab === 'team'}
-                                activeTab={activeTab}
-                              />
-                            ))}
+                          {filteredLeads.filter(l => l.status === status.id).length === 0 ? (
+                            <div className="kanban-empty-dropzone">
+                              <Inbox size={26} style={{ opacity: 0.35 }} />
+                              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>No leads in this stage</span>
+                              <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', opacity: 0.6 }}>Drag & drop cards here</span>
+                            </div>
+                          ) : (
+                            filteredLeads
+                              .filter(l => l.status === status.id)
+                              .map(lead => (
+                                <LeadCard 
+                                  key={lead.id} 
+                                  lead={lead} 
+                                  className="kanban-card"
+                                  onDragStart={handleDragStart}
+                                  onAddUpdate={handleAddUpdate}
+                                  onDelete={handleSingleDelete}
+                                  showAssignment={activeTab === 'team'}
+                                  activeTab={activeTab}
+                                />
+                              ))
+                          )}
                         </div>
                       </div>
                     ))}
