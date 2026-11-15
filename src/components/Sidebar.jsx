@@ -237,12 +237,12 @@ const Sidebar = ({ isOpen, onClose }) => {
     <>
       <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
-          <div className="logo">
+          <Link to="/dashboard" className="logo">
             <img src={logo} alt="Nest CRM Logo" className="sb-logo-img" />
-          </div>
+          </Link>
 
-          <button className="close-btn" onClick={onClose}>
-            <X size={24} />
+          <button className="close-btn" onClick={onClose} aria-label="Close Sidebar">
+            <X size={20} />
           </button>
         </div>
 
