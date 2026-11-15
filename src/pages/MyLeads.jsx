@@ -1309,20 +1309,20 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
                 title="Select up to 40 leads (24h limit)"
               />
             </th>
-            <th>Lead Name</th>
-            <th>Status</th>
-            <th>Company</th>
-            <th style={{ minWidth: '220px' }}>Contact</th>
-            <th>Follow-up</th>
-            <th>Age</th>
-            <th>History</th>
-            <th className="text-right">Actions</th>
+            <th style={{ minWidth: '240px', whiteSpace: 'nowrap' }}>Lead Name</th>
+            <th style={{ minWidth: '120px', whiteSpace: 'nowrap' }}>Status</th>
+            <th style={{ minWidth: '130px', whiteSpace: 'nowrap' }}>Company</th>
+            <th style={{ minWidth: '240px', whiteSpace: 'nowrap' }}>Contact</th>
+            <th style={{ minWidth: '120px', whiteSpace: 'nowrap' }}>Follow-up</th>
+            <th style={{ minWidth: '110px', whiteSpace: 'nowrap' }}>Age</th>
+            <th style={{ minWidth: '70px', whiteSpace: 'nowrap' }}>History</th>
+            <th className="text-right" style={{ minWidth: '180px', whiteSpace: 'nowrap' }}>Actions</th>
           </tr>
         </thead>
         <tbody>
           {leads.map((lead, index) => (
             <tr key={lead.id}>
-              <td>
+              <td style={{ verticalAlign: 'middle' }}>
                 <input 
                   type="checkbox" 
                   checked={selectedLeadIds.has(lead.id)} 
@@ -1344,23 +1344,23 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
                   style={{ cursor: 'pointer' }}
                 />
               </td>
-              <td>
-                <div className="table-name-cell">
-                  <span className="serial-number" style={{ marginRight: '8px' }}>{(index + 1).toString().padStart(2, '0')}.</span>
-                  <div className="table-avatar">{lead.name[0]}</div>
-                  <div className="name-details">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                      <Link to={`/leads/${lead.id}`} className="table-name-link">
-                        <span className="name-text">{lead.name}</span>
+              <td style={{ verticalAlign: 'middle' }}>
+                <div className="table-name-cell" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span className="serial-number" style={{ marginRight: '6px', fontSize: '0.8rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>{(index + 1).toString().padStart(2, '0')}.</span>
+                  <div className="table-avatar" style={{ flexShrink: 0 }}>{lead.name[0]}</div>
+                  <div className="name-details" style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: '2px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'nowrap' }}>
+                      <Link to={`/leads/${lead.id}`} className="table-name-link" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '160px' }}>
+                        <span className="name-text" title={lead.name} style={{ whiteSpace: 'nowrap' }}>{lead.name}</span>
                       </Link>
                       {lead.category && (
-                        <span className="category-badge-chip" title={`Category: ${lead.category}`}>
+                        <span className="category-badge-chip" title={`Category: ${lead.category}`} style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>
                           📁 {lead.category}
                         </span>
                       )}
                     </div>
                     {(showAssignment || activeTab === 'assigned') && (lead.assignedToName || lead.assignedByName) && (
-                      <div className="assigned-to-link table-link">
+                      <div className="assigned-to-link table-link" style={{ whiteSpace: 'nowrap' }}>
                         <Link2 size={10} />
                         <span>
                           {activeTab === 'assigned' && lead.assignedByName ? `Assigned by: ${lead.assignedByName}` : lead.assignedToName}
@@ -1368,9 +1368,9 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
                       </div>
                     )}
                     {lead.history && lead.history.length > 0 && (
-                      <div className="last-followup-subtext">
-                        <MessageCircle size={10} />
-                        <span className="truncate-text" title={lead.history[lead.history.length - 1].note}>
+                      <div className="last-followup-subtext" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '220px' }}>
+                        <MessageCircle size={10} style={{ flexShrink: 0 }} />
+                        <span className="truncate-text" title={lead.history[lead.history.length - 1].note} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           Last: {lead.history[lead.history.length - 1].note}
                         </span>
                       </div>
@@ -1378,19 +1378,19 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
                   </div>
                 </div>
               </td>
-              <td>
-                <span className={`table-status-pill ${lead.status.toLowerCase().replace(/ /g, '-')}`}>
+              <td style={{ verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                <span className={`table-status-pill ${lead.status.toLowerCase().replace(/ /g, '-')}`} style={{ whiteSpace: 'nowrap' }}>
                   {lead.status}
                 </span>
               </td>
-              <td>
-                <div className="table-company-cell">
-                  <span className="company-name">{lead.company}</span>
-                  <span className="designation-text">{lead.designation}</span>
+              <td style={{ verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                <div className="table-company-cell" style={{ whiteSpace: 'nowrap' }}>
+                  <span className="company-name" style={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }} title={lead.company}>{lead.company || '-'}</span>
+                  {lead.designation && <span className="designation-text" style={{ display: 'block', fontSize: '11px', color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>{lead.designation}</span>}
                 </div>
               </td>
-              <td>
-                <div className="table-contact-cell" style={{ minWidth: '200px' }}>
+              <td style={{ verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                <div className="table-contact-cell" style={{ minWidth: '220px' }}>
                   {lead.phone && (
                     <div className="contact-item" style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap', flexWrap: 'nowrap' }}>
                       <Phone size={12} className="contact-icon" style={{ flexShrink: 0 }} />
@@ -1401,35 +1401,37 @@ const ListView = ({ leads, onAddUpdate, onStatusChange, onAssign, onEditInterest
                   {lead.email && (
                     <div className="contact-item" style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap', flexWrap: 'nowrap' }}>
                       <Mail size={12} className="contact-icon" style={{ flexShrink: 0 }} />
-                      <span className="email-text" style={{ fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{lead.email}</span>
+                      <span className="email-text" style={{ fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }}>{lead.email}</span>
                     </div>
                   )}
                   {(lead.address || lead.area || lead.location) && (
-                    <div className="contact-item" style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
-                      <MapPin size={12} className="contact-icon" style={{ flexShrink: 0, marginTop: '2px' }} />
-                      <span className="address-text" style={{ fontSize: '11px', color: 'var(--text-secondary)', lineHeight: '1.3' }}>
+                    <div className="contact-item" style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                      <MapPin size={12} className="contact-icon" style={{ flexShrink: 0 }} />
+                      <span className="address-text" style={{ fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '220px' }} title={lead.address || [lead.location, lead.city].filter(Boolean).join(', ') || lead.location || ''}>
                         {lead.address || [lead.location, lead.city].filter(Boolean).join(', ') || lead.location || ''}
                       </span>
                     </div>
                   )}
                 </div>
               </td>
-              <td>
-                <div className="table-date-cell">
-                  <Calendar size={14} />
-                  <span>{formatDateToDDMMYYYY(lead.nextFollowUp)}</span>
+              <td style={{ verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                <div className="table-date-cell" style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                  <Calendar size={14} style={{ flexShrink: 0 }} />
+                  <span style={{ whiteSpace: 'nowrap' }}>{formatDateToDDMMYYYY(lead.nextFollowUp)}</span>
                 </div>
               </td>
-              <td><span className="age-badge">{lead.age}</span></td>
-              <td>
-                <div className="table-history-badge">
+              <td style={{ verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                <span className="age-badge" style={{ whiteSpace: 'nowrap', display: 'inline-block' }}>{lead.age}</span>
+              </td>
+              <td style={{ verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                <div className="table-history-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' }}>
                   <History size={14} />
                   <span>{lead.history?.length || 0}</span>
                 </div>
               </td>
-              <td>
-                <div className="table-actions-container">
-                  <div className="table-actions">
+              <td style={{ verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
+                <div className="table-actions-container" style={{ whiteSpace: 'nowrap' }}>
+                  <div className="table-actions" style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap', flexWrap: 'nowrap' }}>
                     <button 
                       className="table-action-btn follow-up" 
                       onClick={() => onAddUpdate(lead)}
