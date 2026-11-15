@@ -924,7 +924,7 @@ const renderWhatsAppBadge = (lead, isMini = false) => {
 const LeadCard = ({ lead, index, onDragStart, onAddUpdate, onAssign, onStatusChange, onEditInterests, onVerifyWhatsApp, onDelete, showAssignment, activeTab, className = '', isSelected = false, onToggleSelect = null }) => {
   const [expandedHistory, setExpandedHistory] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const cleanPhone = lead.phone.replace(/[^\d+]/g, '');
+  const cleanPhone = (lead?.phone || '').replace(/[^\d+]/g, '');
 
   useEffect(() => {
     const closeDropdown = () => setIsDropdownOpen(false);
@@ -936,7 +936,7 @@ const LeadCard = ({ lead, index, onDragStart, onAddUpdate, onAssign, onStatusCha
     <Card 
       className={`detailed-lead-card draggable ${className}`} 
       draggable 
-      onDragStart={(e) => onDragStart(e, lead.id)}
+      onDragStart={(e) => onDragStart && onDragStart(e, lead.id)}
     >
       {/* Integrated top header bar inside card: Serial, Category Tag & Checkbox */}
       {(typeof index === 'number' || onToggleSelect || lead.category) && (
@@ -1177,21 +1177,21 @@ const LeadCard = ({ lead, index, onDragStart, onAddUpdate, onAssign, onStatusCha
                 <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
                 <button 
                   className="dropdown-item"
-                  onClick={() => { onAssign(lead); setIsDropdownOpen(false); }}
+                  onClick={() => { if (onAssign) onAssign(lead); setIsDropdownOpen(false); }}
                 >
                   <UserPlus size={14} style={{ marginRight: '8px' }} />
                   Transfer Lead
                 </button>
                 <button 
                   className="dropdown-item"
-                  onClick={() => { onEditInterests(lead); setIsDropdownOpen(false); }}
+                  onClick={() => { if (onEditInterests) onEditInterests(lead); setIsDropdownOpen(false); }}
                 >
                   <Briefcase size={14} style={{ marginRight: '8px' }} />
                   Edit Interests
                 </button>
                 <button 
                   className="dropdown-item"
-                  onClick={() => { onVerifyWhatsApp(lead); setIsDropdownOpen(false); }}
+                  onClick={() => { if (onVerifyWhatsApp) onVerifyWhatsApp(lead); setIsDropdownOpen(false); }}
                 >
                   <WhatsAppIcon size={14} style={{ marginRight: '8px' }} />
                   Verify WhatsApp
@@ -1229,6 +1229,178 @@ const LeadCard = ({ lead, index, onDragStart, onAddUpdate, onAssign, onStatusCha
         )}
       </div>
     </Card>
+  );
+};
+
+const KanbanLeadCard = ({ 
+  lead, 
+  onDragStart, 
+  onAddUpdate, 
+  onAssign, 
+  onStatusChange, 
+  onEditInterests, 
+  onVerifyWhatsApp, 
+  onDelete 
+}) => {
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const cleanPhone = (lead?.phone || '').replace(/[^\d+]/g, '');
+
+  useEffect(() => {
+    const closeDropdown = () => setIsDropdownOpen(false);
+    document.addEventListener('click', closeDropdown);
+    return () => document.removeEventListener('click', closeDropdown);
+  }, []);
+
+  return (
+    <div 
+      className="kanban-flat-pill-card"
+      draggable 
+      onDragStart={(e) => onDragStart && onDragStart(e, lead.id)}
+    >
+      {/* Top row: Name & Category badge */}
+      <div className="kanban-pill-top">
+        <Link 
+          to={`/leads/${lead.id}`} 
+          className="kanban-pill-name-link"
+          title={lead.name}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="kanban-pill-name">{lead.name}</span>
+        </Link>
+        {lead.category && (
+          <span className="category-badge-chip kanban-pill-cat" title={lead.category}>
+            📁 {lead.category}
+          </span>
+        )}
+      </div>
+
+      {/* Middle row: Phone Number + WhatsApp Status */}
+      <div className="kanban-pill-middle">
+        {lead.phone ? (
+          <div className="kanban-pill-phone-wrap">
+            <Phone size={12} className="kanban-pill-phone-icon" />
+            <span className="kanban-pill-phone">
+              {lead.phone.replace(/^(\+?88)?0?/, '0').replace(/\s+/g, '')}
+            </span>
+            {renderWhatsAppBadge(lead, true)}
+          </div>
+        ) : (
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No phone</span>
+        )}
+      </div>
+
+      {/* Bottom row: The 4 Action Buttons */}
+      <div className="kanban-pill-actions">
+        <a 
+          href={`https://wa.me/${cleanPhone}`} 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="kanban-pill-action-btn whatsapp" 
+          title="WhatsApp Chat"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <WhatsAppIcon size={16} />
+        </a>
+        <a 
+          href={`tel:${cleanPhone}`} 
+          className="kanban-pill-action-btn call" 
+          title="Call Lead"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Phone size={13} />
+        </a>
+        <a 
+          href={`mailto:${lead.email || ''}`} 
+          className="kanban-pill-action-btn email" 
+          title="Send Email"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Mail size={13} />
+        </a>
+        <div className="kanban-pill-more-wrapper">
+          <button 
+            type="button"
+            className="kanban-pill-action-btn more-options" 
+            title="More Options"
+            onClick={(e) => { 
+              e.stopPropagation(); 
+              setIsDropdownOpen(!isDropdownOpen); 
+            }}
+          >
+            <MoreVertical size={14} />
+          </button>
+          {isDropdownOpen && (
+            <div className="status-dropdown-menu" style={{ 
+              position: 'absolute',
+              bottom: 'calc(100% + 6px)',
+              top: 'auto',
+              right: 0,
+              zIndex: 300,
+              width: '190px'
+            }}>
+              <div className="dropdown-header" style={{ fontSize: '0.7rem', color: 'var(--text-muted)', padding: '6px 10px 4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Change Status</div>
+              {LEAD_STATUSES.map(status => (
+                <button 
+                  key={status.id}
+                  className={`dropdown-item ${lead.status === status.id ? 'current' : ''}`}
+                  onClick={() => { if (onStatusChange) onStatusChange(lead, status.id); setIsDropdownOpen(false); }}
+                >
+                  <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: status.color, display: 'inline-block', marginRight: '8px', flexShrink: 0 }}></span>
+                  {status.title}
+                </button>
+              ))}
+              <div style={{ height: '1px', background: 'var(--border)', margin: '4px 0' }} />
+              {onAddUpdate && (
+                <button 
+                  className="dropdown-item"
+                  onClick={() => { onAddUpdate(lead); setIsDropdownOpen(false); }}
+                >
+                  <MessageSquarePlus size={13} style={{ marginRight: '8px' }} />
+                  Follow Up / Log
+                </button>
+              )}
+              {onAssign && (
+                <button 
+                  className="dropdown-item"
+                  onClick={() => { onAssign(lead); setIsDropdownOpen(false); }}
+                >
+                  <UserPlus size={13} style={{ marginRight: '8px' }} />
+                  Transfer Lead
+                </button>
+              )}
+              {onEditInterests && (
+                <button 
+                  className="dropdown-item"
+                  onClick={() => { onEditInterests(lead); setIsDropdownOpen(false); }}
+                >
+                  <Briefcase size={13} style={{ marginRight: '8px' }} />
+                  Edit Interests
+                </button>
+              )}
+              {onVerifyWhatsApp && (
+                <button 
+                  className="dropdown-item"
+                  onClick={() => { onVerifyWhatsApp(lead); setIsDropdownOpen(false); }}
+                >
+                  <WhatsAppIcon size={13} style={{ marginRight: '8px' }} />
+                  Verify WhatsApp
+                </button>
+              )}
+              {onDelete && (
+                <button 
+                  className="dropdown-item"
+                  onClick={(e) => { e.stopPropagation(); onDelete(lead); setIsDropdownOpen(false); }}
+                  style={{ color: '#ef4444', fontWeight: '600' }}
+                >
+                  <Trash2 size={13} style={{ marginRight: '8px' }} />
+                  Delete Lead
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -3268,15 +3440,16 @@ const MyLeads = () => {
                             filteredLeads
                               .filter(l => l.status === status.id)
                               .map(lead => (
-                                <LeadCard 
+                                <KanbanLeadCard 
                                   key={lead.id} 
                                   lead={lead} 
-                                  className="kanban-card"
                                   onDragStart={handleDragStart}
                                   onAddUpdate={handleAddUpdate}
+                                  onAssign={(l) => setAssignModal({ isOpen: true, lead: l })}
+                                  onStatusChange={(l, newStatus) => setUpdateModal({ isOpen: true, lead: l, newStatus })}
+                                  onEditInterests={(l) => setInterestsModal({ isOpen: true, lead: l })}
+                                  onVerifyWhatsApp={handleVerifyWhatsApp}
                                   onDelete={handleSingleDelete}
-                                  showAssignment={activeTab === 'team'}
-                                  activeTab={activeTab}
                                 />
                               ))
                           )}
